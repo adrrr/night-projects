@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Micro Journal</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#f5f0eb;--card:rgba(255,255,255,.72);--text:#2c2c2e;--sub:#8e8e93;--accent:#a78bfa;--radius:20px;--safe-b:env(safe-area-inset-bottom,0px)}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100dvh;-webkit-tap-highlight-color:transparent;overflow-x:hidden}
+.container{max-width:480px;margin:0 auto;padding:24px 20px calc(24px + var(--safe-b))}
+h1{font-size:1.6rem;font-weight:700;text-align:center;margin-bottom:4px;opacity:0;animation:fadeIn .6s ease forwards}
+.subtitle{text-align:center;color:var(--sub);font-size:.85rem;margin-bottom:28px;opacity:0;animation:fadeIn .6s ease .15s forwards}
+.card{background:var(--card);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:var(--radius);padding:24px;margin-bottom:16px;border:1px solid rgba(0,0,0,.04);opacity:0;animation:slideUp .5s cubic-bezier(.34,1.56,.64,1) forwards}
+.card:nth-child(2){animation-delay:.1s}.card:nth-child(3){animation-delay:.2s}.card:nth-child(4){animation-delay:.3s}
+.card-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--sub);margin-bottom:12px;font-weight:600}
+.question{font-size:1.15rem;font-weight:600;line-height:1.45;margin-bottom:20px}
+textarea{width:100%;border:none;background:rgba(0,0,0,.03);border-radius:14px;padding:14px 16px;font:inherit;font-size:.95rem;resize:none;min-height:80px;outline:none;transition:background .2s}
+textarea:focus{background:rgba(0,0,0,.06)}
+.mood-row{display:flex;justify-content:center;gap:8px;margin-top:16px}
+.mood-btn{font-size:2rem;width:56px;height:56px;border-radius:50%;border:3px solid transparent;background:rgba(0,0,0,.03);cursor:pointer;transition:all .2s cubic-bezier(.34,1.56,.64,1);display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+.mood-btn.active{border-color:var(--accent);background:rgba(167,139,250,.12);transform:scale(1.15)}
+.mood-btn:active{transform:scale(.9)}
+.save-btn{width:100%;padding:16px;border:none;border-radius:16px;background:var(--accent);color:#fff;font:inherit;font-size:1rem;font-weight:600;cursor:pointer;margin-top:20px;transition:all .2s;opacity:.4;pointer-events:none}
+.save-btn.ready{opacity:1;pointer-events:auto}
+.save-btn:active{transform:scale(.97)}
+.saved-msg{text-align:center;color:var(--accent);font-weight:600;font-size:.9rem;margin-top:12px;opacity:0;transition:opacity .3s}
+.saved-msg.show{opacity:1}
+.dots-row{display:flex;gap:4px;flex-wrap:wrap;justify-content:center}
+.dot{width:10px;height:10px;border-radius:50%;transition:transform .2s}
+.dot:hover{transform:scale(1.8)}
+.history-list{display:flex;flex-direction:column;gap:10px;max-height:50vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:4px}
+.h-entry{background:rgba(0,0,0,.025);border-radius:14px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
+.h-mood{font-size:1.4rem;flex-shrink:0;margin-top:2px}
+.h-body{flex:1;min-width:0}
+.h-date{font-size:.7rem;color:var(--sub);font-weight:500;margin-bottom:4px}
+.h-q{font-size:.78rem;color:var(--sub);font-style:italic;margin-bottom:2px}
+.h-answer{font-size:.88rem;line-height:1.4;word-break:break-word}
+.empty{text-align:center;color:var(--sub);font-size:.85rem;padding:24px 0}
+@keyframes fadeIn{to{opacity:1}}
+@keyframes slideUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>📓 Micro Journal</h1>
+<p class="subtitle">Une question par jour, pour toi.</p>
+
+<div class="card" id="today-card">
+<div class="card-label">Question du jour</div>
+<div class="question" id="question"></div>
+<textarea id="answer" placeholder="Écris ce qui te vient…" rows="3"></textarea>
+<div class="mood-row" id="moods"></div>
+<button class="save-btn" id="save">Enregistrer</button>
+<div class="saved-msg" id="saved-msg">✓ Enregistré</div>
+</div>
+
+<div class="card">
+<div class="card-label">Mood · 30 derniers jours</div>
+<div class="dots-row" id="dots"></div>
+</div>
+
+<div class="card">
+<div class="card-label">Historique</div>
+<div class="history-list" id="history"></div>
+</div>
+</div>
+
+<script>
+const Q=[
+"Qu'est-ce qui t'a fait sourire aujourd'hui ?",
+"Si tu pouvais changer une chose dans ta journée, ce serait quoi ?",
+"Quel moment t'a le plus marqué récemment ?",
+"De quoi es-tu reconnaissant·e en ce moment ?",
+"Qu'est-ce que tu repoussais et que tu as enfin fait ?",
+"Quel est le dernier truc que tu as appris ?",
+"Comment te sens-tu vraiment, là, maintenant ?",
+"Qu'est-ce qui te pèse en ce moment ?",
+"Quel petit plaisir t'a rendu heureux·se ?",
+"À qui tu aimerais envoyer un message ?",
+"Quel est ton plus grand défi du moment ?",
+"Qu'est-ce qui te donne de l'énergie ?",
+"Si ta journée était un film, quel serait le titre ?",
+"Quel conseil tu te donnerais ce matin ?",
+"Qu'est-ce que tu as lâché prise sur récemment ?",
+"Décris ton humeur en 3 mots.",
+"Quel souvenir t'est revenu aujourd'hui ?",
+"Qu'est-ce que tu veux te rappeler de cette semaine ?",
+"Quelle habitude aimerais-tu construire ?",
+"Qu'est-ce qui te rend curieux·se en ce moment ?",
+"Quel est le dernier compliment que tu as reçu ?",
+"De quoi as-tu peur en ce moment ?"
+];
+const MOODS=[
+{emoji:"😢",color:"#74b9ff",label:"Triste"},
+{emoji:"😐",color:"#b2bec3",label:"Bof"},
+{emoji:"🙂",color:"#ffeaa7",label:"Ok"},
+{emoji:"😊",color:"#55efc4",label:"Bien"},
+{emoji:"🤩",color:"#fd79a8",label:"Top"}
+];
+const KEY="microjournal_entries";
+const todayKey=()=>new Date().toISOString().slice(0,10);
+const seedRng=(s)=>{let h=0;for(let i=0;i<s.length;i++){h=Math.imul(31,h)+s.charCodeAt(i)|0}return Math.abs(h)};
+const getQuestion=()=>Q[seedRng(todayKey())%Q.length];
+const load=()=>JSON.parse(localStorage.getItem(KEY)||"[]");
+const save=(entries)=>localStorage.setItem(KEY,JSON.stringify(entries));
+
+let selectedMood=null;
+const $=id=>document.getElementById(id);
+
+// Render mood buttons
+$("moods").innerHTML=MOODS.map((m,i)=>`<button class="mood-btn" data-i="${i}" aria-label="${m.label}">${m.emoji}</button>`).join("");
+$("moods").addEventListener("click",e=>{
+  const btn=e.target.closest(".mood-btn");if(!btn)return;
+  document.querySelectorAll(".mood-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");selectedMood=+btn.dataset.i;checkReady();
+});
+
+$("question").textContent=getQuestion();
+$("answer").addEventListener("input",checkReady);
+
+function checkReady(){
+  const ok=$("answer").value.trim()&&selectedMood!==null;
+  $("save").classList.toggle("ready",ok);
+}
+
+// Check if already answered today
+const existing=load().find(e=>e.date===todayKey());
+if(existing){
+  $("answer").value=existing.answer;
+  selectedMood=existing.mood;
+  document.querySelectorAll(".mood-btn")[selectedMood]?.classList.add("active");
+  checkReady();
+}
+
+$("save").addEventListener("click",()=>{
+  if(selectedMood===null||!$("answer").value.trim())return;
+  let entries=load();
+  const idx=entries.findIndex(e=>e.date===todayKey());
+  const entry={date:todayKey(),question:getQuestion(),answer:$("answer").value.trim(),mood:selectedMood};
+  if(idx>=0)entries[idx]=entry;else entries.unshift(entry);
+  save(entries);
+  $("saved-msg").classList.add("show");
+  setTimeout(()=>$("saved-msg").classList.remove("show"),2000);
+  renderDots();renderHistory();
+});
+
+function renderDots(){
+  const entries=load();const map={};
+  entries.forEach(e=>map[e.date]=e.mood);
+  let dots=[];const d=new Date();
+  for(let i=29;i>=0;i--){
+    const dd=new Date(d);dd.setDate(d.getDate()-i);
+    const k=dd.toISOString().slice(0,10);
+    const m=map[k];
+    const color=m!==undefined?MOODS[m].color:"rgba(0,0,0,.06)";
+    const title=m!==undefined?`${k}: ${MOODS[m].emoji}`:`${k}: —`;
+    dots.push(`<div class="dot" style="background:${color}" title="${title}"></div>`);
+  }
+  $("dots").innerHTML=dots.join("");
+}
+
+function renderHistory(){
+  const entries=load();
+  if(!entries.length){$("history").innerHTML='<div class="empty">Aucune entrée pour l\'instant</div>';return;}
+  $("history").innerHTML=entries.slice(0,50).map(e=>{
+    const d=new Date(e.date+"T12:00:00");
+    const fmt=d.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
+    return `<div class="h-entry"><div class="h-mood">${MOODS[e.mood]?.emoji||"?"}</div><div class="h-body"><div class="h-date">${fmt}</div><div class="h-q">${e.question}</div><div class="h-answer">${e.answer.replace(/</g,"&lt;")}</div></div></div>`;
+  }).join("");
+}
+
+renderDots();renderHistory();
+</script>
+</body>
+</html>

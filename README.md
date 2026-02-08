@@ -33,6 +33,11 @@ Jeu de mémoire addictif — reproduis des séquences de couleurs qui s'allongen
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/pattern-memory/)
 
+### ⏱️ [Daily Focus Timer](./daily-focus-timer/)
+Pomodoro réinventé — cercle SVG animé, particules ambient, couleurs qui dérivent pendant le focus. Durées configurables, stats du jour, streaks, notification sonore Web Audio. Zéro dépendance, vibes apaisantes.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/daily-focus-timer/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
