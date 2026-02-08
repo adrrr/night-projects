@@ -43,6 +43,11 @@ Journal intime minimaliste — 1 question introspective par jour, mood picker 5 
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/micro-journal/)
 
+### ✅ [Habit Tracker](./habit-tracker/)
+Tracker d'habitudes minimaliste style iOS — check satisfaisant avec confetti, streaks par habit, mini bar chart semaine, persistance localStorage. Mobile-first, zéro dépendance.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/habit-tracker/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
