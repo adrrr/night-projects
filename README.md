@@ -28,6 +28,11 @@ Outil de création d'affiches procédurales — 6 styles artistiques (flow field
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/generative-poster/)
 
+### 🧠 [Pattern Memory](./pattern-memory/)
+Jeu de mémoire addictif — reproduis des séquences de couleurs qui s'allongent à chaque niveau. Sons Web Audio API, animations iOS-like, high scores persistants. Sessions courtes, "one more try" garanti.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/pattern-memory/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
