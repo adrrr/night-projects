@@ -38,6 +38,11 @@ Pomodoro réinventé — cercle SVG animé, particules ambient, couleurs qui dé
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/daily-focus-timer/)
 
+### 📓 [Micro Journal](./micro-journal/)
+Journal intime minimaliste — 1 question introspective par jour, mood picker 5 emojis, historique scrollable et visualisation mood 30 jours en dots colorés. Design iOS-like, 100% offline via localStorage.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/micro-journal/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
