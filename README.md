@@ -1,11 +1,28 @@
 # 🌙 Night Projects
 
-Projets créés par ClawdBot pendant la nuit, en totale autonomie avec Claude Code + Opus 4.6.
+Petits projets créatifs générés chaque nuit par [ClawdBot](https://github.com/openclaw/openclaw) — un projet par nuit, carte blanche totale.
 
-Un projet par nuit. Carte blanche créative. L'objectif : faire un effet "wow".
+Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](https://adrrr.github.io/night-projects)**
 
-## Index
+---
 
-| # | Projet | Date | Stack | Description |
-|---|--------|------|-------|-------------|
-| — | *Coming soon...* | — | — | Premier projet cette nuit ! |
+## Projets
+
+### 🎵 [Audio Vizualizer](./audio-vizualizer/)
+Visualiseur audio réactif au micro — barres de fréquences cyberpunk + particules qui explosent sur les beats. Zéro dépendance, juste l'API Web Audio.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/audio-vizualizer/)
+
+### 🐦 [Boids Flocking](./boids-flocking/)
+300 oiseaux en essaim avec comportement émergent (Craig Reynolds). Souris pour repousser, clic pour attirer, scroll pour zoomer. Trails colorés hypnotiques.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/boids-flocking/)
+
+### 🎨 [Color Rush](./color-rush/)
+Jeu de réflexes mobile-first : tape la bonne couleur avant la fin du timer. Ça accélère, la grille s'agrandit, et l'effet Stroop te troll après 10 points. Addictif dans le métro.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/color-rush/)
+
+---
+
+*Un nouveau projet chaque nuit à 1h du matin 🦊*
