@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Color Rush</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;font-family:-apple-system,system-ui,sans-serif;background:#1a1a2e;color:#fff;touch-action:manipulation;user-select:none}
+#app{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:16px;gap:12px}
+#score-bar{display:flex;justify-content:space-between;width:100%;max-width:400px;font-size:14px;opacity:.7}
+#prompt{font-size:22px;font-weight:700;text-align:center;min-height:60px;display:flex;align-items:center;justify-content:center}
+#timer-bar{width:100%;max-width:400px;height:6px;border-radius:3px;background:#333;overflow:hidden}
+#timer-fill{height:100%;background:#0f0;transition:width .1s linear,background .3s}
+#grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;width:100%;max-width:400px}
+.cell{aspect-ratio:1;border-radius:16px;border:none;cursor:pointer;font-size:0;transition:transform .1s;-webkit-tap-highlight-color:transparent}
+.cell:active{transform:scale(.92)}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:10}
+#overlay.hidden{display:none}
+#overlay h1{font-size:28px}
+#overlay p{font-size:16px;opacity:.7;text-align:center;line-height:1.5}
+#start-btn{padding:16px 48px;font-size:20px;font-weight:700;border:none;border-radius:12px;background:#e94560;color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#final-score{font-size:48px;font-weight:800;color:#e94560}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="score-bar"><span>Score: <b id="sc">0</b></span><span>Best: <b id="hi">0</b></span></div>
+  <div id="prompt">Tap the <span id="target-word"></span> tile!</div>
+  <div id="timer-bar"><div id="timer-fill"></div></div>
+  <div id="grid"></div>
+</div>
+<div id="overlay">
+  <h1 id="overlay-title">🎨 Color Rush</h1>
+  <p id="overlay-desc">Tap the tile matching the prompt as fast as you can.<br>Speed up each round. How far can you go?</p>
+  <div id="final-score" style="display:none"></div>
+  <button id="start-btn">Play</button>
+</div>
+<script>
+const COLORS=[
+  {name:'Red',hex:'#e94560'},{name:'Blue',hex:'#4361ee'},{name:'Green',hex:'#2ec4b6'},
+  {name:'Yellow',hex:'#f9c74f'},{name:'Purple',hex:'#9b5de5'},{name:'Orange',hex:'#ff6b35'},
+  {name:'Pink',hex:'#ff85a1'},{name:'Cyan',hex:'#00f5d4'}
+];
+const grid=document.getElementById('grid'),sc=document.getElementById('sc'),hi=document.getElementById('hi');
+const tw=document.getElementById('target-word'),tf=document.getElementById('timer-fill');
+const overlay=document.getElementById('overlay'),ot=document.getElementById('overlay-title');
+const od=document.getElementById('overlay-desc'),fs=document.getElementById('final-score');
+const btn=document.getElementById('start-btn');
+let score=0,best=+(localStorage.getItem('cr-best')||0),timer=0,interval=0,timeLeft=0,timeMax=0,playing=false;
+hi.textContent=best;
+
+function pick(arr,n){let a=[...arr];for(let i=a.length-1;i>0;i--){let j=Math.random()*i+1|0;[a[i],a[j]]=[a[j],a[i]]}return a.slice(0,n)}
+
+function round(){
+  let count=Math.min(4+Math.floor(score/8),8);
+  let cols=count<=4?2:count<=6?3:4;
+  grid.style.gridTemplateColumns=`repeat(${cols},1fr)`;
+  let chosen=pick(COLORS,count);
+  let target=chosen[Math.random()*chosen.length|0];
+  // Trick mode: after score 10, sometimes show color NAME in a DIFFERENT color
+  let trick=score>=10&&Math.random()>.5;
+  tw.textContent=target.name;
+  tw.style.color=trick?pick(COLORS.filter(c=>c.name!==target.name),1)[0].hex:target.hex;
+  grid.innerHTML='';
+  chosen.forEach(c=>{
+    let b=document.createElement('button');
+    b.className='cell';b.style.background=c.hex;
+    b.addEventListener('touchstart',e=>{e.preventDefault();tap(c.name===target.name)},{passive:false});
+    b.addEventListener('click',()=>tap(c.name===target.name));
+    grid.appendChild(b);
+  });
+  timeMax=Math.max(1200,3000-score*80);timeLeft=timeMax;
+  tf.style.width='100%';tf.style.background='#0f0';
+  clearInterval(interval);
+  interval=setInterval(()=>{
+    timeLeft-=50;
+    let pct=Math.max(0,timeLeft/timeMax*100);
+    tf.style.width=pct+'%';
+    tf.style.background=pct<30?'#e94560':pct<60?'#f9c74f':'#0f0';
+    if(timeLeft<=0){clearInterval(interval);endGame()}
+  },50);
+}
+
+function tap(correct){
+  if(!playing)return;
+  if(correct){score++;sc.textContent=score;round()}
+  else endGame();
+}
+
+function endGame(){
+  playing=false;clearInterval(interval);
+  if(score>best){best=score;localStorage.setItem('cr-best',best);hi.textContent=best}
+  ot.textContent='Game Over';
+  od.textContent=`You scored ${score} point${score!==1?'s':''}!`;
+  fs.style.display='block';fs.textContent=score;
+  btn.textContent='Retry';overlay.classList.remove('hidden');
+}
+
+btn.addEventListener('click',()=>{
+  score=0;sc.textContent=0;playing=true;
+  overlay.classList.add('hidden');fs.style.display='none';
+  round();
+});
+</script>
+</body>
+</html>
