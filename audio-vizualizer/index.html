@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Vizualizer 🎵</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0a;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #fff;
+        }
+        canvas {
+            display: block;
+            background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a0a 100%);
+        }
+        #start {
+            position: absolute;
+            padding: 20px 40px;
+            font-size: 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 50px;
+            color: white;
+            cursor: pointer;
+            font-family: inherit;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        #start:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.6);
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 14px;
+            color: #667eea;
+            text-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <button id="start">🎵 START VIZUALIZER</button>
+    <div id="info"></div>
+    
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('start');
+        const info = document.getElementById('info');
+        
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        let audioContext, analyser, dataArray, bufferLength;
+        let particles = [];
+        let hue = 0;
+        
+        class Particle {
+            constructor(x, y, size, velocity) {
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.velocity = velocity;
+                this.life = 1;
+            }
+            
+            update() {
+                this.y -= this.velocity;
+                this.life -= 0.01;
+                this.size *= 0.98;
+            }
+            
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${hue}, 100%, 60%, ${this.life})`;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+                ctx.fill();
+            }
+        }
+        
+        startBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(stream);
+                
+                analyser.fftSize = 256;
+                bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                
+                source.connect(analyser);
+                startBtn.style.display = 'none';
+                info.textContent = '🎤 Listening... Make some noise!';
+                
+                animate();
+            } catch (err) {
+                info.textContent = '❌ Microphone access denied';
+            }
+        });
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            analyser.getByteFrequencyData(dataArray);
+            
+            ctx.fillStyle = 'rgba(10, 10, 10, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const barWidth = (canvas.width / bufferLength) * 2;
+            let x = 0;
+            let totalVolume = 0;
+            
+            for (let i = 0; i < bufferLength; i++) {
+                const barHeight = (dataArray[i] / 255) * canvas.height * 0.7;
+                totalVolume += dataArray[i];
+                
+                const r = (barHeight / canvas.height) * 255;
+                const g = 100 + hue;
+                const b = 255;
+                
+                // Draw bar
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = `rgb(${r}, ${g}, ${b})`;
+                ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                
+                // Create particles on strong beats
+                if (dataArray[i] > 200 && Math.random() > 0.7) {
+                    const particleX = x + barWidth / 2;
+                    const particleY = canvas.height - barHeight;
+                    particles.push(new Particle(
+                        particleX,
+                        particleY,
+                        Math.random() * 5 + 2,
+                        Math.random() * 3 + 2
+                    ));
+                }
+                
+                x += barWidth + 1;
+            }
+            
+            // Update and draw particles
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            
+            // Rotate hue for color shift
+            hue = (hue + 0.5) % 360;
+            
+            // Display volume level
+            const avgVolume = Math.floor(totalVolume / bufferLength);
+            info.textContent = `🎤 Volume: ${'█'.repeat(Math.floor(avgVolume / 10))} ${avgVolume}`;
+            ctx.shadowBlur = 0;
+        }
+        
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>
