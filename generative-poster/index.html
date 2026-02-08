@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Generative Poster Studio</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0a0b;
+  --surface: #141416;
+  --surface2: #1c1c20;
+  --border: #2a2a30;
+  --text: #e8e8ec;
+  --text2: #8888a0;
+  --accent: #6366f1;
+  --accent2: #818cf8;
+  --radius: 12px;
+}
+
+@font-face {
+  font-family: 'System';
+  src: local('-apple-system'), local('BlinkMacSystemFont'), local('Segoe UI'), local('Roboto');
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  height: 100dvh;
+  width: 100vw;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* Layout */
+.app {
+  display: flex;
+  height: 100dvh;
+  width: 100vw;
+}
+
+.canvas-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: #050506;
+  min-width: 0;
+}
+
+.canvas-wrapper {
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+  border-radius: 4px;
+  overflow: hidden;
+  transition: transform 0.3s ease;
+}
+
+canvas {
+  display: block;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 320px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.sidebar-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 10;
+}
+
+.sidebar-header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin-bottom: 4px;
+}
+
+.sidebar-header p {
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.section {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text2);
+  margin-bottom: 12px;
+}
+
+/* Style selector */
+.style-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.style-btn {
+  background: var(--surface2);
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  padding: 12px 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.style-btn:hover { background: var(--border); }
+.style-btn.active { border-color: var(--accent); background: rgba(99,102,241,0.1); }
+.style-btn .icon { font-size: 22px; }
+
+/* Controls */
+.control {
+  margin-bottom: 14px;
+}
+
+.control:last-child { margin-bottom: 0; }
+
+.control-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.control-label span {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.control-label .value {
+  font-size: 12px;
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--surface2);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(99,102,241,0.4);
+  transition: transform 0.15s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+/* Color palette */
+.palette-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.palette-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.palette-swatch:hover { transform: scale(1.1); }
+.palette-swatch.active { border-color: white; box-shadow: 0 0 0 2px var(--accent); }
+
+/* Buttons */
+.btn-row {
+  display: flex;
+  gap: 8px;
+  padding: 16px 20px;
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.btn {
+  flex: 1;
+  padding: 12px 16px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-primary:hover { background: var(--accent2); }
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-secondary {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.btn-secondary:hover { background: var(--border); }
+
+/* Generating overlay */
+.generating {
+  position: absolute;
+  inset: 0;
+  background: rgba(5,5,6,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+  backdrop-filter: blur(4px);
+  z-index: 5;
+}
+
+.generating.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.generating-inner {
+  text-align: center;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Seed display */
+.seed-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.seed-display code {
+  color: var(--accent2);
+  font-family: 'SF Mono', Monaco, monospace;
+  flex: 1;
+}
+
+.seed-copy {
+  background: none;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px;
+}
+
+.seed-copy:hover { color: var(--text); }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--accent);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  transition: all 0.3s;
+  pointer-events: none;
+  z-index: 100;
+  white-space: nowrap;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .app {
+    flex-direction: column;
+  }
+
+  .canvas-area {
+    flex: 0 0 45%;
+    min-height: 200px;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex: 1;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .sidebar-header {
+    padding: 14px 16px 12px;
+  }
+
+  .sidebar-header h1 { font-size: 16px; }
+
+  .section {
+    padding: 12px 16px;
+  }
+
+  .style-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .style-btn {
+    padding: 8px 6px;
+    font-size: 11px;
+  }
+
+  .style-btn .icon { font-size: 18px; }
+
+  .btn-row {
+    padding: 12px 16px;
+  }
+}
+
+@media (max-width: 400px) {
+  .style-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Aspect ratio selector */
+.ratio-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ratio-btn {
+  flex: 1;
+  padding: 8px 4px;
+  background: var(--surface2);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.ratio-btn:hover { background: var(--border); }
+.ratio-btn.active { border-color: var(--accent); background: rgba(99,102,241,0.1); }
+
+/* Animation for canvas entry */
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.canvas-wrapper { animation: fadeInScale 0.5s ease-out; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="canvas-area">
+    <div class="canvas-wrapper" id="canvasWrapper">
+      <canvas id="canvas"></canvas>
+    </div>
+    <div class="generating" id="generating">
+      <div class="generating-inner">
+        <div class="spinner"></div>
+        <div style="color: var(--text2); font-size: 14px;">Generating...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1>Poster Studio</h1>
+      <p>Generative art you'd hang on your wall</p>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Style</div>
+      <div class="style-grid" id="styleGrid"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Palette</div>
+      <div class="palette-row" id="paletteRow"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Format</div>
+      <div class="ratio-row" id="ratioRow"></div>
+    </div>
+
+    <div class="section" id="controlsSection">
+      <div class="section-title">Parameters</div>
+      <div id="controls"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Seed</div>
+      <div class="seed-display">
+        <code id="seedCode">000000</code>
+        <button class="seed-copy" onclick="copySeed()" title="Copy seed">📋</button>
+        <button class="seed-copy" onclick="pasteSeed()" title="Paste seed">📥</button>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="randomize()">🎲 Random</button>
+      <button class="btn btn-primary" onclick="exportPoster()">💾 Export HD</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ==================== PRNG ====================
+class PRNG {
+  constructor(seed) {
+    this.seed = seed;
+    this.state = seed;
+  }
+  next() {
+    this.state = (this.state * 1664525 + 1013904223) & 0xFFFFFFFF;
+    return (this.state >>> 0) / 0xFFFFFFFF;
+  }
+  range(a, b) { return a + this.next() * (b - a); }
+  int(a, b) { return Math.floor(this.range(a, b + 1)); }
+  pick(arr) { return arr[this.int(0, arr.length - 1)]; }
+  gaussian() {
+    let u = 0, v = 0;
+    while (u === 0) u = this.next();
+    while (v === 0) v = this.next();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+}
+
+// ==================== PALETTES ====================
+const PALETTES = [
+  { name: 'Dusk', colors: ['#1a1a2e', '#16213e', '#0f3460', '#e94560', '#f5b7b1'], bg: '#0a0a1a' },
+  { name: 'Forest', colors: ['#2d5016', '#4a7c23', '#8fbc5a', '#c8e6a0', '#f4f7ee'], bg: '#1a2e0a' },
+  { name: 'Ocean', colors: ['#0c2461', '#1e3799', '#4a69bd', '#6a89cc', '#dff9fb'], bg: '#060e2e' },
+  { name: 'Ember', colors: ['#6b0f1a', '#b91c1c', '#e85d04', '#f9a825', '#fff3e0'], bg: '#1a0a05' },
+  { name: 'Arctic', colors: ['#e8eaf6', '#c5cae9', '#7986cb', '#3949ab', '#1a237e'], bg: '#f5f5ff' },
+  { name: 'Neon', colors: ['#ff006e', '#8338ec', '#3a86ff', '#06d6a0', '#ffbe0b'], bg: '#0a0a0f' },
+  { name: 'Sand', colors: ['#d4a373', '#ccd5ae', '#e9edc9', '#fefae0', '#faedcd'], bg: '#2a1f14' },
+  { name: 'Mono', colors: ['#ffffff', '#c8c8c8', '#909090', '#585858', '#202020'], bg: '#0a0a0a' },
+  { name: 'Sakura', colors: ['#fce4ec', '#f8bbd0', '#f48fb1', '#c2185b', '#4a0e2f'], bg: '#1a0810' },
+  { name: 'Cyber', colors: ['#00fff5', '#7b2ff7', '#ff2e63', '#08d9d6', '#252a34'], bg: '#0a0a12' },
+];
+
+// ==================== STYLES ====================
+const STYLES = [
+  { id: 'flow', name: 'Flow Field', icon: '🌊' },
+  { id: 'circles', name: 'Circles', icon: '⭕' },
+  { id: 'geo', name: 'Geometric', icon: '💎' },
+  { id: 'topo', name: 'Topography', icon: '🗺️' },
+  { id: 'waves', name: 'Waves', icon: '〰️' },
+  { id: 'constellation', name: 'Stars', icon: '✨' },
+];
+
+const RATIOS = [
+  { id: '3:4', label: '3:4', w: 3, h: 4 },
+  { id: '1:1', label: '1:1', w: 1, h: 1 },
+  { id: '4:3', label: '4:3', w: 4, h: 3 },
+  { id: '9:16', label: '9:16', w: 9, h: 16 },
+];
+
+// ==================== STATE ====================
+let state = {
+  style: 'flow',
+  palette: 0,
+  ratio: '3:4',
+  seed: Math.floor(Math.random() * 999999),
+  params: {}
+};
+
+const defaultParams = {
+  flow: { density: 0.6, turbulence: 0.5, length: 0.5, thickness: 0.4 },
+  circles: { count: 0.5, sizeVar: 0.5, overlap: 0.3, rings: 0.5 },
+  geo: { complexity: 0.5, rotation: 0.3, layers: 0.5, symmetry: 0.6 },
+  topo: { detail: 0.5, spacing: 0.4, elevation: 0.5, smoothness: 0.6 },
+  waves: { frequency: 0.5, amplitude: 0.5, layers: 0.5, distortion: 0.3 },
+  constellation: { stars: 0.5, connections: 0.4, clusters: 0.5, glow: 0.6 },
+};
+
+const paramLabels = {
+  flow: { density: 'Density', turbulence: 'Turbulence', length: 'Length', thickness: 'Thickness' },
+  circles: { count: 'Count', sizeVar: 'Size Variation', overlap: 'Overlap', rings: 'Ring Style' },
+  geo: { complexity: 'Complexity', rotation: 'Rotation', layers: 'Layers', symmetry: 'Symmetry' },
+  topo: { detail: 'Detail', spacing: 'Spacing', elevation: 'Elevation', smoothness: 'Smoothness' },
+  waves: { frequency: 'Frequency', amplitude: 'Amplitude', layers: 'Layers', distortion: 'Distortion' },
+  constellation: { stars: 'Star Count', connections: 'Connections', clusters: 'Clusters', glow: 'Glow' },
+};
+
+// ==================== UI SETUP ====================
+function buildUI() {
+  // Styles
+  const grid = document.getElementById('styleGrid');
+  grid.innerHTML = STYLES.map(s => `
+    <button class="style-btn ${s.id === state.style ? 'active' : ''}" data-style="${s.id}">
+      <span class="icon">${s.icon}</span>
+      ${s.name}
+    </button>
+  `).join('');
+
+  grid.querySelectorAll('.style-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.style = btn.dataset.style;
+      if (!state.params[state.style]) state.params[state.style] = { ...defaultParams[state.style] };
+      buildUI();
+      generate();
+    });
+  });
+
+  // Palettes
+  const palRow = document.getElementById('paletteRow');
+  palRow.innerHTML = PALETTES.map((p, i) => `
+    <div class="palette-swatch ${i === state.palette ? 'active' : ''}" data-idx="${i}"
+         style="background: linear-gradient(135deg, ${p.colors[0]} 0%, ${p.colors[2]} 50%, ${p.colors[4] || p.colors[3]} 100%)"
+         title="${p.name}"></div>
+  `).join('');
+
+  palRow.querySelectorAll('.palette-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      state.palette = parseInt(sw.dataset.idx);
+      buildUI();
+      generate();
+    });
+  });
+
+  // Ratios
+  const ratRow = document.getElementById('ratioRow');
+  ratRow.innerHTML = RATIOS.map(r => `
+    <button class="ratio-btn ${r.id === state.ratio ? 'active' : ''}" data-ratio="${r.id}">${r.label}</button>
+  `).join('');
+
+  ratRow.querySelectorAll('.ratio-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.ratio = btn.dataset.ratio;
+      buildUI();
+      sizeCanvas();
+      generate();
+    });
+  });
+
+  // Controls
+  if (!state.params[state.style]) state.params[state.style] = { ...defaultParams[state.style] };
+  const params = state.params[state.style];
+  const labels = paramLabels[state.style];
+  const ctrls = document.getElementById('controls');
+  ctrls.innerHTML = Object.keys(params).map(key => `
+    <div class="control">
+      <div class="control-label">
+        <span>${labels[key]}</span>
+        <span class="value">${Math.round(params[key] * 100)}%</span>
+      </div>
+      <input type="range" min="0" max="100" value="${Math.round(params[key] * 100)}" data-param="${key}">
+    </div>
+  `).join('');
+
+  ctrls.querySelectorAll('input[type="range"]').forEach(inp => {
+    const update = () => {
+      const key = inp.dataset.param;
+      state.params[state.style][key] = inp.value / 100;
+      inp.parentElement.querySelector('.value').textContent = inp.value + '%';
+    };
+    inp.addEventListener('input', update);
+    inp.addEventListener('change', () => { update(); generate(); });
+  });
+
+  document.getElementById('seedCode').textContent = String(state.seed).padStart(6, '0');
+}
+
+// ==================== CANVAS SIZING ====================
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function sizeCanvas() {
+  const area = document.querySelector('.canvas-area');
+  const aw = area.clientWidth - 40;
+  const ah = area.clientHeight - 40;
+  const ratio = RATIOS.find(r => r.id === state.ratio);
+  const aspect = ratio.w / ratio.h;
+
+  let w, h;
+  if (aw / ah > aspect) {
+    h = ah;
+    w = h * aspect;
+  } else {
+    w = aw;
+    h = w / aspect;
+  }
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  ctx.scale(dpr, dpr);
+  canvas._cssW = w;
+  canvas._cssH = h;
+}
+
+// ==================== GENERATORS ====================
+function generate() {
+  const overlay = document.getElementById('generating');
+  overlay.classList.add('active');
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const rng = new PRNG(state.seed);
+      const pal = PALETTES[state.palette];
+      const p = state.params[state.style] || defaultParams[state.style];
+      const w = canvas._cssW;
+      const h = canvas._cssH;
+
+      ctx.save();
+      ctx.clearRect(0, 0, w, h);
+
+      switch (state.style) {
+        case 'flow': drawFlow(ctx, w, h, rng, pal, p); break;
+        case 'circles': drawCircles(ctx, w, h, rng, pal, p); break;
+        case 'geo': drawGeo(ctx, w, h, rng, pal, p); break;
+        case 'topo': drawTopo(ctx, w, h, rng, pal, p); break;
+        case 'waves': drawWaves(ctx, w, h, rng, pal, p); break;
+        case 'constellation': drawConstellation(ctx, w, h, rng, pal, p); break;
+      }
+
+      ctx.restore();
+      overlay.classList.remove('active');
+    });
+  });
+}
+
+// === Noise ===
+function noise2D(x, y, seed) {
+  const n = Math.sin(x * 127.1 + y * 311.7 + seed * 113.5) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function smoothNoise(x, y, seed) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = noise2D(ix, iy, seed);
+  const b = noise2D(ix + 1, iy, seed);
+  const c = noise2D(ix, iy + 1, seed);
+  const d = noise2D(ix + 1, iy + 1, seed);
+  return a + sx * (b - a) + sy * (c - a) + sx * sy * (d - b - c + a);
+}
+
+function fbm(x, y, seed, octaves) {
+  let val = 0, amp = 1, freq = 1, max = 0;
+  for (let i = 0; i < octaves; i++) {
+    val += smoothNoise(x * freq, y * freq, seed + i * 100) * amp;
+    max += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  return val / max;
+}
+
+// === Flow Field ===
+function drawFlow(ctx, w, h, rng, pal, p) {
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const scale = 0.002 + p.turbulence * 0.008;
+  const steps = Math.floor(40 + p.length * 160);
+  const count = Math.floor(300 + p.density * 2700);
+  const lw = 0.5 + p.thickness * 2.5;
+  const seed = rng.next() * 1000;
+
+  for (let i = 0; i < count; i++) {
+    let x = rng.range(-w * 0.1, w * 1.1);
+    let y = rng.range(-h * 0.1, h * 1.1);
+    const color = rng.pick(pal.colors);
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw * rng.range(0.3, 1);
+    ctx.globalAlpha = rng.range(0.15, 0.6);
+
+    for (let s = 0; s < steps; s++) {
+      const angle = fbm(x * scale, y * scale, seed, 4) * Math.PI * 4;
+      x += Math.cos(angle) * 1.5;
+      y += Math.sin(angle) * 1.5;
+      ctx.lineTo(x, y);
+    }
+
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// === Circles ===
+function drawCircles(ctx, w, h, rng, pal, p) {
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const count = Math.floor(15 + p.count * 85);
+  const minSize = Math.min(w, h) * 0.02;
+  const maxSize = Math.min(w, h) * (0.08 + p.sizeVar * 0.25);
+  const ringProb = p.rings;
+
+  const circles = [];
+  for (let i = 0; i < count * 5 && circles.length < count; i++) {
+    const r = rng.range(minSize, maxSize);
+    const x = rng.range(r, w - r);
+    const y = rng.range(r, h - r);
+
+    if (p.overlap < 0.5) {
+      const ok = circles.every(c => {
+        const dist = Math.hypot(c.x - x, c.y - y);
+        return dist > (c.r + r) * (1 - p.overlap * 2);
+      });
+      if (!ok) continue;
+    }
+
+    circles.push({ x, y, r });
+  }
+
+  // Sort by size for layering
+  circles.sort((a, b) => b.r - a.r);
+
+  circles.forEach(c => {
+    const color = rng.pick(pal.colors);
+    const isRing = rng.next() < ringProb;
+
+    if (isRing) {
+      const rings = rng.int(2, 5);
+      for (let r = 0; r < rings; r++) {
+        const radius = c.r * (1 - r / rings);
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, c.r * 0.04);
+        ctx.globalAlpha = 0.3 + rng.next() * 0.5;
+        ctx.stroke();
+      }
+    } else {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.15 + rng.next() * 0.6;
+      ctx.fill();
+
+      // Inner highlight
+      if (rng.next() > 0.5) {
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.r * 0.6, 0, Math.PI * 2);
+        ctx.fillStyle = rng.pick(pal.colors);
+        ctx.globalAlpha = 0.2 + rng.next() * 0.3;
+        ctx.fill();
+      }
+    }
+  });
+  ctx.globalAlpha = 1;
+}
+
+// === Geometric ===
+function drawGeo(ctx, w, h, rng, pal, p) {
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const cx = w / 2, cy = h / 2;
+  const layers = Math.floor(3 + p.layers * 12);
+  const sym = Math.floor(3 + p.symmetry * 9);
+  const baseAngle = p.rotation * Math.PI * 2;
+  const maxR = Math.min(w, h) * 0.42;
+  const complexity = Math.floor(3 + p.complexity * 5);
+
+  for (let l = layers; l >= 0; l--) {
+    const r = maxR * (l / layers) * (0.5 + rng.next() * 0.5);
+    const color = rng.pick(pal.colors);
+    const rot = baseAngle + l * 0.15 + rng.range(-0.2, 0.2);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rot);
+    ctx.globalAlpha = 0.15 + rng.next() * 0.55;
+
+    const sides = sym;
+    const inner = rng.next() > 0.4;
+
+    // Polygon
+    ctx.beginPath();
+    for (let i = 0; i <= sides; i++) {
+      const a = (i / sides) * Math.PI * 2;
+      const rr = inner ? r * (0.7 + 0.3 * Math.sin(a * complexity)) : r;
+      const px = Math.cos(a) * rr;
+      const py = Math.sin(a) * rr;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+
+    if (rng.next() > 0.3) {
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = rng.range(0.5, 2.5);
+    ctx.globalAlpha = Math.min(1, ctx.globalAlpha + 0.2);
+    ctx.stroke();
+
+    // Inner lines
+    if (rng.next() > 0.5) {
+      for (let i = 0; i < sides; i++) {
+        const a = (i / sides) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 0.5;
+        ctx.globalAlpha = 0.15;
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// === Topography ===
+function drawTopo(ctx, w, h, rng, pal, p) {
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const seed = rng.next() * 1000;
+  const levels = Math.floor(15 + p.detail * 35);
+  const spacing = 3 + (1 - p.spacing) * 12;
+  const octaves = Math.floor(2 + p.smoothness * 4);
+  const scale = 0.003 + p.elevation * 0.005;
+
+  // Marching squares for contour lines
+  const res = 3;
+  const cols = Math.ceil(w / res) + 1;
+  const rows = Math.ceil(h / res) + 1;
+
+  // Pre-compute noise grid
+  const grid = new Float32Array(cols * rows);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      grid[y * cols + x] = fbm(x * res * scale, y * res * scale, seed, octaves);
+    }
+  }
+
+  for (let l = 0; l < levels; l++) {
+    const threshold = l / levels;
+    const color = pal.colors[l % pal.colors.length];
+    const alpha = 0.2 + (l / levels) * 0.5;
+
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = l % 5 === 0 ? 1.5 : 0.7;
+    ctx.globalAlpha = alpha;
+
+    for (let y = 0; y < rows - 1; y += 1) {
+      for (let x = 0; x < cols - 1; x += 1) {
+        const a = grid[y * cols + x];
+        const b = grid[y * cols + x + 1];
+        const c = grid[(y + 1) * cols + x + 1];
+        const d = grid[(y + 1) * cols + x];
+
+        const sa = a >= threshold ? 1 : 0;
+        const sb = b >= threshold ? 1 : 0;
+        const sc = c >= threshold ? 1 : 0;
+        const sd = d >= threshold ? 1 : 0;
+        const cell = sa * 8 + sb * 4 + sc * 2 + sd;
+
+        if (cell === 0 || cell === 15) continue;
+
+        const px = x * res, py = y * res;
+        const lerp = (v1, v2) => (threshold - v1) / (v2 - v1);
+
+        const top = px + lerp(a, b) * res;
+        const right = py + lerp(b, c) * res;
+        const bottom = px + lerp(d, c) * res;
+        const left = py + lerp(a, d) * res;
+
+        const lines = [];
+        switch (cell) {
+          case 1: case 14: lines.push(px, left, bottom, py + res); break;
+          case 2: case 13: lines.push(bottom, py + res, px + res, right); break;
+          case 3: case 12: lines.push(px, left, px + res, right); break;
+          case 4: case 11: lines.push(px + res, right, top, py); break;
+          case 5: lines.push(px, left, top, py); lines.push(bottom, py + res, px + res, right); break;
+          case 6: case 9: lines.push(bottom, py + res, top, py); break;
+          case 7: case 8: lines.push(px, left, top, py); break;
+          case 10: lines.push(px, left, bottom, py + res); lines.push(top, py, px + res, right); break;
+        }
+
+        for (let i = 0; i < lines.length; i += 4) {
+          ctx.moveTo(lines[i], lines[i + 1]);
+          ctx.lineTo(lines[i + 2], lines[i + 3]);
+        }
+      }
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// === Waves ===
+function drawWaves(ctx, w, h, rng, pal, p) {
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const layerCount = Math.floor(8 + p.layers * 32);
+  const freq = 0.5 + p.frequency * 4;
+  const amp = 5 + p.amplitude * 40;
+  const dist = p.distortion;
+  const seed = rng.next() * 1000;
+
+  for (let l = 0; l < layerCount; l++) {
+    const yBase = (l / layerCount) * h * 1.2 - h * 0.1;
+    const color = pal.colors[l % pal.colors.length];
+    const phase = rng.range(0, Math.PI * 2);
+
+    ctx.beginPath();
+    ctx.globalAlpha = 0.15 + rng.next() * 0.4;
+
+    for (let x = -10; x <= w + 10; x += 2) {
+      const nx = x / w;
+      const noiseVal = dist > 0 ? fbm(nx * 3 + seed, l * 0.5, seed, 3) * dist * 50 : 0;
+      const y = yBase + Math.sin(nx * freq * Math.PI * 2 + phase) * amp + noiseVal;
+
+      if (x === -10) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = rng.range(0.5, 2.5);
+    ctx.stroke();
+
+    // Optional fill to bottom
+    if (rng.next() > 0.6) {
+      ctx.lineTo(w + 10, h + 10);
+      ctx.lineTo(-10, h + 10);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.03 + rng.next() * 0.06;
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// === Constellation ===
+function drawConstellation(ctx, w, h, rng, pal, p) {
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const starCount = Math.floor(30 + p.stars * 270);
+  const connDist = (0.05 + p.connections * 0.15) * Math.min(w, h);
+  const clusterCount = Math.floor(2 + p.clusters * 6);
+  const glowAmount = p.glow;
+
+  // Generate cluster centers
+  const clusters = [];
+  for (let i = 0; i < clusterCount; i++) {
+    clusters.push({ x: rng.range(w * 0.15, w * 0.85), y: rng.range(h * 0.15, h * 0.85) });
+  }
+
+  // Generate stars near clusters
+  const stars = [];
+  for (let i = 0; i < starCount; i++) {
+    const cl = rng.pick(clusters);
+    const spread = Math.min(w, h) * (0.15 + rng.next() * 0.25);
+    const x = cl.x + rng.gaussian() * spread;
+    const y = cl.y + rng.gaussian() * spread;
+    if (x < -20 || x > w + 20 || y < -20 || y > h + 20) continue;
+    const size = rng.range(1, 4);
+    const color = rng.pick(pal.colors);
+    stars.push({ x, y, size, color });
+  }
+
+  // Draw connections
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i + 1; j < stars.length; j++) {
+      const d = Math.hypot(stars[i].x - stars[j].x, stars[i].y - stars[j].y);
+      if (d < connDist) {
+        ctx.beginPath();
+        ctx.moveTo(stars[i].x, stars[i].y);
+        ctx.lineTo(stars[j].x, stars[j].y);
+        ctx.strokeStyle = stars[i].color;
+        ctx.globalAlpha = (1 - d / connDist) * 0.25;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Draw stars with glow
+  stars.forEach(s => {
+    if (glowAmount > 0.2) {
+      const gradient = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.size * (4 + glowAmount * 12));
+      gradient.addColorStop(0, s.color);
+      gradient.addColorStop(1, 'transparent');
+      ctx.fillStyle = gradient;
+      ctx.globalAlpha = glowAmount * 0.3;
+      ctx.fillRect(s.x - s.size * 15, s.y - s.size * 15, s.size * 30, s.size * 30);
+    }
+
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fillStyle = s.color;
+    ctx.globalAlpha = 0.7 + rng.next() * 0.3;
+    ctx.fill();
+  });
+
+  ctx.globalAlpha = 1;
+}
+
+// ==================== ACTIONS ====================
+function randomize() {
+  state.seed = Math.floor(Math.random() * 999999);
+  // Slightly randomize params
+  const p = state.params[state.style];
+  Object.keys(p).forEach(k => {
+    p[k] = Math.max(0, Math.min(1, p[k] + (Math.random() - 0.5) * 0.3));
+  });
+  buildUI();
+  generate();
+  showToast('🎲 New seed: ' + String(state.seed).padStart(6, '0'));
+}
+
+function exportPoster() {
+  showToast('💾 Generating HD poster...');
+
+  // Render at high res
+  const ratio = RATIOS.find(r => r.id === state.ratio);
+  const exportW = 3000;
+  const exportH = Math.round(exportW / (ratio.w / ratio.h));
+
+  const expCanvas = document.createElement('canvas');
+  expCanvas.width = exportW;
+  expCanvas.height = exportH;
+  const expCtx = expCanvas.getContext('2d');
+
+  // Scale context
+  expCanvas._cssW = exportW;
+  expCanvas._cssH = exportH;
+
+  const rng = new PRNG(state.seed);
+  const pal = PALETTES[state.palette];
+  const p = state.params[state.style] || defaultParams[state.style];
+
+  switch (state.style) {
+    case 'flow': drawFlow(expCtx, exportW, exportH, rng, pal, p); break;
+    case 'circles': drawCircles(expCtx, exportW, exportH, rng, pal, p); break;
+    case 'geo': drawGeo(expCtx, exportW, exportH, rng, pal, p); break;
+    case 'topo': drawTopo(expCtx, exportW, exportH, rng, pal, p); break;
+    case 'waves': drawWaves(expCtx, exportW, exportH, rng, pal, p); break;
+    case 'constellation': drawConstellation(expCtx, exportW, exportH, rng, pal, p); break;
+  }
+
+  expCanvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `poster-${state.style}-${state.seed}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✅ Poster saved!');
+  }, 'image/png');
+}
+
+function copySeed() {
+  navigator.clipboard.writeText(String(state.seed)).then(() => {
+    showToast('📋 Seed copied!');
+  });
+}
+
+function pasteSeed() {
+  const val = prompt('Enter seed:');
+  if (val && !isNaN(val)) {
+    state.seed = parseInt(val) % 1000000;
+    buildUI();
+    generate();
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ==================== INIT ====================
+window.addEventListener('resize', () => { sizeCanvas(); generate(); });
+
+// Init params
+Object.keys(defaultParams).forEach(k => {
+  state.params[k] = { ...defaultParams[k] };
+});
+
+buildUI();
+sizeCanvas();
+generate();
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'r') { e.preventDefault(); randomize(); }
+  if (e.key === 's' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); exportPoster(); }
+});
+</script>
+</body>
+</html>
