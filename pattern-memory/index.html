@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Pattern Memory</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{--bg:#f2f2f7;--card:rgba(255,255,255,.72);--text:#1c1c1e;--sub:#8e8e93;--green:#34c759;--red:#ff3b30}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;overflow:hidden}
+.card{background:var(--card);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border-radius:24px;padding:28px 24px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.08);text-align:center}
+h1{font-size:1.6rem;font-weight:700;margin-bottom:4px}
+.sub{color:var(--sub);font-size:.85rem;margin-bottom:20px}
+.scores{display:flex;justify-content:center;gap:32px;margin-bottom:20px}
+.scores div{text-align:center}
+.scores .label{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--sub)}
+.scores .val{font-size:1.8rem;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:24px}
+.pad{aspect-ratio:1;border-radius:20px;border:none;cursor:pointer;transition:transform .15s cubic-bezier(.4,.0,.2,1),filter .15s,box-shadow .15s;position:relative;overflow:hidden}
+.pad:active{transform:scale(.93)}
+.pad.lit{filter:brightness(1.45);box-shadow:0 0 28px rgba(255,255,255,.5);transform:scale(1.04)}
+.pad.wrong{animation:shake .4s ease}
+.p0{background:#ff6b6b}.p1{background:#54a0ff}.p2{background:#5f27cd}.p3{background:#feca57}
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+.btn{display:inline-block;padding:14px 40px;border-radius:16px;border:none;font-size:1rem;font-weight:600;cursor:pointer;background:var(--text);color:#fff;transition:transform .15s,opacity .15s}
+.btn:active{transform:scale(.95);opacity:.85}
+.msg{font-size:1rem;font-weight:600;min-height:28px;margin-bottom:12px;transition:opacity .2s}
+.msg.ok{color:var(--green)}.msg.fail{color:var(--red)}
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);z-index:10;opacity:0;pointer-events:none;transition:opacity .3s}
+.overlay.show{opacity:1;pointer-events:auto}
+.overlay .card{animation:pop .35s cubic-bezier(.175,.885,.32,1.275)}
+@keyframes pop{0%{transform:scale(.85);opacity:0}100%{transform:scale(1);opacity:1}}
+.emoji{font-size:3rem;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="card" id="game">
+  <h1>🧠 Pattern Memory</h1>
+  <p class="sub">Mémorise la séquence !</p>
+  <div class="scores">
+    <div><div class="label">Niveau</div><div class="val" id="level">0</div></div>
+    <div><div class="label">Record</div><div class="val" id="best">0</div></div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="msg" id="msg">&nbsp;</div>
+  <button class="btn" id="startBtn">Jouer</button>
+</div>
+<div class="overlay" id="overWin">
+  <div class="card"><div class="emoji">🎉</div><h2>Bravo !</h2><p class="sub" id="winText"></p><button class="btn" onclick="nextLevel()">Niveau suivant</button></div>
+</div>
+<div class="overlay" id="overLose">
+  <div class="card"><div class="emoji">💥</div><h2>Raté !</h2><p class="sub" id="loseText"></p><button class="btn" onclick="restart()">Rejouer</button></div>
+</div>
+<script>
+const COLORS=4,FREQS=[261.6,329.6,392,523.3];
+let ctx,seq=[],input=[],level=0,best=+localStorage.getItem('pm_best')||0,playing=false,showing=false;
+const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
+const grid=$('#grid'),msgEl=$('#msg'),levelEl=$('#level'),bestEl=$('#best');
+bestEl.textContent=best;
+
+// Build pads
+for(let i=0;i<COLORS;i++){const b=document.createElement('button');b.className=`pad p${i}`;b.dataset.i=i;b.addEventListener('pointerdown',e=>{e.preventDefault();onPad(i)});grid.appendChild(b)}
+const pads=$$('.pad');
+
+// Audio
+function initAudio(){if(!ctx)ctx=new(window.AudioContext||window.webkitAudioContext)()}
+function beep(i,dur=.18){
+  initAudio();
+  const o=ctx.createOscillator(),g=ctx.createGain();
+  o.type='sine';o.frequency.value=FREQS[i];
+  g.gain.setValueAtTime(.35,ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+dur);
+  o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+dur);
+}
+function buzzSound(){
+  initAudio();
+  const o=ctx.createOscillator(),g=ctx.createGain();
+  o.type='square';o.frequency.value=90;
+  g.gain.setValueAtTime(.3,ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.35);
+  o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+.35);
+}
+
+function flash(i,dur=320){
+  pads[i].classList.add('lit');beep(i,dur/1000);
+  return new Promise(r=>setTimeout(()=>{pads[i].classList.remove('lit');r()},dur));
+}
+
+async function showSeq(){
+  showing=true;msgEl.innerHTML='&nbsp;';
+  await sleep(400);
+  for(let i=0;i<seq.length;i++){await flash(seq[i],Math.max(200,380-level*15));await sleep(Math.max(120,250-level*10))}
+  showing=false;playing=true;input=[];msgEl.textContent='À toi !';
+}
+
+function onPad(i){
+  if(!playing||showing)return;
+  flash(i,180);input.push(i);
+  const idx=input.length-1;
+  if(seq[idx]!==i){fail();return}
+  if(input.length===seq.length)win();
+}
+
+function win(){
+  playing=false;
+  if(level>best){best=level;localStorage.setItem('pm_best',best);bestEl.textContent=best}
+  $('#winText').textContent=`Niveau ${level} complété !`;
+  setTimeout(()=>$('#overWin').classList.add('show'),300);
+}
+function fail(){
+  playing=false;buzzSound();
+  pads.forEach(p=>p.classList.add('wrong'));
+  setTimeout(()=>pads.forEach(p=>p.classList.remove('wrong')),400);
+  if(level>best){best=level-1>best?level-1:best;localStorage.setItem('pm_best',best);bestEl.textContent=best}
+  $('#loseText').textContent=`Tu as atteint le niveau ${level}`;
+  setTimeout(()=>$('#overLose').classList.add('show'),500);
+}
+
+function nextLevel(){
+  $('#overWin').classList.remove('show');
+  level++;levelEl.textContent=level;
+  seq.push(Math.floor(Math.random()*COLORS));
+  setTimeout(()=>showSeq(),400);
+}
+function restart(){
+  $('#overLose').classList.remove('show');
+  level=0;seq=[];levelEl.textContent=0;
+  setTimeout(()=>startGame(),300);
+}
+function startGame(){
+  initAudio();level=1;seq=[Math.floor(Math.random()*COLORS)];
+  levelEl.textContent=1;$('#startBtn').style.display='none';
+  showSeq();
+}
+
+$('#startBtn').onclick=startGame;
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+</script>
+</body>
+</html>

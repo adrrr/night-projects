@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Daily Focus Timer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f0f1a;--card:rgba(255,255,255,.08);--text:#f0f0f5;--sub:rgba(255,255,255,.5);--accent:hsl(var(--hue,220),70%,65%);--glow:hsla(var(--hue,220),80%,60%,.3)}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;align-items:center;overflow-x:hidden;padding:env(safe-area-inset-top) 16px 24px;transition:background 3s ease}
+.particles{position:fixed;inset:0;pointer-events:none;z-index:0}
+.particle{position:absolute;border-radius:50%;opacity:0;animation:float linear infinite}
+@keyframes float{0%{transform:translateY(100vh) scale(0);opacity:0}10%{opacity:.6}90%{opacity:.4}100%{transform:translateY(-10vh) scale(1);opacity:0}}
+.container{position:relative;z-index:1;width:100%;max-width:400px;display:flex;flex-direction:column;align-items:center;gap:20px;padding-top:max(20px,env(safe-area-inset-top))}
+h1{font-size:1.4rem;font-weight:700;letter-spacing:-.5px;opacity:.9}
+.timer-wrap{position:relative;width:260px;height:260px;margin:8px 0}
+.timer-svg{width:100%;height:100%;transform:rotate(-90deg)}
+.track{fill:none;stroke:rgba(255,255,255,.06);stroke-width:8}
+.progress{fill:none;stroke:var(--accent);stroke-width:8;stroke-linecap:round;transition:stroke 3s ease;filter:drop-shadow(0 0 12px var(--glow))}
+.time-display{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.time{font-size:3.5rem;font-weight:200;font-variant-numeric:tabular-nums;letter-spacing:2px}
+.label{font-size:.8rem;color:var(--sub);margin-top:4px;text-transform:uppercase;letter-spacing:2px}
+.durations{display:flex;gap:10px}
+.dur-btn{background:var(--card);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.1);color:var(--text);padding:10px 20px;border-radius:16px;font-size:.95rem;font-weight:500;cursor:pointer;transition:all .3s ease;-webkit-tap-highlight-color:transparent}
+.dur-btn.active{background:var(--accent);border-color:transparent;color:#fff;box-shadow:0 4px 20px var(--glow)}
+.controls{display:flex;gap:14px;margin:8px 0}
+.ctrl-btn{width:72px;height:72px;border-radius:50%;border:none;font-size:1.6rem;cursor:pointer;transition:all .25s cubic-bezier(.4,.0,.2,1);-webkit-tap-highlight-color:transparent;display:flex;align-items:center;justify-content:center}
+.ctrl-btn:active{transform:scale(.9)}
+.btn-start{background:var(--accent);color:#fff;box-shadow:0 6px 24px var(--glow)}
+.btn-pause{background:rgba(255,200,50,.85);color:#1a1a2e}
+.btn-reset{background:var(--card);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--sub);border:1px solid rgba(255,255,255,.1)}
+.stats-card{width:100%;background:var(--card);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:20px 24px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;text-align:center}
+.stat-val{font-size:1.8rem;font-weight:600;color:var(--accent);transition:color 3s ease}
+.stat-label{font-size:.7rem;color:var(--sub);text-transform:uppercase;letter-spacing:1.5px;margin-top:2px}
+.streak-badge{display:inline-flex;align-items:center;gap:6px;background:var(--card);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.08);border-radius:24px;padding:8px 18px;font-size:.85rem;color:var(--sub)}
+.streak-badge .fire{font-size:1.1rem}
+.streak-num{color:var(--accent);font-weight:600;transition:color 3s ease}
+</style>
+</head>
+<body>
+<div class="particles" id="particles"></div>
+<div class="container">
+  <h1>Daily Focus</h1>
+  <div class="streak-badge"><span class="fire">🔥</span><span class="streak-num" id="streak">0</span><span>streak</span></div>
+  <div class="timer-wrap">
+    <svg class="timer-svg" viewBox="0 0 120 120">
+      <circle class="track" cx="60" cy="60" r="54"/>
+      <circle class="progress" id="prog" cx="60" cy="60" r="54" stroke-dasharray="339.292" stroke-dashoffset="339.292"/>
+    </svg>
+    <div class="time-display">
+      <div class="time" id="time">25:00</div>
+      <div class="label" id="state">ready</div>
+    </div>
+  </div>
+  <div class="durations">
+    <button class="dur-btn active" data-min="25">25m</button>
+    <button class="dur-btn" data-min="15">15m</button>
+    <button class="dur-btn" data-min="5">5m</button>
+  </div>
+  <div class="controls">
+    <button class="ctrl-btn btn-reset" id="resetBtn" onclick="resetTimer()">↺</button>
+    <button class="ctrl-btn btn-start" id="mainBtn" onclick="toggleTimer()">▶</button>
+  </div>
+  <div class="stats-card">
+    <div><div class="stat-val" id="sDone">0</div><div class="stat-label">Sessions</div></div>
+    <div><div class="stat-val" id="sMin">0</div><div class="stat-label">Minutes</div></div>
+    <div><div class="stat-val" id="sBest">0</div><div class="stat-label">Best Streak</div></div>
+  </div>
+</div>
+<script>
+const CIRC=2*Math.PI*54,prog=document.getElementById('prog'),timeEl=document.getElementById('time'),stateEl=document.getElementById('state'),mainBtn=document.getElementById('mainBtn');
+let duration=25*60,remaining=duration,running=false,paused=false,interval=null,hue=220,hueDir=1;
+const today=()=>new Date().toISOString().slice(0,10);
+function loadStats(){const d=JSON.parse(localStorage.getItem('dft_stats')||'{}');if(d.date!==today()){d.date=today();d.done=0;d.mins=0;saveStats(d)}return d}
+function saveStats(d){localStorage.setItem('dft_stats',JSON.stringify(d))}
+function loadStreak(){const s=JSON.parse(localStorage.getItem('dft_streak')||'{"count":0,"last":"","best":0}');return s}
+function saveStreak(s){localStorage.setItem('dft_streak',JSON.stringify(s))}
+function updateUI(){const d=loadStats(),s=loadStreak();document.getElementById('sDone').textContent=d.done||0;document.getElementById('sMin').textContent=d.mins||0;document.getElementById('sBest').textContent=s.best||0;document.getElementById('streak').textContent=s.count||0}
+function setTime(sec){const m=Math.floor(sec/60),s=sec%60;timeEl.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`}
+function setProgress(frac){prog.setAttribute('stroke-dashoffset',CIRC*(1-frac))}
+function selectDuration(min){if(running)return;duration=min*60;remaining=duration;setTime(remaining);setProgress(0);document.querySelectorAll('.dur-btn').forEach(b=>b.classList.toggle('active',+b.dataset.min===min))}
+document.querySelectorAll('.dur-btn').forEach(b=>b.addEventListener('click',()=>selectDuration(+b.dataset.min)));
+function toggleTimer(){if(!running&&!paused){running=true;stateEl.textContent='focusing';mainBtn.textContent='⏸';mainBtn.className='ctrl-btn btn-pause';tick();interval=setInterval(tick,1000)}else if(running&&!paused){paused=true;running=false;clearInterval(interval);stateEl.textContent='paused';mainBtn.textContent='▶';mainBtn.className='ctrl-btn btn-start'}else if(paused){paused=false;running=true;stateEl.textContent='focusing';mainBtn.textContent='⏸';mainBtn.className='ctrl-btn btn-pause';interval=setInterval(tick,1000)}}
+function tick(){remaining--;if(remaining<0){complete();return}setTime(remaining);setProgress(1-remaining/duration);hue+=hueDir*.3;if(hue>280||hue<180)hueDir*=-1;document.documentElement.style.setProperty('--hue',hue)}
+function complete(){clearInterval(interval);running=false;paused=false;remaining=0;setTime(0);setProgress(1);stateEl.textContent='done!';mainBtn.textContent='▶';mainBtn.className='ctrl-btn btn-start';playSound();const d=loadStats();d.done=(d.done||0)+1;d.mins=(d.mins||0)+Math.round(duration/60);saveStats(d);const s=loadStreak();const yd=new Date();yd.setDate(yd.getDate()-1);if(s.last===today()){s.count=s.count}else if(s.last===yd.toISOString().slice(0,10)){s.count++}else{s.count=1}s.last=today();if(s.count>s.best)s.best=s.count;saveStreak(s);updateUI();setTimeout(()=>{remaining=duration;setTime(remaining);setProgress(0);stateEl.textContent='ready'},3000)}
+function resetTimer(){clearInterval(interval);running=false;paused=false;remaining=duration;setTime(remaining);setProgress(0);stateEl.textContent='ready';mainBtn.textContent='▶';mainBtn.className='ctrl-btn btn-start'}
+function playSound(){try{const ctx=new(window.AudioContext||window.webkitAudioContext)();[440,554,659].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(.15,ctx.currentTime+i*.15);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+i*.15+.6);o.connect(g);g.connect(ctx.destination);o.start(ctx.currentTime+i*.15);o.stop(ctx.currentTime+i*.15+.6)})}catch(e){}}
+// Particles
+(function(){const c=document.getElementById('particles');for(let i=0;i<20;i++){const p=document.createElement('div');p.className='particle';const s=Math.random()*4+2;p.style.cssText=`width:${s}px;height:${s}px;left:${Math.random()*100}%;background:hsla(${200+Math.random()*80},70%,70%,.5);animation-duration:${8+Math.random()*12}s;animation-delay:${Math.random()*10}s`;c.appendChild(p)}})();
+updateUI();setTime(remaining);
+</script>
+</body>
+</html>
