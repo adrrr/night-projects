@@ -48,6 +48,11 @@ Tracker d'habitudes minimaliste style iOS — check satisfaisant avec confetti, 
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/habit-tracker/)
 
+### 🪐 [Gravity Sandbox](./gravity-sandbox/)
+Bac à sable gravitationnel — touche pour créer des étoiles, maintiens pour une masse plus grosse, swipe pour donner une vitesse. Les corps s'attirent, orbitent et fusionnent. Preset "Big Bang" pour un système solaire instant. Trails hypnotiques.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/gravity-sandbox/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
