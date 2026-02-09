@@ -58,6 +58,11 @@ Simulation de vie artificielle — 600 particules de 5 espèces interagissent se
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/particle-life/)
 
+### 🎹 [Synth Pad](./synth-pad/)
+Instrument musical tactile — grille 4×4 de pads colorés générés via Web Audio API (oscillateurs saw+triangle). Multi-touch, 4 gammes (pentatonique, mineure, majeure, chromatique), effets delay/reverb/filter/distortion, visualiseur waveform live, particules au toucher. Aesthetic néon sur dark mode.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/synth-pad/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
