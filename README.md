@@ -53,6 +53,11 @@ Bac à sable gravitationnel — touche pour créer des étoiles, maintiens pour 
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/gravity-sandbox/)
 
+### 🧫 [Particle Life](./particle-life/)
+Simulation de vie artificielle — 600 particules de 5 espèces interagissent selon une matrice d'attraction/répulsion. Comportements émergents fascinants : essaims, orbites, chaînes, cellules. Touch pour perturber, matrice éditable, presets et trails. Hypnotique.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/particle-life/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
