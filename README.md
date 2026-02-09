@@ -63,6 +63,11 @@ Instrument musical tactile — grille 4×4 de pads colorés générés via Web A
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/synth-pad/)
 
+### 🌊 [Fluid Sim](./fluid-sim/)
+Simulation de fluides interactive — touche/glisse pour injecter de l'encre colorée dans l'eau. Navier-Stokes simplifié en WebGL, vorticity confinement, mélange de couleurs satisfaisant. 3 modes (rainbow, neon, pastel). Hypnotique et tactile.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/fluid-sim/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
