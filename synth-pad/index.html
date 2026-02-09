@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Synth Pad</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:none;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#fff}
+#app{display:flex;flex-direction:column;height:100%;max-width:500px;margin:0 auto;padding:12px 12px 16px}
+header{text-align:center;padding:4px 0 8px}
+header h1{font-size:1.1rem;font-weight:700;background:linear-gradient(135deg,#ff6fd8,#3813c2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:2px;text-transform:uppercase}
+#visualizer{width:100%;height:48px;border-radius:12px;background:#12121f;margin-bottom:10px;flex-shrink:0}
+#controls{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;justify-content:center}
+.ctrl-btn{padding:6px 14px;border:none;border-radius:20px;background:#1a1a2e;color:#888;font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s}
+.ctrl-btn.active{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;box-shadow:0 0 16px rgba(102,126,234,.4)}
+.ctrl-btn:active{transform:scale(.95)}
+#octave-controls{display:flex;gap:6px;align-items:center}
+#octave-controls span{font-size:.75rem;color:#667eea;font-weight:700;min-width:24px;text-align:center}
+#grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex:1;min-height:0}
+.pad{position:relative;border-radius:16px;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:rgba(255,255,255,.7);text-shadow:0 1px 4px rgba(0,0,0,.5);transition:transform .1s}
+.pad canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.pad.active{transform:scale(.95)}
+.pad .note-label{position:relative;z-index:2;pointer-events:none}
+#fx-bar{display:flex;gap:6px;margin-top:10px;justify-content:center}
+.fx-btn{padding:5px 12px;border:none;border-radius:16px;background:#1a1a2e;color:#666;font-size:.7rem;font-weight:600;cursor:pointer;transition:all .2s}
+.fx-btn.active{background:#2a1a3e;color:#c084fc;box-shadow:0 0 12px rgba(192,132,252,.3)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>🎹 Synth Pad</h1></header>
+  <canvas id="visualizer"></canvas>
+  <div id="controls">
+    <button class="ctrl-btn active" data-scale="pentatonic">Penta</button>
+    <button class="ctrl-btn" data-scale="minor">Minor</button>
+    <button class="ctrl-btn" data-scale="major">Major</button>
+    <button class="ctrl-btn" data-scale="chromatic">Chromatic</button>
+    <div id="octave-controls">
+      <button class="ctrl-btn" id="oct-down">−</button>
+      <span id="oct-display">4</span>
+      <button class="ctrl-btn" id="oct-up">+</button>
+    </div>
+  </div>
+  <div id="grid"></div>
+  <div id="fx-bar">
+    <button class="fx-btn active" data-fx="delay">Delay</button>
+    <button class="fx-btn" data-fx="reverb">Reverb</button>
+    <button class="fx-btn active" data-fx="filter">Filter</button>
+    <button class="fx-btn" data-fx="distort">Distort</button>
+  </div>
+</div>
+<script>
+const SCALES={
+  pentatonic:[0,2,4,7,9,12,14,16,19,21,24,26,28,31,33,35],
+  minor:[0,2,3,5,7,8,10,12,14,15,17,19,20,22,24,26],
+  major:[0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26],
+  chromatic:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+};
+const PAD_COLORS=[
+  ['#ff6fd8','#c471ed'],['#fc5c7d','#6a82fb'],['#f093fb','#f5576c'],['#4facfe','#00f2fe'],
+  ['#43e97b','#38f9d7'],['#fa709a','#fee140'],['#a18cd1','#fbc2eb'],['#fccb90','#d57eeb'],
+  ['#667eea','#764ba2'],['#ff9a9e','#fecfef'],['#a1c4fd','#c2e9fb'],['#d4fc79','#96e6a1'],
+  ['#84fab0','#8fd3f4'],['#cfd9df','#e2ebf0'],['#ffecd2','#fcb69f'],['#ff8177','#b12a5b']
+];
+const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+let ctx,masterGain,analyser,delayNode,delayGain,filterNode,convolverNode,convolverGain,distNode;
+let currentScale='pentatonic';
+let octave=4;
+let activeTouches={};
+let fxState={delay:true,reverb:false,filter:true,distort:false};
+let particles=[];
+
+function initAudio(){
+  ctx=new(window.AudioContext||window.webkitAudioContext)();
+  masterGain=ctx.createGain();masterGain.gain.value=0.4;
+  analyser=ctx.createAnalyser();analyser.fftSize=256;
+  // Delay
+  delayNode=ctx.createDelay(1);delayNode.delayTime.value=0.3;
+  delayGain=ctx.createGain();delayGain.gain.value=0.3;
+  delayNode.connect(delayGain);delayGain.connect(delayNode);
+  // Filter
+  filterNode=ctx.createBiquadFilter();filterNode.type='lowpass';filterNode.frequency.value=4000;filterNode.Q.value=5;
+  // Distortion
+  distNode=ctx.createWaveShaper();
+  const curve=new Float32Array(256);
+  for(let i=0;i<256;i++){const x=i*2/256-1;curve[i]=Math.tanh(x*3);}
+  distNode.curve=curve;
+  // Reverb (simple)
+  convolverNode=ctx.createConvolver();convolverGain=ctx.createGain();convolverGain.gain.value=0.3;
+  const len=ctx.sampleRate*1.5,buf=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let c=0;c<2;c++){const d=buf.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.5);}
+  convolverNode.buffer=buf;
+  rebuildChain();
+}
+
+function rebuildChain(){
+  masterGain.disconnect();delayNode.disconnect();delayGain.disconnect();filterNode.disconnect();
+  distNode.disconnect();convolverNode.disconnect();convolverGain.disconnect();
+  delayGain.connect(delayNode);
+  let chain=masterGain;
+  if(fxState.filter){chain.connect(filterNode);chain=filterNode;}
+  if(fxState.distort){chain.connect(distNode);chain=distNode;}
+  if(fxState.delay){chain.connect(delayNode);delayNode.connect(delayGain);delayGain.connect(analyser);}
+  if(fxState.reverb){chain.connect(convolverNode);convolverNode.connect(convolverGain);convolverGain.connect(analyser);}
+  chain.connect(analyser);
+  analyser.connect(ctx.destination);
+}
+
+function noteFreq(semitone){return 440*Math.pow(2,(semitone-69)/12);}
+function getMidi(padIndex){return (octave+1)*12+SCALES[currentScale][padIndex];}
+
+function playNote(padIndex,x,y){
+  if(!ctx)initAudio();
+  if(ctx.state==='suspended')ctx.resume();
+  const midi=getMidi(padIndex);
+  const freq=noteFreq(midi);
+  const osc1=ctx.createOscillator();
+  const osc2=ctx.createOscillator();
+  const gain=ctx.createGain();
+  osc1.type='sawtooth';osc1.frequency.value=freq;
+  osc2.type='triangle';osc2.frequency.value=freq*1.002;
+  gain.gain.value=0;
+  gain.gain.linearRampToValueAtTime(0.25,ctx.currentTime+0.05);
+  osc1.connect(gain);osc2.connect(gain);gain.connect(masterGain);
+  osc1.start();osc2.start();
+  if(fxState.filter)filterNode.frequency.value=200+x*6000;
+  return{osc1,osc2,gain,freq};
+}
+
+function stopNote(voice){
+  if(!voice)return;
+  const t=ctx.currentTime;
+  voice.gain.gain.cancelScheduledValues(t);
+  voice.gain.gain.setValueAtTime(voice.gain.gain.value,t);
+  voice.gain.gain.linearRampToValueAtTime(0,t+0.15);
+  setTimeout(()=>{try{voice.osc1.stop();voice.osc2.stop();}catch(e){}},200);
+}
+
+// Grid
+const grid=document.getElementById('grid');
+const pads=[];
+for(let i=0;i<16;i++){
+  const pad=document.createElement('div');
+  pad.className='pad';
+  pad.dataset.index=i;
+  const [c1,c2]=PAD_COLORS[i];
+  pad.style.background=`linear-gradient(135deg,${c1},${c2})`;
+  const cv=document.createElement('canvas');pad.appendChild(cv);
+  const label=document.createElement('span');label.className='note-label';pad.appendChild(label);
+  grid.appendChild(pad);
+  pads.push({el:pad,canvas:cv,particles:[]});
+}
+
+function updateLabels(){
+  pads.forEach((p,i)=>{
+    const midi=getMidi(i);
+    const name=NOTE_NAMES[midi%12]+(Math.floor(midi/12)-1);
+    p.el.querySelector('.note-label').textContent=name;
+  });
+}
+updateLabels();
+
+function getPadFromPoint(x,y){
+  const el=document.elementFromPoint(x,y);
+  if(!el)return null;
+  const pad=el.closest('.pad');
+  if(!pad)return null;
+  return parseInt(pad.dataset.index);
+}
+
+function getRelPos(padIndex,cx,cy){
+  const rect=pads[padIndex].el.getBoundingClientRect();
+  return{x:Math.max(0,Math.min(1,(cx-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(cy-rect.top)/rect.height))};
+}
+
+function spawnParticles(padIndex,cx,cy){
+  const rect=pads[padIndex].el.getBoundingClientRect();
+  const lx=cx-rect.left,ly=cy-rect.top;
+  const [c1]=PAD_COLORS[padIndex];
+  for(let i=0;i<8;i++){
+    pads[padIndex].particles.push({
+      x:lx,y:ly,
+      vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,
+      life:1,color:c1,r:Math.random()*3+2
+    });
+  }
+}
+
+function handleStart(id,padIndex,cx,cy){
+  if(padIndex===null||activeTouches[id])return;
+  const pos=getRelPos(padIndex,cx,cy);
+  const voice=playNote(padIndex,pos.x,pos.y);
+  activeTouches[id]={padIndex,voice};
+  pads[padIndex].el.classList.add('active');
+  spawnParticles(padIndex,cx,cy);
+}
+
+function handleMove(id,cx,cy){
+  const t=activeTouches[id];
+  if(!t)return;
+  const pos=getRelPos(t.padIndex,cx,cy);
+  if(fxState.filter)filterNode.frequency.value=200+pos.x*6000;
+  t.voice.gain.gain.value=0.1+pos.y*0.25;
+  spawnParticles(t.padIndex,cx,cy);
+}
+
+function handleEnd(id){
+  const t=activeTouches[id];
+  if(!t)return;
+  stopNote(t.voice);
+  pads[t.padIndex].el.classList.remove('active');
+  delete activeTouches[id];
+}
+
+grid.addEventListener('touchstart',e=>{e.preventDefault();for(const t of e.changedTouches){const pi=getPadFromPoint(t.clientX,t.clientY);handleStart(t.identifier,pi,t.clientX,t.clientY);}},{passive:false});
+grid.addEventListener('touchmove',e=>{e.preventDefault();for(const t of e.changedTouches){handleMove(t.identifier,t.clientX,t.clientY);}},{passive:false});
+grid.addEventListener('touchend',e=>{for(const t of e.changedTouches)handleEnd(t.identifier);});
+grid.addEventListener('touchcancel',e=>{for(const t of e.changedTouches)handleEnd(t.identifier);});
+
+let mouseDown=false;
+grid.addEventListener('mousedown',e=>{mouseDown=true;const pi=getPadFromPoint(e.clientX,e.clientY);handleStart('mouse',pi,e.clientX,e.clientY);});
+window.addEventListener('mousemove',e=>{if(mouseDown)handleMove('mouse',e.clientX,e.clientY);});
+window.addEventListener('mouseup',()=>{mouseDown=false;handleEnd('mouse');});
+
+// Controls
+document.querySelectorAll('[data-scale]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('[data-scale]').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');currentScale=btn.dataset.scale;updateLabels();
+  });
+});
+document.getElementById('oct-down').addEventListener('click',()=>{if(octave>1){octave--;document.getElementById('oct-display').textContent=octave;updateLabels();}});
+document.getElementById('oct-up').addEventListener('click',()=>{if(octave<7){octave++;document.getElementById('oct-display').textContent=octave;updateLabels();}});
+
+document.querySelectorAll('[data-fx]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const fx=btn.dataset.fx;fxState[fx]=!fxState[fx];
+    btn.classList.toggle('active',fxState[fx]);
+    if(ctx)rebuildChain();
+  });
+});
+
+// Visualizer
+const vizCanvas=document.getElementById('visualizer');
+const vizCtx=vizCanvas.getContext('2d');
+
+function drawViz(){
+  const w=vizCanvas.width=vizCanvas.clientWidth*devicePixelRatio;
+  const h=vizCanvas.height=vizCanvas.clientHeight*devicePixelRatio;
+  vizCtx.clearRect(0,0,w,h);
+  if(!analyser){requestAnimationFrame(drawViz);return;}
+  const data=new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteTimeDomainData(data);
+  vizCtx.lineWidth=2*devicePixelRatio;
+  const grad=vizCtx.createLinearGradient(0,0,w,0);
+  grad.addColorStop(0,'#ff6fd8');grad.addColorStop(.5,'#667eea');grad.addColorStop(1,'#43e97b');
+  vizCtx.strokeStyle=grad;
+  vizCtx.beginPath();
+  const sliceW=w/data.length;
+  for(let i=0;i<data.length;i++){
+    const v=data[i]/128;const y=v*h/2;
+    i===0?vizCtx.moveTo(0,y):vizCtx.lineTo(i*sliceW,y);
+  }
+  vizCtx.stroke();
+  // Pad particles
+  pads.forEach(p=>{
+    const cv=p.canvas;const c=cv.getContext('2d');
+    cv.width=cv.clientWidth*devicePixelRatio;cv.height=cv.clientHeight*devicePixelRatio;
+    c.clearRect(0,0,cv.width,cv.height);
+    const dpr=devicePixelRatio;
+    p.particles=p.particles.filter(pt=>{
+      pt.x+=pt.vx;pt.y+=pt.vy;pt.life-=0.03;
+      if(pt.life<=0)return false;
+      c.globalAlpha=pt.life;
+      c.beginPath();c.arc(pt.x*dpr,pt.y*dpr,pt.r*dpr,0,Math.PI*2);
+      c.fillStyle=pt.color;c.fill();
+      c.globalAlpha=1;
+      return true;
+    });
+  });
+  requestAnimationFrame(drawViz);
+}
+drawViz();
+</script>
+</body>
+</html>
