@@ -68,6 +68,11 @@ Simulation de fluides interactive — touche/glisse pour injecter de l'encre col
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/fluid-sim/)
 
+### ✨ [Constellation Draw](./constellation-draw/)
+Dessine tes propres constellations dans un ciel étoilé interactif — 280 étoiles scintillantes, lignes aurora glow entre les étoiles connectées, étoiles filantes aléatoires, parallaxe gyroscope/souris, voie lactée en fond. Double-tap pour nommer tes créations.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/constellation-draw/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
