@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Constellation Draw</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a1a;font-family:'Segoe UI',system-ui,sans-serif;touch-action:none}
+canvas{display:block;position:fixed;top:0;left:0}
+.ui{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:12px;z-index:10}
+.btn{background:rgba(255,255,255,.08);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.8);padding:10px 20px;border-radius:24px;font-size:14px;cursor:pointer;transition:all .2s;user-select:none}
+.btn:active{background:rgba(255,255,255,.18);transform:scale(.95)}
+.title{position:fixed;top:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.3);font-size:13px;letter-spacing:3px;text-transform:uppercase;z-index:10;pointer-events:none}
+.naming{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:20;display:none}
+.naming.show{display:block}
+.naming input{background:rgba(10,10,30,.9);backdrop-filter:blur(20px);border:1px solid rgba(100,140,255,.3);color:#fff;padding:14px 24px;border-radius:16px;font-size:16px;text-align:center;outline:none;width:240px}
+.naming input::placeholder{color:rgba(255,255,255,.3)}
+#info{position:fixed;top:60px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.2);font-size:12px;z-index:10;pointer-events:none;transition:opacity .5s}
+</style>
+</head>
+<body>
+<div class="title">Constellation Draw</div>
+<div id="info">tap stars to connect them</div>
+<canvas id="c"></canvas>
+<div class="ui">
+<button class="btn" id="undoBtn">↩ Undo</button>
+<button class="btn" id="clearBtn">✦ Clear</button>
+</div>
+<div class="naming" id="naming"><input id="nameInput" placeholder="Name this constellation" maxlength="20"></div>
+<script>
+const C=document.getElementById('c'),X=C.getContext('2d');
+let W,H,stars=[],lines=[],labels=[],selected=null,mouse={x:W/2,y:H/2},shootingStars=[];
+const STAR_COUNT=280,NEAR_DIST=50;
+
+function resize(){W=C.width=innerWidth;H=C.height=innerHeight}
+resize();window.addEventListener('resize',()=>{resize();initStars()});
+
+function initStars(){
+stars=[];
+for(let i=0;i<STAR_COUNT;i++){
+const s=Math.random();
+stars.push({x:Math.random()*W,y:Math.random()*H,r:s<.7?1:s<.9?1.5:2.2,
+base:.3+Math.random()*.7,phase:Math.random()*Math.PI*2,speed:.5+Math.random()*2,
+color:['#fff','#aaccff','#ffeedd','#ccddff'][Math.floor(Math.random()*4)]})}}
+initStars();
+
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+
+function findStar(px,py){
+let best=null,bd=NEAR_DIST;
+for(const s of stars){const d=dist({x:px,y:py},s);if(d<bd){bd=d;best=s}}
+return best}
+
+function drawMilkyWay(t){
+X.save();
+const g=X.createLinearGradient(0,0,W,H);
+g.addColorStop(0,'transparent');
+g.addColorStop(.35,'rgba(80,70,120,.04)');
+g.addColorStop(.5,'rgba(100,90,140,.06)');
+g.addColorStop(.65,'rgba(80,70,120,.04)');
+g.addColorStop(1,'transparent');
+X.fillStyle=g;
+X.translate(W/2,H/2);
+X.rotate(.4);
+X.fillRect(-W,-H/4,W*2,H/2);
+X.restore()}
+
+function drawStars(t){
+for(const s of stars){
+const tw=Math.sin(t*s.speed+s.phase)*.3;
+const a=Math.max(.1,s.base+tw);
+const nearSelected=selected&&dist(s,selected)<120&&s!==selected;
+X.beginPath();
+X.arc(s.x,s.y,s.r*(nearSelected?1.8:1),0,Math.PI*2);
+X.fillStyle=s.color;
+X.globalAlpha=nearSelected?Math.min(1,a+.3+Math.sin(t*4)*.15):a;
+X.fill();
+if(s.r>1.5||nearSelected){
+X.beginPath();X.arc(s.x,s.y,s.r*3,0,Math.PI*2);
+X.fillStyle=s.color;X.globalAlpha=(nearSelected?.12:.06)*a;X.fill()}
+X.globalAlpha=1}}
+
+function drawLines(t){
+for(const l of lines){
+const g=X.createLinearGradient(l.a.x,l.a.y,l.b.x,l.b.y);
+const glow=.3+Math.sin(t*1.5+l.a.x*.01)*.1;
+g.addColorStop(0,`rgba(100,160,255,${glow})`);
+g.addColorStop(.5,`rgba(140,120,255,${glow+.1})`);
+g.addColorStop(1,`rgba(100,160,255,${glow})`);
+X.strokeStyle=g;X.lineWidth=1.5;X.beginPath();
+X.moveTo(l.a.x,l.a.y);X.lineTo(l.b.x,l.b.y);X.stroke();
+// glow
+X.strokeStyle=g;X.lineWidth=6;X.globalAlpha=.08;
+X.beginPath();X.moveTo(l.a.x,l.a.y);X.lineTo(l.b.x,l.b.y);X.stroke();
+X.globalAlpha=1}}
+
+function drawSelected(t){
+if(!selected)return;
+const r=8+Math.sin(t*3)*2;
+X.beginPath();X.arc(selected.x,selected.y,r,0,Math.PI*2);
+X.strokeStyle='rgba(100,180,255,.4)';X.lineWidth=1.5;X.stroke();
+X.beginPath();X.arc(selected.x,selected.y,r+4,0,Math.PI*2);
+X.strokeStyle='rgba(100,180,255,.1)';X.lineWidth=1;X.stroke()}
+
+function drawLabels(){
+X.font='12px system-ui';X.textAlign='center';
+for(const l of labels){
+X.fillStyle='rgba(180,200,255,.5)';
+X.fillText(l.name,l.x,l.y-12)}}
+
+function spawnShootingStar(){
+if(Math.random()>.003||shootingStars.length>2)return;
+const a=Math.random()*Math.PI*2;
+shootingStars.push({x:Math.random()*W,y:Math.random()*H*.6,
+vx:Math.cos(a)*8,vy:Math.sin(a)*4+2,life:1,trail:[]})}
+
+function drawShootingStars(){
+for(let i=shootingStars.length-1;i>=0;i--){
+const s=shootingStars[i];
+s.trail.push({x:s.x,y:s.y,a:s.life});
+if(s.trail.length>20)s.trail.shift();
+s.x+=s.vx;s.y+=s.vy;s.life-=.015;
+if(s.life<=0){shootingStars.splice(i,1);continue}
+for(let j=0;j<s.trail.length-1;j++){
+const t=s.trail[j],n=s.trail[j+1];
+X.beginPath();X.moveTo(t.x,t.y);X.lineTo(n.x,n.y);
+X.strokeStyle=`rgba(255,255,255,${t.a*.3*(j/s.trail.length)})`;
+X.lineWidth=2*(j/s.trail.length);X.stroke()}
+X.beginPath();X.arc(s.x,s.y,2,0,Math.PI*2);
+X.fillStyle=`rgba(255,255,255,${s.life})`;X.fill()}}
+
+// Parallax
+let px=0,py=0;
+window.addEventListener('mousemove',e=>{px=(e.clientX/W-.5)*8;py=(e.clientY/H-.5)*8});
+window.addEventListener('deviceorientation',e=>{if(e.gamma!=null){px=e.gamma*.3;py=(e.beta-45)*.3}});
+
+let lastTap=0,lastTapStar=null;
+function handleTap(ex,ey){
+const s=findStar(ex,ey);
+if(!s)return;
+const now=Date.now();
+// double tap to name
+if(now-lastTap<400&&lastTapStar===s){
+showNaming(s);lastTap=0;return}
+lastTap=now;lastTapStar=s;
+if(!selected){selected=s;return}
+if(selected===s){selected=null;return}
+lines.push({a:selected,b:s});
+selected=s;
+document.getElementById('info').style.opacity='0'}
+
+C.addEventListener('pointerdown',e=>{e.preventDefault();handleTap(e.clientX,e.clientY)});
+
+function showNaming(star){
+const n=document.getElementById('naming'),inp=document.getElementById('nameInput');
+n.classList.add('show');inp.value='';inp.focus();
+const done=()=>{
+if(inp.value.trim()){labels.push({name:inp.value.trim(),x:star.x,y:star.y})}
+n.classList.remove('show');inp.removeEventListener('keydown',kd);inp.removeEventListener('blur',done)};
+const kd=e=>{if(e.key==='Enter')done()};
+inp.addEventListener('keydown',kd);inp.addEventListener('blur',done)}
+
+document.getElementById('undoBtn').addEventListener('click',()=>{
+if(lines.length){lines.pop();if(!lines.length)selected=null}});
+document.getElementById('clearBtn').addEventListener('click',()=>{
+lines=[];labels=[];selected=null;
+document.getElementById('info').style.opacity='1'});
+
+function frame(t){
+t*=.001;
+X.clearRect(0,0,W,H);
+X.save();X.translate(px,py);
+drawMilkyWay(t);
+drawStars(t);
+X.restore();
+drawLines(t);
+drawSelected(t);
+drawLabels();
+spawnShootingStar();
+drawShootingStars();
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
