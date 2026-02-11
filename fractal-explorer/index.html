@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Fractal Explorer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;touch-action:none}
+body{background:#000;overflow:hidden;font-family:'SF Pro','Segoe UI',system-ui,sans-serif;color:#fff}
+canvas{display:block;width:100vw;height:100vh}
+#ui{position:fixed;top:0;left:0;right:0;padding:12px 16px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:10}
+#info{font-size:11px;opacity:.7;line-height:1.6;font-variant-numeric:tabular-nums}
+#controls{display:flex;gap:8px;pointer-events:auto}
+.btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:10px;padding:8px 14px;font-size:13px;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:all .2s;font-family:inherit;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
+.btn:active{background:rgba(255,255,255,.25);transform:scale(.95)}
+#presets{position:fixed;bottom:0;left:0;right:0;padding:12px 16px;display:flex;gap:8px;overflow-x:auto;pointer-events:auto;z-index:10;-webkit-overflow-scrolling:touch}
+#presets::-webkit-scrollbar{display:none}
+.preset{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:12px;padding:10px 16px;font-size:12px;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);white-space:nowrap;transition:all .2s;font-family:inherit;min-height:44px;display:flex;align-items:center}
+.preset:active{background:rgba(255,255,255,.25);transform:scale(.95)}
+#crosshair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:5}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,.3)}
+#crosshair::before{width:1px;height:20px;left:0;top:-10px}
+#crosshair::after{width:20px;height:1px;left:-10px;top:0}
+#toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.8);background:rgba(0,0,0,.8);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:14px 24px;font-size:14px;opacity:0;transition:all .3s;z-index:20;pointer-events:none;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="crosshair"></div>
+<div id="ui">
+  <div id="info"></div>
+  <div id="controls">
+    <button class="btn" id="paletteBtn">🎨</button>
+    <button class="btn" id="resetBtn">⟲</button>
+  </div>
+</div>
+<div id="presets">
+  <div class="preset" data-x="-0.7435669" data-y="0.1314023" data-z="2e5">🌀 Seahorse Valley</div>
+  <div class="preset" data-x="-0.16" data-y="1.0405" data-z="1e3">⚡ Lightning</div>
+  <div class="preset" data-x="-1.25066" data-y="0.02012" data-z="1e4">🌊 Spiral Arms</div>
+  <div class="preset" data-x="-0.0452407" data-y="0.9868162" data-z="5e4">🔥 Mini Mandelbrot</div>
+  <div class="preset" data-x="0.2501" data-y="0.00005" data-z="1e6">💎 Deep Zoom</div>
+  <div class="preset" data-x="-1.7497591" data-y="0.0000001" data-z="5e8">🌌 Antenna</div>
+</div>
+<div id="toast"></div>
+
+<script>
+const canvas=document.getElementById('c'),gl=canvas.getContext('webgl')||canvas.getContext('experimental-webgl'),info=document.getElementById('info'),toast=document.getElementById('toast');
+
+// State
+let centerX=-0.5,centerY=0,zoom=1,targetX=centerX,targetY=centerY,targetZoom=zoom;
+let palette=0;const PALETTES=6;
+let maxIter=200,animating=false;
+
+// WebGL setup
+const vs=`attribute vec2 p;void main(){gl_Position=vec4(p,0,1);}`;
+const fs=`
+precision highp float;
+uniform vec2 u_res,u_center;
+uniform float u_zoom,u_palette,u_maxIter;
+
+vec3 hsv2rgb(vec3 c){
+  vec4 K=vec4(1.,2./3.,1./3.,3.);
+  vec3 p=abs(fract(c.xxx+K.xyz)*6.-K.www);
+  return c.z*mix(K.xxx,clamp(p-K.xxx,0.,1.),c.y);
+}
+
+vec3 getColor(float t,float pal){
+  if(t>=1.)return vec3(0);
+  float p=mod(pal,6.);
+  if(p<1.)return hsv2rgb(vec3(t*3.+.6,.85,.95));
+  if(p<2.)return hsv2rgb(vec3(.58+t*.15,1.-t*.3,.3+t*.7));
+  if(p<3.){float s=sin(t*3.14159*2.);float c2=cos(t*3.14159*4.);return vec3(.5+.5*s,.2+.3*c2,.8-.6*t);}
+  if(p<4.)return vec3(t*1.5,t*t*.8,sin(t*3.14)*0.5+0.5);
+  if(p<5.){float r=sin(t*6.28)*.5+.5;float g=sin(t*6.28+2.09)*.5+.5;float b=sin(t*6.28+4.19)*.5+.5;return vec3(r,g,b)*(.3+.7*t);}
+  return vec3(1.-t,1.-t*.7,1.-t*.4)*(.4+.6*t);
+}
+
+void main(){
+  vec2 uv=(gl_FragCoord.xy-u_res*.5)/min(u_res.x,u_res.y)*3.5/u_zoom+u_center;
+  float zr=0.,zi=0.,zr2=0.,zi2=0.;
+  float iter=0.;
+  for(int i=0;i<2000;i++){
+    if(float(i)>=u_maxIter)break;
+    if(zr2+zi2>4.)break;
+    zi=2.*zr*zi+uv.y;
+    zr=zr2-zi2+uv.x;
+    zr2=zr*zr;zi2=zi*zi;
+    iter+=1.;
+  }
+  float smooth_iter=iter-log2(log2(zr2+zi2))+4.;
+  float t=smooth_iter/u_maxIter;
+  gl_FragColor=vec4(getColor(t,u_palette),1);
+}`;
+
+function createShader(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);return s;}
+const prog=gl.createProgram();
+gl.attachShader(prog,createShader(gl.VERTEX_SHADER,vs));
+gl.attachShader(prog,createShader(gl.FRAGMENT_SHADER,fs));
+gl.linkProgram(prog);gl.useProgram(prog);
+
+const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const pLoc=gl.getAttribLocation(prog,'p');gl.enableVertexAttribArray(pLoc);
+gl.vertexAttribPointer(pLoc,2,gl.FLOAT,false,0,0);
+
+const uRes=gl.getUniformLocation(prog,'u_res');
+const uCenter=gl.getUniformLocation(prog,'u_center');
+const uZoom=gl.getUniformLocation(prog,'u_zoom');
+const uPalette=gl.getUniformLocation(prog,'u_palette');
+const uMaxIter=gl.getUniformLocation(prog,'u_maxIter');
+
+function resize(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  canvas.width=window.innerWidth*dpr;canvas.height=window.innerHeight*dpr;
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+window.addEventListener('resize',resize);resize();
+
+function render(){
+  const lerp=animating?.08:.15;
+  centerX+=(targetX-centerX)*lerp;
+  centerY+=(targetY-centerY)*lerp;
+  zoom+=(targetZoom-zoom)*lerp;
+  
+  if(Math.abs(targetX-centerX)<1e-14&&Math.abs(targetY-centerY)<1e-14&&Math.abs(targetZoom-zoom)<.01)animating=false;
+  
+  maxIter=Math.min(2000,200+Math.floor(Math.log2(zoom)*30));
+  
+  gl.uniform2f(uRes,canvas.width,canvas.height);
+  gl.uniform2f(uCenter,centerX,centerY);
+  gl.uniform1f(uZoom,zoom);
+  gl.uniform1f(uPalette,palette);
+  gl.uniform1f(uMaxIter,maxIter);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  
+  info.textContent=`x: ${centerX.toFixed(12)}\ny: ${centerY.toFixed(12)}\nzoom: ${zoom.toExponential(2)}\niters: ${maxIter}`;
+  
+  requestAnimationFrame(render);
+}
+render();
+
+// Mouse interactions
+let dragging=false,lastMX,lastMY;
+canvas.addEventListener('mousedown',e=>{dragging=true;lastMX=e.clientX;lastMY=e.clientY;});
+window.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  const dx=(e.clientX-lastMX)/Math.min(window.innerWidth,window.innerHeight)*3.5/zoom;
+  const dy=(e.clientY-lastMY)/Math.min(window.innerWidth,window.innerHeight)*3.5/zoom;
+  targetX-=dx;targetY+=dy;lastMX=e.clientX;lastMY=e.clientY;
+});
+window.addEventListener('mouseup',()=>dragging=false);
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const factor=e.deltaY>0?.85:1.18;
+  targetZoom*=factor;animating=true;
+},{passive:false});
+canvas.addEventListener('dblclick',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const px=(e.clientX-rect.width/2)/Math.min(rect.width,rect.height)*3.5/zoom;
+  const py=-(e.clientY-rect.height/2)/Math.min(rect.width,rect.height)*3.5/zoom;
+  targetX+=px;targetY+=py;targetZoom*=4;animating=true;
+});
+
+// Touch interactions
+let touches={},pinchDist=0;
+canvas.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  for(const t of e.changedTouches)touches[t.identifier]={x:t.clientX,y:t.clientY};
+  if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    pinchDist=Math.sqrt(dx*dx+dy*dy);
+  }
+},{passive:false});
+
+let lastTap=0;
+canvas.addEventListener('touchend',e=>{
+  e.preventDefault();
+  for(const t of e.changedTouches)delete touches[t.identifier];
+  if(e.changedTouches.length===1&&e.touches.length===0){
+    const now=Date.now();
+    if(now-lastTap<300){
+      const t=e.changedTouches[0];
+      const rect=canvas.getBoundingClientRect();
+      const px=(t.clientX-rect.width/2)/Math.min(rect.width,rect.height)*3.5/zoom;
+      const py=-(t.clientY-rect.height/2)/Math.min(rect.width,rect.height)*3.5/zoom;
+      targetX+=px;targetY+=py;targetZoom*=4;animating=true;
+    }
+    lastTap=now;
+  }
+},{passive:false});
+
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===1){
+    const t=e.touches[0],prev=touches[t.identifier];
+    if(prev){
+      const dx=(t.clientX-prev.x)/Math.min(window.innerWidth,window.innerHeight)*3.5/zoom;
+      const dy=(t.clientY-prev.y)/Math.min(window.innerWidth,window.innerHeight)*3.5/zoom;
+      targetX-=dx;targetY+=dy;
+    }
+    touches[t.identifier]={x:t.clientX,y:t.clientY};
+  }else if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(pinchDist>0){targetZoom*=dist/pinchDist;animating=true;}
+    pinchDist=dist;
+    const mx=(e.touches[0].clientX+e.touches[1].clientX)/2;
+    const my=(e.touches[0].clientY+e.touches[1].clientY)/2;
+    const prevMx=(touches[e.touches[0].identifier]?.x||mx+touches[e.touches[1].identifier]?.x||mx)/2;
+    // simplified pan for 2-finger
+    for(const t of e.touches)touches[t.identifier]={x:t.clientX,y:t.clientY};
+  }
+},{passive:false});
+
+// Buttons
+document.getElementById('paletteBtn').onclick=()=>{
+  palette=(palette+1)%PALETTES;
+  const names=['🌈 Rainbow','🌊 Ocean','💜 Neon','🔥 Fire','🎭 Prismatic','☕ Sepia'];
+  showToast(names[palette]);
+};
+document.getElementById('resetBtn').onclick=()=>{
+  targetX=-0.5;targetY=0;targetZoom=1;animating=true;showToast('Reset');
+};
+
+// Presets
+document.querySelectorAll('.preset').forEach(el=>{
+  el.addEventListener('click',()=>{
+    targetX=parseFloat(el.dataset.x);
+    targetY=parseFloat(el.dataset.y);
+    targetZoom=parseFloat(el.dataset.z);
+    animating=true;
+    showToast(el.textContent.trim());
+  });
+});
+
+function showToast(msg){
+  toast.textContent=msg;toast.classList.add('show');
+  setTimeout(()=>toast.classList.remove('show'),1200);
+}
+
+showToast('🔍 Fractal Explorer');
+</script>
+</body>
+</html>
