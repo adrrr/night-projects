@@ -78,6 +78,11 @@ Explorateur de fractales Mandelbrot interactif — zoom infini avec coloring lis
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/fractal-explorer/)
 
+### 🏔️ [Terrain Generator](./terrain-generator/)
+Générateur procédural de terrain isométrique — Perlin noise multi-octaves avec biomes colorés (océan, plage, forêt, montagne, neige), vue 3D avec faces latérales, vagues animées, reflets de neige. 4 palettes (Natural, Autumn, Alien, Desert), mode flat, tap pour régénérer avec transition fluide.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/terrain-generator/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
