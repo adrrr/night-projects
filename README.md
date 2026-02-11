@@ -73,6 +73,11 @@ Dessine tes propres constellations dans un ciel étoilé interactif — 280 éto
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/constellation-draw/)
 
+### 🔍 [Fractal Explorer](./fractal-explorer/)
+Explorateur de fractales Mandelbrot interactif — zoom infini avec coloring lissé en WebGL, 6 palettes de couleurs, pan tactile/souris, pinch-to-zoom, double-tap pour plonger. 6 presets vers les coins les plus spectaculaires (Seahorse Valley, Deep Zoom à 10⁶×...). Iterations adaptatives jusqu'à 2000.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/fractal-explorer/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
