@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Terrain Generator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0e1a;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  #ui-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    padding: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .ui-panel {
+    background: rgba(10, 14, 26, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 12px 16px;
+    color: #e0e6f0;
+    pointer-events: auto;
+  }
+
+  #title-panel h1 {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    background: linear-gradient(135deg, #7ecfff, #a8edea, #fed6e3);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  #title-panel .subtitle {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+    margin-top: 2px;
+  }
+
+  #seed-display {
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    margin-top: 4px;
+  }
+
+  #controls {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    padding: 16px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .ctrl-btn {
+    pointer-events: auto;
+    background: rgba(10, 14, 26, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    color: #e0e6f0;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 14px 22px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ctrl-btn:active {
+    transform: scale(0.95);
+    background: rgba(30, 40, 70, 0.85);
+    border-color: rgba(126, 207, 255, 0.3);
+  }
+
+  .ctrl-btn.primary {
+    background: linear-gradient(135deg, rgba(126, 207, 255, 0.2), rgba(168, 237, 234, 0.15));
+    border-color: rgba(126, 207, 255, 0.25);
+  }
+
+  .ctrl-btn.primary:active {
+    background: linear-gradient(135deg, rgba(126, 207, 255, 0.35), rgba(168, 237, 234, 0.25));
+  }
+
+  #biome-legend {
+    position: fixed;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: rgba(255,255,255,0.45);
+    font-weight: 500;
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  #transition-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at center, rgba(10,14,26,0.0), rgba(10,14,26,0.9));
+    opacity: 0;
+    pointer-events: none;
+    z-index: 5;
+    transition: opacity 0.4s ease;
+  }
+
+  #transition-overlay.active {
+    opacity: 1;
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    color: rgba(255,255,255,0.3);
+    pointer-events: none;
+    z-index: 10;
+    opacity: 1;
+    transition: opacity 1s ease;
+    white-space: nowrap;
+  }
+
+  .hint.hidden { opacity: 0; }
+
+  @media (max-width: 480px) {
+    #biome-legend { display: none; }
+    #title-panel h1 { font-size: 14px; }
+    .ctrl-btn { padding: 12px 16px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="transition-overlay"></div>
+
+<div id="ui-overlay">
+  <div class="ui-panel" id="title-panel">
+    <h1>Terrain Generator</h1>
+    <div class="subtitle">Isometric Procedural World</div>
+    <div id="seed-display">seed: 0</div>
+  </div>
+</div>
+
+<div id="biome-legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#1a5276"></div>Deep Ocean</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2e86c1"></div>Ocean</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0d9a0"></div>Beach</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#52b788"></div>Grassland</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2d6a4f"></div>Forest</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#6b705c"></div>Mountain</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#e8e8e8"></div>Snow</div>
+</div>
+
+<div id="controls">
+  <button class="ctrl-btn" id="btn-flat" ontouchstart="">Flat</button>
+  <button class="ctrl-btn primary" id="btn-generate" ontouchstart="">Generate</button>
+  <button class="ctrl-btn" id="btn-style" ontouchstart="">Style</button>
+</div>
+
+<div class="hint" id="hint">Tap Generate or anywhere on terrain</div>
+
+<script>
+// ── Perlin Noise ──
+class PerlinNoise {
+  constructor(seed) {
+    this.seed = seed;
+    this.p = new Uint8Array(512);
+    const perm = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) perm[i] = i;
+    // Fisher-Yates with seeded random
+    let s = seed;
+    const rng = () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; };
+    for (let i = 255; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [perm[i], perm[j]] = [perm[j], perm[i]];
+    }
+    for (let i = 0; i < 512; i++) this.p[i] = perm[i & 255];
+  }
+
+  fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  lerp(a, b, t) { return a + t * (b - a); }
+
+  grad(hash, x, y) {
+    const h = hash & 3;
+    const u = h < 2 ? x : y;
+    const v = h < 2 ? y : x;
+    return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+  }
+
+  noise2D(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    x -= Math.floor(x); y -= Math.floor(y);
+    const u = this.fade(x), v = this.fade(y);
+    const p = this.p;
+    const a = p[X] + Y, b = p[X + 1] + Y;
+    return this.lerp(
+      this.lerp(this.grad(p[a], x, y), this.grad(p[b], x - 1, y), u),
+      this.lerp(this.grad(p[a + 1], x, y - 1), this.grad(p[b + 1], x - 1, y - 1), u),
+      v
+    );
+  }
+
+  fbm(x, y, octaves = 6, lacunarity = 2.0, gain = 0.5) {
+    let sum = 0, amp = 1, freq = 1, max = 0;
+    for (let i = 0; i < octaves; i++) {
+      sum += this.noise2D(x * freq, y * freq) * amp;
+      max += amp;
+      amp *= gain;
+      freq *= lacunarity;
+    }
+    return sum / max;
+  }
+}
+
+// ── Color Utils ──
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+function lerpColor(a, b, t) {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+// ── Biome Palettes ──
+const STYLES = [
+  { // Natural
+    name: 'Natural',
+    biomes: [
+      { max: -0.25, color: '#0e3654', top: '#0b2a42' },  // deep ocean
+      { max: -0.05, color: '#1a6fa0', top: '#1565a0' },  // ocean
+      { max: 0.00,  color: '#48a9c9', top: '#3d9cc0' },  // shallow
+      { max: 0.05,  color: '#f0d9a0', top: '#e8d090' },  // beach
+      { max: 0.20,  color: '#7bc77e', top: '#6ab86d' },  // grass
+      { max: 0.38,  color: '#52b788', top: '#40a070' },  // grassland
+      { max: 0.55,  color: '#2d6a4f', top: '#1b5e3a' },  // forest
+      { max: 0.70,  color: '#6b705c', top: '#5a6050' },  // rock
+      { max: 0.82,  color: '#8d8878', top: '#7d7868' },  // mountain
+      { max: 0.92,  color: '#c8c0b0', top: '#bab2a2' },  // high mountain
+      { max: 1.00,  color: '#f0ece4', top: '#ffffff' },  // snow
+    ],
+    sky: '#0a0e1a',
+    water: '#0e3654'
+  },
+  { // Autumn
+    name: 'Autumn',
+    biomes: [
+      { max: -0.25, color: '#1a2744', top: '#0f1d36' },
+      { max: -0.05, color: '#2a5478', top: '#204a6e' },
+      { max: 0.00,  color: '#3a7a9a', top: '#307090' },
+      { max: 0.05,  color: '#d4a650', top: '#c89840' },
+      { max: 0.20,  color: '#c87830', top: '#b86820' },
+      { max: 0.38,  color: '#d45030', top: '#c04020' },
+      { max: 0.55,  color: '#a03020', top: '#902010' },
+      { max: 0.70,  color: '#705040', top: '#604030' },
+      { max: 0.82,  color: '#8a7868', top: '#7a6858' },
+      { max: 0.92,  color: '#b8a898', top: '#a89888' },
+      { max: 1.00,  color: '#e8e0d8', top: '#f5f0ea' },
+    ],
+    sky: '#12081e',
+    water: '#1a2744'
+  },
+  { // Alien
+    name: 'Alien',
+    biomes: [
+      { max: -0.25, color: '#1a0a30', top: '#10062a' },
+      { max: -0.05, color: '#3a1870', top: '#301060' },
+      { max: 0.00,  color: '#5a28a0', top: '#4a1890' },
+      { max: 0.05,  color: '#90e060', top: '#80d050' },
+      { max: 0.20,  color: '#40d8a0', top: '#30c890' },
+      { max: 0.38,  color: '#20b0a0', top: '#10a090' },
+      { max: 0.55,  color: '#108878', top: '#007868' },
+      { max: 0.70,  color: '#605080', top: '#504070' },
+      { max: 0.82,  color: '#9070b0', top: '#8060a0' },
+      { max: 0.92,  color: '#c0a0e0', top: '#b090d0' },
+      { max: 1.00,  color: '#e8d0ff', top: '#f0e0ff' },
+    ],
+    sky: '#08041a',
+    water: '#1a0a30'
+  },
+  { // Desert
+    name: 'Desert',
+    biomes: [
+      { max: -0.25, color: '#1a3040', top: '#102838' },
+      { max: -0.05, color: '#2a6070', top: '#205060' },
+      { max: 0.00,  color: '#4a9898', top: '#3a8888' },
+      { max: 0.05,  color: '#e0c878', top: '#d0b868' },
+      { max: 0.20,  color: '#d8a850', top: '#c89840' },
+      { max: 0.38,  color: '#c08830', top: '#b07820' },
+      { max: 0.55,  color: '#a87028', top: '#986020' },
+      { max: 0.70,  color: '#885838', top: '#784828' },
+      { max: 0.82,  color: '#a08060', top: '#907050' },
+      { max: 0.92,  color: '#c8b098', top: '#b8a088' },
+      { max: 1.00,  color: '#f0e8d8', top: '#faf2e8' },
+    ],
+    sky: '#0e0a06',
+    water: '#1a3040'
+  }
+];
+
+// ── Main App ──
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('transition-overlay');
+const seedDisplay = document.getElementById('seed-display');
+const hint = document.getElementById('hint');
+
+let currentSeed = Math.floor(Math.random() * 99999);
+let styleIndex = 0;
+let isFlat = false;
+let isAnimating = false;
+let terrainData = null;
+let targetTerrainData = null;
+let morphProgress = 1;
+let animFrame = 0;
+let waterPhase = 0;
+
+// Grid config
+let GRID_COLS, GRID_ROWS, TILE_W, TILE_H, TILE_DEPTH;
+let OFFSET_X, OFFSET_Y;
+let noiseScale = 0.06;
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const isMobile = w < 600;
+
+  TILE_W = isMobile ? 18 : 24;
+  TILE_H = TILE_W * 0.5;
+  TILE_DEPTH = TILE_H * 0.6;
+
+  // Determine grid to fill viewport + overflow
+  GRID_COLS = Math.ceil(w / (TILE_W * 0.5)) + 6;
+  GRID_ROWS = Math.ceil(h / (TILE_H * 0.5)) + 12;
+
+  OFFSET_X = w / 2;
+  OFFSET_Y = -TILE_H * 2;
+}
+
+function generateTerrainData(seed) {
+  const perlin = new PerlinNoise(seed);
+  const data = new Float32Array(GRID_COLS * GRID_ROWS);
+
+  for (let row = 0; row < GRID_ROWS; row++) {
+    for (let col = 0; col < GRID_COLS; col++) {
+      let h = perlin.fbm(col * noiseScale, row * noiseScale, 6, 2.0, 0.48);
+      // Add some ridge noise for mountains
+      const ridge = 1 - Math.abs(perlin.fbm(col * noiseScale * 1.5 + 100, row * noiseScale * 1.5 + 100, 4, 2.0, 0.5));
+      h = h * 0.7 + ridge * ridge * 0.3;
+      // Edge falloff - make island shape
+      const cx = (col / GRID_COLS - 0.5) * 2;
+      const cy = (row / GRID_ROWS - 0.5) * 2;
+      const dist = Math.sqrt(cx * cx + cy * cy);
+      const falloff = 1 - Math.pow(Math.min(dist * 0.9, 1), 2.5);
+      h = h * falloff;
+      // Normalize to -1..1 range
+      h = Math.max(-1, Math.min(1, h * 1.3 - 0.1));
+      data[row * GRID_COLS + col] = h;
+    }
+  }
+  return data;
+}
+
+function getBiomeColor(h, style, isTop) {
+  const biomes = style.biomes;
+  for (let i = 0; i < biomes.length; i++) {
+    if (h <= biomes[i].max) {
+      if (i === 0) return hexToRgb(isTop ? biomes[0].top : biomes[0].color);
+      const prev = biomes[i - 1];
+      const curr = biomes[i];
+      const t = (h - prev.max) / (curr.max - prev.max);
+      const smoothT = t * t * (3 - 2 * t); // smoothstep
+      const a = hexToRgb(isTop ? prev.top : prev.color);
+      const b = hexToRgb(isTop ? curr.top : curr.color);
+      return lerpColor(a, b, smoothT);
+    }
+  }
+  const last = biomes[biomes.length - 1];
+  return hexToRgb(isTop ? last.top : last.color);
+}
+
+function isoProject(col, row) {
+  const x = (col - row) * TILE_W * 0.5 + OFFSET_X;
+  const y = (col + row) * TILE_H * 0.5 + OFFSET_Y;
+  return [x, y];
+}
+
+function drawTerrain(time) {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const style = STYLES[styleIndex];
+
+  ctx.fillStyle = style.sky;
+  ctx.fillRect(0, 0, w, h);
+
+  waterPhase = time * 0.001;
+
+  for (let row = 0; row < GRID_ROWS; row++) {
+    for (let col = 0; col < GRID_COLS; col++) {
+      const idx = row * GRID_COLS + col;
+      let heightVal;
+
+      if (morphProgress < 1 && targetTerrainData) {
+        const oldH = terrainData ? terrainData[idx] || 0 : 0;
+        const newH = targetTerrainData[idx];
+        const t = morphProgress * morphProgress * (3 - 2 * morphProgress);
+        heightVal = oldH + (newH - oldH) * t;
+      } else {
+        heightVal = targetTerrainData ? targetTerrainData[idx] : (terrainData ? terrainData[idx] : 0);
+      }
+
+      const isWater = heightVal < 0.0;
+
+      // Water wave effect
+      let displayHeight = heightVal;
+      if (isWater) {
+        const wave = Math.sin(waterPhase + col * 0.3 + row * 0.2) * 0.008;
+        displayHeight = Math.min(heightVal + wave, -0.001);
+      }
+
+      const elevation = isFlat ? 0 : Math.max(0, displayHeight) * TILE_H * 3.5;
+      const waterDepthViz = isFlat ? 0 : Math.max(0, -displayHeight) * TILE_H * 0.5;
+
+      const [baseX, baseY] = isoProject(col, row);
+      const drawY = baseY - elevation + waterDepthViz;
+
+      // Get colors
+      const topColor = getBiomeColor(heightVal, style, true);
+      const sideColor = getBiomeColor(heightVal, style, false);
+
+      // Darken sides
+      const leftSide = [sideColor[0] * 0.7, sideColor[1] * 0.7, sideColor[2] * 0.7];
+      const rightSide = [sideColor[0] * 0.55, sideColor[1] * 0.55, sideColor[2] * 0.55];
+
+      // Water transparency shimmer
+      let alpha = 1;
+      if (isWater) {
+        alpha = 0.85 + Math.sin(waterPhase * 1.5 + col * 0.5 + row * 0.3) * 0.1;
+      }
+
+      const hw = TILE_W * 0.5;
+      const hh = TILE_H * 0.5;
+      const depth = isFlat ? TILE_DEPTH * 0.3 : TILE_DEPTH + elevation * 0.2;
+
+      ctx.globalAlpha = alpha;
+
+      // ── Draw top diamond ──
+      ctx.beginPath();
+      ctx.moveTo(baseX, drawY - hh);
+      ctx.lineTo(baseX + hw, drawY);
+      ctx.lineTo(baseX, drawY + hh);
+      ctx.lineTo(baseX - hw, drawY);
+      ctx.closePath();
+      ctx.fillStyle = `rgb(${topColor[0]|0},${topColor[1]|0},${topColor[2]|0})`;
+      ctx.fill();
+
+      // ── Draw left face ──
+      if (depth > 0.5) {
+        ctx.beginPath();
+        ctx.moveTo(baseX - hw, drawY);
+        ctx.lineTo(baseX, drawY + hh);
+        ctx.lineTo(baseX, drawY + hh + depth);
+        ctx.lineTo(baseX - hw, drawY + depth);
+        ctx.closePath();
+        ctx.fillStyle = `rgb(${leftSide[0]|0},${leftSide[1]|0},${leftSide[2]|0})`;
+        ctx.fill();
+      }
+
+      // ── Draw right face ──
+      if (depth > 0.5) {
+        ctx.beginPath();
+        ctx.moveTo(baseX + hw, drawY);
+        ctx.lineTo(baseX, drawY + hh);
+        ctx.lineTo(baseX, drawY + hh + depth);
+        ctx.lineTo(baseX + hw, drawY + depth);
+        ctx.closePath();
+        ctx.fillStyle = `rgb(${rightSide[0]|0},${rightSide[1]|0},${rightSide[2]|0})`;
+        ctx.fill();
+      }
+
+      ctx.globalAlpha = 1;
+
+      // Snow sparkle on peaks
+      if (heightVal > 0.88 && !isFlat) {
+        const sparkle = Math.sin(time * 0.003 + col * 2.7 + row * 1.3);
+        if (sparkle > 0.7) {
+          ctx.globalAlpha = (sparkle - 0.7) * 3;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(baseX, drawY - hh * 0.3, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+  }
+}
+
+function generateNew() {
+  if (isAnimating) return;
+  isAnimating = true;
+
+  currentSeed = Math.floor(Math.random() * 99999);
+  seedDisplay.textContent = `seed: ${currentSeed}`;
+
+  overlay.classList.add('active');
+
+  setTimeout(() => {
+    if (morphProgress >= 1 && targetTerrainData) {
+      terrainData = targetTerrainData;
+    }
+    targetTerrainData = generateTerrainData(currentSeed);
+    morphProgress = 0;
+
+    overlay.classList.remove('active');
+
+    setTimeout(() => { isAnimating = false; }, 400);
+  }, 350);
+
+  // Hide hint after first interaction
+  if (hint) {
+    hint.classList.add('hidden');
+    setTimeout(() => hint.remove(), 1000);
+  }
+}
+
+function toggleFlat() {
+  isFlat = !isFlat;
+  document.getElementById('btn-flat').textContent = isFlat ? '3D' : 'Flat';
+}
+
+function cycleStyle() {
+  styleIndex = (styleIndex + 1) % STYLES.length;
+  document.getElementById('btn-style').textContent = STYLES[styleIndex].name;
+}
+
+// ── Animation Loop ──
+function animate(time) {
+  animFrame = requestAnimationFrame(animate);
+
+  if (morphProgress < 1) {
+    morphProgress = Math.min(1, morphProgress + 0.018);
+  }
+
+  drawTerrain(time);
+}
+
+// ── Events ──
+window.addEventListener('resize', () => {
+  resize();
+  if (targetTerrainData) {
+    // Regenerate with same seed to fill new dimensions
+    const perlin = new PerlinNoise(currentSeed);
+    targetTerrainData = generateTerrainData(currentSeed);
+    morphProgress = 1;
+  }
+});
+
+// Tap on canvas to regenerate
+canvas.addEventListener('pointerup', (e) => {
+  // Ignore if tap was on a button
+  if (e.target !== canvas) return;
+  // Check if tap is in the controls area
+  const y = e.clientY;
+  if (y < 80 || y > window.innerHeight - 80) return;
+  generateNew();
+});
+
+document.getElementById('btn-generate').addEventListener('click', generateNew);
+document.getElementById('btn-flat').addEventListener('click', toggleFlat);
+document.getElementById('btn-style').addEventListener('click', cycleStyle);
+
+// ── Init ──
+resize();
+seedDisplay.textContent = `seed: ${currentSeed}`;
+targetTerrainData = generateTerrainData(currentSeed);
+morphProgress = 1;
+animate(0);
+</script>
+</body>
+</html>
