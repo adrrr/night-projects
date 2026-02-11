@@ -83,6 +83,11 @@ Générateur procédural de terrain isométrique — Perlin noise multi-octaves 
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/terrain-generator/)
 
+### 🌊 [Wave Interference](./wave-interference/)
+Simulateur interactif d'interférences d'ondes — deux sources déplaçables générant des motifs d'interférence en temps réel sur canvas. Fond sombre, couleurs néon (cyan/magenta), animations fluides. Drag les sources pour voir les patterns constructifs et destructifs, 5 presets (onde stationnaire, destructive, ripple tank...), 4 modes de couleur (neon, plasma, rainbow, ocean).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/wave-interference/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Wave Interference</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;touch-action:none}
+body{background:#050510;overflow:hidden;font-family:'SF Pro','Segoe UI',system-ui,sans-serif;color:#fff}
+canvas{display:block;width:100vw;height:100vh;cursor:grab}
+canvas.dragging{cursor:grabbing}
+#ui{position:fixed;top:0;left:0;right:0;padding:12px 16px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:10}
+#info{font-size:11px;opacity:.7;line-height:1.6;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:rgba(0,0,0,.3);padding:8px 12px;border-radius:8px;pointer-events:auto}
+#controls{display:flex;gap:8px;pointer-events:auto}
+.btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:10px;padding:8px 14px;font-size:13px;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:all .2s;font-family:inherit;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
+.btn:active{background:rgba(255,255,255,.25);transform:scale(.95)}
+.btn.active{background:rgba(0,255,255,.25);border-color:rgba(0,255,255,.4)}
+#presets{position:fixed;bottom:0;left:0;right:0;padding:12px 16px;display:flex;gap:8px;overflow-x:auto;pointer-events:auto;z-index:10;-webkit-overflow-scrolling:touch}
+#presets::-webkit-scrollbar{display:none}
+.preset{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:12px;padding:10px 16px;font-size:12px;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);white-space:nowrap;transition:all .2s;font-family:inherit;min-height:44px;display:flex;align-items:center}
+.preset:active{background:rgba(255,255,255,.25);transform:scale(.95)}
+.source{position:absolute;width:20px;height:20px;border-radius:50%;border:2px solid;transform:translate(-50%,-50%);pointer-events:auto;cursor:grab;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:5;transition:transform .1s}
+.source:active{cursor:grabbing;transform:translate(-50%,-50%) scale(1.2)}
+.source.s1{border-color:#0ff;background:rgba(0,255,255,.15);box-shadow:0 0 20px rgba(0,255,255,.6), inset 0 0 10px rgba(0,255,255,.3)}
+.source.s2{border-color:#f0f;background:rgba(255,0,255,.15);box-shadow:0 0 20px rgba(255,0,255,.6), inset 0 0 10px rgba(255,0,255,.3)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="source s1" id="source1" style="left:35%;top:50%"></div>
+<div class="source s2" id="source2" style="left:65%;top:50%"></div>
+<div id="ui">
+  <div id="info">
+    <div>🌊 Wave Interference</div>
+    <div>Drag sources to move</div>
+    <div id="stats"></div>
+  </div>
+  <div id="controls">
+    <button class="btn active" id="playBtn">⏸</button>
+    <button class="btn" id="colorBtn">🎨</button>
+  </div>
+</div>
+<div id="presets">
+  <div class="preset" data-mode="constructive">🟢 Constructive</div>
+  <div class="preset" data-mode="destructive">🔴 Destructive</div>
+  <div class="preset" data-mode="dual">🔵 Dual Wave</div>
+  <div class="preset" data-mode="ripple">🌀 Ripple Tank</div>
+  <div class="preset" data-mode="standing">🎵 Standing Wave</div>
+</div>
+
+<script>
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d',{alpha:false});
+const playBtn=document.getElementById('playBtn');
+const colorBtn=document.getElementById('colorBtn');
+const stats=document.getElementById('stats');
+const source1El=document.getElementById('source1');
+const source2El=document.getElementById('source2');
+
+let w,h,time=0,playing=true,colorMode=0;
+const colorModes=['neon','plasma','rainbow','ocean'];
+
+// Wave sources
+let sources=[
+  {x:0.35,y:0.5,freq:0.8,amp:1,phase:0},
+  {x:0.65,y:0.5,freq:0.8,amp:1,phase:0}
+];
+
+function resize(){
+  const dpr=Math.min(window.devicePixelRatio,2);
+  w=window.innerWidth;
+  h=window.innerHeight;
+  canvas.width=w*dpr;
+  canvas.height=h*dpr;
+  canvas.style.width=w+'px';
+  canvas.style.height=h+'px';
+  ctx.scale(dpr,dpr);
+}
+
+// Drag handling
+let dragSource=null;
+[source1El,source2El].forEach((el,i)=>{
+  let isDragging=false;
+
+  const move=(x,y)=>{
+    sources[i].x=x/w;
+    sources[i].y=y/h;
+    el.style.left=(sources[i].x*100)+'%';
+    el.style.top=(sources[i].y*100)+'%';
+  };
+
+  const start=e=>{
+    isDragging=true;
+    dragSource=i;
+    canvas.classList.add('dragging');
+    e.preventDefault();
+  };
+
+  const end=()=>{
+    isDragging=false;
+    dragSource=null;
+    canvas.classList.remove('dragging');
+  };
+
+  el.addEventListener('mousedown',start);
+  el.addEventListener('touchstart',start,{passive:false});
+
+  window.addEventListener('mousemove',e=>{
+    if(isDragging)move(e.clientX,e.clientY);
+  });
+
+  window.addEventListener('touchmove',e=>{
+    if(isDragging){
+      const touch=e.touches[0];
+      move(touch.clientX,touch.clientY);
+      e.preventDefault();
+    }
+  },{passive:false});
+
+  window.addEventListener('mouseup',end);
+  window.addEventListener('touchend',end);
+});
+
+// Wave calculation
+function wave(x,y,src,t){
+  const dx=x-src.x*w;
+  const dy=y-src.y*h;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  const wavelength=80;
+  const speed=3;
+  return src.amp*Math.sin((dist/wavelength-t*speed*src.freq)*Math.PI*2+src.phase);
+}
+
+// Color modes
+function getColor(value){
+  const v=Math.max(0,Math.min(1,(value+2)/4));
+
+  if(colorMode===0){ // neon
+    if(value>0){
+      return `rgba(0,${Math.floor(255*v)},${Math.floor(255*v)},.95)`;
+    }else{
+      return `rgba(${Math.floor(255*-value*.5)},0,${Math.floor(255*-value*.5)},.95)`;
+    }
+  }else if(colorMode===1){ // plasma
+    const r=Math.floor(128+127*Math.sin(v*Math.PI*2));
+    const g=Math.floor(128+127*Math.sin(v*Math.PI*2+2));
+    const b=Math.floor(128+127*Math.sin(v*Math.PI*2+4));
+    return `rgba(${r},${g},${b},.95)`;
+  }else if(colorMode===2){ // rainbow
+    const hue=Math.floor(v*360);
+    return `hsla(${hue},100%,50%,.95)`;
+  }else{ // ocean
+    const blue=Math.floor(50+205*v);
+    const green=Math.floor(100+155*v);
+    return `rgba(0,${green},${blue},.95)`;
+  }
+}
+
+// Draw
+function draw(){
+  // Background
+  ctx.fillStyle='rgba(5,5,16,.15)';
+  ctx.fillRect(0,0,w,h);
+
+  // Wave interference pattern
+  const resolution=4;
+  const cols=Math.floor(w/resolution);
+  const rows=Math.floor(h/resolution);
+
+  for(let y=0;y<rows;y++){
+    for(let x=0;x<cols;x++){
+      const px=x*resolution+resolution/2;
+      const py=y*resolution+resolution/2;
+
+      // Superposition of waves
+      const w1=wave(px,py,sources[0],time);
+      const w2=wave(px,py,sources[1],time);
+      const interference=w1+w2;
+
+      const intensity=Math.abs(interference);
+      if(intensity>0.1){
+        ctx.fillStyle=getColor(interference);
+        ctx.fillRect(x*resolution,y*resolution,resolution,resolution);
+      }
+    }
+  }
+
+  // Draw source indicators with glow
+  sources.forEach((src,i)=>{
+    const x=src.x*w;
+    const y=src.y*h;
+    const phase=Math.sin(time*src.freq*3);
+    const radius=8+phase*4;
+
+    ctx.shadowBlur=20;
+    ctx.shadowColor=i===0?'#0ff':'#f0f';
+
+    ctx.beginPath();
+    ctx.arc(x,y,radius,0,Math.PI*2);
+    ctx.strokeStyle=i===0?'rgba(0,255,255,.8)':'rgba(255,0,255,.8)';
+    ctx.lineWidth=2;
+    ctx.stroke();
+
+    // Ripple rings
+    for(let r=1;r<=3;r++){
+      const ringPhase=(time*src.freq*3+r)%3;
+      const ringRadius=radius+ringPhase*15;
+      const ringAlpha=0.3*(1-ringPhase/3);
+      ctx.beginPath();
+      ctx.arc(x,y,ringRadius,0,Math.PI*2);
+      ctx.strokeStyle=i===0?`rgba(0,255,255,${ringAlpha})`:`rgba(255,0,255,${ringAlpha})`;
+      ctx.lineWidth=1;
+      ctx.stroke();
+    }
+
+    ctx.shadowBlur=0;
+  });
+
+  if(playing)time+=0.01;
+  stats.textContent=`t: ${time.toFixed(2)}s | λ: 80px | mode: ${colorModes[colorMode]}`;
+  requestAnimationFrame(draw);
+}
+
+// Presets
+document.querySelectorAll('.preset').forEach(el=>{
+  el.addEventListener('click',()=>{
+    const mode=el.dataset.mode;
+    switch(mode){
+      case 'constructive':
+        sources[0].freq=0.8;sources[1].freq=0.8;
+        sources[0].phase=0;sources[1].phase=0;
+        break;
+      case 'destructive':
+        sources[0].freq=0.8;sources[1].freq=0.8;
+        sources[0].phase=0;sources[1].phase=Math.PI;
+        break;
+      case 'dual':
+        sources[0].freq=0.6;sources[1].freq=1.0;
+        sources[0].phase=0;sources[1].phase=0;
+        break;
+      case 'ripple':
+        sources[0].freq=1.2;sources[1].freq=1.2;
+        sources[0].phase=0;sources[1].phase=Math.PI/2;
+        break;
+      case 'standing':
+        sources[0].x=0.2;sources[0].y=0.5;
+        sources[1].x=0.8;sources[1].y=0.5;
+        sources[0].freq=0.8;sources[1].freq=0.8;
+        sources[0].phase=0;sources[1].phase=Math.PI;
+        source1El.style.left='20%';
+        source2El.style.left='80%';
+        break;
+    }
+  });
+});
+
+playBtn.addEventListener('click',()=>{
+  playing=!playing;
+  playBtn.textContent=playing?'⏸':'▶️';
+  playBtn.classList.toggle('active',playing);
+});
+
+colorBtn.addEventListener('click',()=>{
+  colorMode=(colorMode+1)%colorModes.length;
+});
+
+resize();
+window.addEventListener('resize',resize);
+draw();
+</script>
+</body>
+</html>
