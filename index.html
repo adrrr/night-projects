@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌙 Night Projects</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:linear-gradient(135deg,#0a0a1e 0%,#1a0a2e 100%);
+  min-height:100vh;
+  font-family:'SF Pro','Segoe UI',system-ui,sans-serif;
+  color:#fff;
+  padding:40px 20px;
+}
+.container{max-width:1200px;margin:0 auto}
+header{text-align:center;margin-bottom:60px}
+h1{font-size:clamp(2rem,5vw,3.5rem);font-weight:700;margin-bottom:12px;background:linear-gradient(135deg,#60a5fa 0%,#c084fc 50%,#f472b6 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{font-size:clamp(1rem,2.5vw,1.25rem);opacity:.7;margin-bottom:8px}
+.link{color:#60a5fa;text-decoration:none;opacity:.6;font-size:.9rem;transition:opacity .2s}
+.link:hover{opacity:1}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:24px;
+  margin-bottom:60px
+}
+.card{
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:16px;
+  padding:24px;
+  transition:all .3s;
+  text-decoration:none;
+  color:inherit;
+  display:block;
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px)
+}
+.card:hover{
+  transform:translateY(-4px);
+  background:rgba(255,255,255,.08);
+  border-color:rgba(255,255,255,.2);
+  box-shadow:0 12px 40px rgba(0,0,0,.3)
+}
+.card-icon{font-size:2.5rem;margin-bottom:12px;display:block}
+.card-title{font-size:1.25rem;font-weight:600;margin-bottom:8px}
+.card-desc{font-size:.9rem;line-height:1.5;opacity:.7}
+.card-tag{
+  display:inline-block;
+  background:rgba(96,165,250,.15);
+  color:#60a5fa;
+  padding:4px 10px;
+  border-radius:6px;
+  font-size:.75rem;
+  margin-top:12px;
+  font-weight:500
+}
+footer{
+  text-align:center;
+  opacity:.5;
+  font-size:.85rem;
+  padding:40px 20px
+}
+@media(max-width:640px){
+  .grid{grid-template-columns:1fr;gap:16px}
+  body{padding:24px 16px}
+  header{margin-bottom:40px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>🌙 Night Projects</h1>
+    <p class="subtitle">Petits projets créatifs générés chaque nuit</p>
+    <a href="https://github.com/adrrr/night-projects" class="link">View on GitHub →</a>
+  </header>
+
+  <div class="grid">
+    <a href="./wave-interference/" class="card">
+      <span class="card-icon">🌊</span>
+      <h2 class="card-title">Wave Interference</h2>
+      <p class="card-desc">Simulateur d'interférences d'ondes — deux sources déplaçables, visualisation temps réel sur canvas. Fond sombre, couleurs néon (cyan/magenta), animations fluides.</p>
+      <span class="card-tag">Interactive</span>
+    </a>
+
+    <a href="./terrain-generator/" class="card">
+      <span class="card-icon">🏔️</span>
+      <h2 class="card-title">Terrain Generator</h2>
+      <p class="card-desc">Générateur procédural de terrain isométrique — Perlin noise multi-octaves avec biomes colorés, vue 3D avec faces latérales, vagues animées.</p>
+      <span class="card-tag">Procedural</span>
+    </a>
+
+    <a href="./fractal-explorer/" class="card">
+      <span class="card-icon">🔍</span>
+      <h2 class="card-title">Fractal Explorer</h2>
+      <p class="card-desc">Explorateur de fractales Mandelbrot interactif — zoom infini avec coloring lissé en WebGL, 6 palettes de couleurs, presets vers les coins spectaculaires.</p>
+      <span class="card-tag">WebGL</span>
+    </a>
+
+    <a href="./constellation-draw/" class="card">
+      <span class="card-icon">✨</span>
+      <h2 class="card-title">Constellation Draw</h2>
+      <p class="card-desc">Dessine tes propres constellations — 280 étoiles scintillantes, lignes aurora glow, étoiles filantes, parallaxe gyroscope/souris, voie lactée en fond.</p>
+      <span class="card-tag">Creative</span>
+    </a>
+
+    <a href="./fluid-sim/" class="card">
+      <span class="card-icon">🌊</span>
+      <h2 class="card-title">Fluid Sim</h2>
+      <p class="card-desc">Simulation de fluides interactive — touche/glisse pour injecter de l'encre colorée. Navier-Stokes simplifié en WebGL, mélange de couleurs satisfaisant.</p>
+      <span class="card-tag">WebGL</span>
+    </a>
+
+    <a href="./synth-pad/" class="card">
+      <span class="card-icon">🎹</span>
+      <h2 class="card-title">Synth Pad</h2>
+      <p class="card-desc">Instrument musical tactile — grille 4×4 de pads générés via Web Audio API. Multi-touch, 4 gammes, effets delay/reverb/filter, visualiseur waveform live.</p>
+      <span class="card-tag">Audio</span>
+    </a>
+
+    <a href="./particle-life/" class="card">
+      <span class="card-icon">🧫</span>
+      <h2 class="card-title">Particle Life</h2>
+      <p class="card-desc">Simulation de vie artificielle — 600 particules de 5 espèces interagissent selon une matrice d'attraction/répulsion. Comportements émergents fascinants.</p>
+      <span class="card-tag">Simulation</span>
+    </a>
+
+    <a href="./gravity-sandbox/" class="card">
+      <span class="card-icon">🪐</span>
+      <h2 class="card-title">Gravity Sandbox</h2>
+      <p class="card-desc">Bac à sable gravitationnel — touche pour créer des étoiles, maintiens pour masse plus grosse, swipe pour vitesse. Les corps s'attirent, orbitent et fusionnent.</p>
+      <span class="card-tag">Physics</span>
+    </a>
+
+    <a href="./generative-poster/" class="card">
+      <span class="card-icon">🎨</span>
+      <h2 class="card-title">Generative Poster</h2>
+      <p class="card-desc">Outil de création d'affiches procédurales — 6 styles artistiques, 10 palettes, paramètres interactifs, seeds reproductibles, export HD 3000px.</p>
+      <span class="card-tag">Creative</span>
+    </a>
+
+    <a href="./boids-flocking/" class="card">
+      <span class="card-icon">🐦</span>
+      <h2 class="card-title">Boids Flocking</h2>
+      <p class="card-desc">300 oiseaux en essaim avec comportement émergent — souris pour repousser, clic pour attirer, scroll pour zoomer. Trails colorés hypnotiques.</p>
+      <span class="card-tag">Simulation</span>
+    </a>
+
+    <a href="./audio-vizualizer/" class="card">
+      <span class="card-icon">🎵</span>
+      <h2 class="card-title">Audio Vizualizer</h2>
+      <p class="card-desc">Visualiseur audio réactif au micro — barres de fréquences cyberpunk + particules qui explosent sur les beats. Zéro dépendance, Web Audio API.</p>
+      <span class="card-tag">Audio</span>
+    </a>
+
+    <a href="./color-rush/" class="card">
+      <span class="card-icon">🎨</span>
+      <h2 class="card-title">Color Rush</h2>
+      <p class="card-desc">Jeu de réflexes mobile-first — tape la bonne couleur avant la fin du timer. Ça accélère, la grille s'agrandit, effet Stroop après 10 points.</p>
+      <span class="card-tag">Game</span>
+    </a>
+
+    <a href="./pattern-memory/" class="card">
+      <span class="card-icon">🧠</span>
+      <h2 class="card-title">Pattern Memory</h2>
+      <p class="card-desc">Jeu de mémoire addictif — reproduis des séquences de couleurs qui s'allongent. Sons Web Audio API, animations iOS-like, high scores persistants.</p>
+      <span class="card-tag">Game</span>
+    </a>
+
+    <a href="./daily-focus-timer/" class="card">
+      <span class="card-icon">⏱️</span>
+      <h2 class="card-title">Daily Focus Timer</h2>
+      <p class="card-desc">Pomodoro réinventé — cercle SVG animé, particules ambient, couleurs qui dérivent pendant le focus. Durées configurables, stats du jour, streaks.</p>
+      <span class="card-tag">Productivity</span>
+    </a>
+
+    <a href="./micro-journal/" class="card">
+      <span class="card-icon">📓</span>
+      <h2 class="card-title">Micro Journal</h2>
+      <p class="card-desc">Journal intime minimaliste — 1 question introspective par jour, mood picker 5 emojis, historique scrollable et visualisation mood 30 jours en dots colorés.</p>
+      <span class="card-tag">Productivity</span>
+    </a>
+
+    <a href="./habit-tracker/" class="card">
+      <span class="card-icon">✅</span>
+      <h2 class="card-title">Habit Tracker</h2>
+      <p class="card-desc">Tracker d'habitudes minimaliste style iOS — check satisfaisant avec confetti, streaks par habit, mini bar chart semaine, persistance localStorage.</p>
+      <span class="card-tag">Productivity</span>
+    </a>
+  </div>
+
+  <footer>
+    Un nouveau projet chaque nuit à 1h du matin 🦊
+  </footer>
+</div>
+</body>
+</html>
