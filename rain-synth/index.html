@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Rain Synth</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a12;font-family:-apple-system,system-ui,sans-serif;touch-action:none;user-select:none}
+canvas{display:block;position:fixed;top:0;left:0}
+#controls{position:fixed;bottom:0;left:0;right:0;padding:16px 20px 28px;background:linear-gradient(transparent,rgba(0,0,0,.85));z-index:10;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;transition:opacity .4s}
+#controls.hidden{opacity:0;pointer-events:none}
+.ctrl{display:flex;flex-direction:column;gap:4px;flex:1;min-width:80px}
+.ctrl label{font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:1px}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:3px;background:rgba(255,255,255,.12);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid rgba(255,255,255,.3)}
+#themes{display:flex;gap:8px}
+.theme-btn{width:32px;height:32px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:border-color .2s,transform .2s}
+.theme-btn.active{border-color:#fff;transform:scale(1.15)}
+#toggle{position:fixed;bottom:8px;right:12px;z-index:11;background:none;border:none;color:rgba(255,255,255,.4);font-size:20px;cursor:pointer;padding:8px}
+#title{position:fixed;top:20px;left:0;right:0;text-align:center;z-index:10;pointer-events:none}
+#title h1{font-size:14px;font-weight:300;letter-spacing:4px;text-transform:uppercase;color:rgba(255,255,255,.25)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title"><h1>Rain Synth</h1></div>
+<div id="controls">
+<div class="ctrl"><label>Intensity</label><input type="range" id="intensity" min="1" max="80" value="20"></div>
+<div class="ctrl"><label>Reverb</label><input type="range" id="reverb" min="0" max="100" value="50"></div>
+<div class="ctrl"><label>Volume</label><input type="range" id="volume" min="0" max="100" value="60"></div>
+<div class="ctrl"><label>Theme</label><div id="themes">
+<button class="theme-btn active" data-theme="blue" style="background:linear-gradient(135deg,#00b4d8,#0077b6)"></button>
+<button class="theme-btn" data-theme="purple" style="background:linear-gradient(135deg,#b388ff,#7c4dff)"></button>
+<button class="theme-btn" data-theme="green" style="background:linear-gradient(135deg,#69f0ae,#00c853)"></button>
+<button class="theme-btn" data-theme="amber" style="background:linear-gradient(135deg,#ffd54f,#ff6f00)"></button>
+</div></div>
+</div>
+<button id="toggle">☰</button>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight}
+resize();addEventListener('resize',resize);
+
+const themes={
+blue:{accent:'#00b4d8',glow:'0,180,216',bg1:'#0a0a12',bg2:'#0d1b2a'},
+purple:{accent:'#b388ff',glow:'179,136,255',bg1:'#0a0812',bg2:'#1a0d2a'},
+green:{accent:'#69f0ae',glow:'105,240,174',bg1:'#0a120a',bg2:'#0d2a1b'},
+amber:{accent:'#ffd54f',glow:'255,213,79',bg1:'#12100a',bg2:'#2a1f0d'}
+};
+let theme='blue';
+document.documentElement.style.setProperty('--accent',themes[theme].accent);
+
+document.querySelectorAll('.theme-btn').forEach(b=>{
+b.onclick=()=>{
+document.querySelector('.theme-btn.active')?.classList.remove('active');
+b.classList.add('active');
+theme=b.dataset.theme;
+document.documentElement.style.setProperty('--accent',themes[theme].accent);
+}});
+
+document.getElementById('toggle').onclick=()=>document.getElementById('controls').classList.toggle('hidden');
+
+// Audio
+let audioCtx,convolver,masterGain;
+function initAudio(){
+if(audioCtx)return;
+audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+masterGain=audioCtx.createGain();
+masterGain.gain.value=.6;
+convolver=audioCtx.createConvolver();
+const len=audioCtx.sampleRate*2.5,buf=audioCtx.createBuffer(2,len,audioCtx.sampleRate);
+for(let ch=0;ch<2;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.5)}
+convolver.buffer=buf;
+const wet=audioCtx.createGain(),dry=audioCtx.createGain();
+wet.gain.value=.5;dry.gain.value=.7;
+masterGain.connect(dry).connect(audioCtx.destination);
+masterGain.connect(convolver).connect(wet).connect(audioCtx.destination);
+}
+
+function playDrop(x,y,big){
+if(!audioCtx)return;
+const rv=document.getElementById('reverb').value/100;
+const vol=document.getElementById('volume').value/100;
+const freq=200+800*(x/W);
+const osc=audioCtx.createOscillator();
+const g=audioCtx.createGain();
+const f=audioCtx.createBiquadFilter();
+osc.type='sine';
+osc.frequency.setValueAtTime(freq,audioCtx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(freq*.5,audioCtx.currentTime+(big?.8:.4));
+f.type='lowpass';f.frequency.value=2000;f.Q.value=5;
+const v=big?.25:.08;
+g.gain.setValueAtTime(v*vol,audioCtx.currentTime);
+g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+(big?.8:.4));
+osc.connect(f).connect(g).connect(masterGain);
+osc.start();osc.stop(audioCtx.currentTime+(big?1:.5));
+}
+
+// Drops & ripples
+const drops=[],ripples=[];
+
+class Drop{
+constructor(x,y,vx,vy,big){this.x=x;this.y=y||(-10-Math.random()*100);this.vx=vx||(.5-Math.random())*.3;this.vy=vy||(3+Math.random()*4);this.len=big?25:12+Math.random()*10;this.big=big;this.alive=true}
+update(){this.x+=this.vx;this.y+=this.vy;this.vy+=.15;if(this.y>H-10){this.alive=false;ripples.push(new Ripple(this.x,H-5,this.big));playDrop(this.x,this.y,this.big)}}
+draw(){const t=themes[theme];const a=this.big?.8:.35;ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(this.x+this.vx*2,this.y-this.len);ctx.strokeStyle=`rgba(${t.glow},${a})`;ctx.lineWidth=this.big?2.5:1;ctx.stroke()}
+}
+
+class Ripple{
+constructor(x,y,big){this.x=x;this.y=y;this.r=0;this.maxR=big?180:40+Math.random()*60;this.life=1;this.big=big}
+update(){const spd=this.big?3:2;this.r+=spd;this.life=1-this.r/this.maxR;if(this.life<=0)this.dead=true}
+draw(){if(this.dead)return;const t=themes[theme];const a=this.life*(this.big?.6:.3);
+ctx.beginPath();ctx.ellipse(this.x,this.y,this.r,this.r*.3,0,0,Math.PI*2);ctx.strokeStyle=`rgba(${t.glow},${a})`;ctx.lineWidth=this.big?2:1;ctx.stroke();
+if(this.big&&this.life>.3){ctx.beginPath();ctx.ellipse(this.x,this.y,this.r*.6,this.r*.18,0,0,Math.PI*2);ctx.strokeStyle=`rgba(${t.glow},${a*.5})`;ctx.lineWidth=1;ctx.stroke()}}
+}
+
+// Input
+function addUserDrop(px,py){
+initAudio();
+drops.push(new Drop(px,py,0,8,true));
+}
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();addUserDrop(e.clientX,e.clientY)});
+canvas.addEventListener('pointermove',e=>{if(e.buttons)addUserDrop(e.clientX,e.clientY)});
+
+// Main loop
+let lastSpawn=0;
+function loop(t){
+requestAnimationFrame(loop);
+const bg=themes[theme];
+ctx.fillStyle=bg.bg1;ctx.fillRect(0,0,W,H);
+
+// Subtle gradient at bottom
+const grd=ctx.createLinearGradient(0,H*.7,0,H);
+grd.addColorStop(0,'transparent');
+grd.addColorStop(1,`rgba(${bg.glow},.03)`);
+ctx.fillStyle=grd;ctx.fillRect(0,0,W,H);
+
+const intensity=+document.getElementById('intensity').value;
+const now=performance.now();
+if(now-lastSpawn>2000/intensity){
+lastSpawn=now;
+drops.push(new Drop(Math.random()*W));
+}
+
+for(let i=drops.length-1;i>=0;i--){drops[i].update();if(!drops[i].alive)drops.splice(i,1);else drops[i].draw()}
+for(let i=ripples.length-1;i>=0;i--){ripples[i].update();if(ripples[i].dead)ripples.splice(i,1);else ripples[i].draw()}
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
