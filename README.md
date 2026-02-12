@@ -88,6 +88,11 @@ Simulateur interactif d'interférences d'ondes — deux sources déplaçables g�
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/wave-interference/)
 
+### 🌧️ [Rain Synth](./rain-synth/)
+Synthétiseur de pluie interactif — des gouttes tombent en continu, chaque impact crée des ondulations et un son doux via Web Audio API. Touche pour créer tes propres grosses gouttes. Pitch lié à la position X (grave à gauche, aigu à droite), reverb réglable, 4 thèmes de couleur. Méditatif et hypnotique.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/rain-synth/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
