@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Maze Runner</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a1a;overflow:hidden;touch-action:none;font-family:'Segoe UI',system-ui,sans-serif;color:#fff;display:flex;align-items:center;justify-content:center;height:100dvh;width:100vw}
+canvas{display:block;border-radius:8px}
+#ui{position:fixed;top:0;left:0;right:0;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;z-index:10;background:linear-gradient(180deg,rgba(10,10,26,.9),transparent);pointer-events:none}
+#ui span{font-size:14px;opacity:.85;letter-spacing:.5px}
+#ui .val{color:#0ff;font-weight:700}
+#minimap{position:fixed;bottom:16px;right:16px;border:1px solid rgba(0,255,255,.3);border-radius:6px;background:rgba(10,10,26,.8);z-index:10}
+#overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:rgba(10,10,26,.85);backdrop-filter:blur(8px);transition:opacity .4s}
+#overlay.hidden{opacity:0;pointer-events:none}
+#overlay h1{font-size:clamp(28px,6vw,48px);background:linear-gradient(135deg,#0ff,#f0f);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+#overlay p{font-size:16px;opacity:.7;margin-bottom:24px}
+#overlay button{padding:14px 36px;font-size:18px;border:2px solid #0ff;background:transparent;color:#0ff;border-radius:40px;cursor:pointer;transition:all .2s;pointer-events:auto}
+#overlay button:hover,#overlay button:active{background:#0ff;color:#0a0a1a}
+#victory{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:30;background:rgba(10,10,26,.7);backdrop-filter:blur(6px)}
+#victory h1{font-size:clamp(32px,7vw,56px);background:linear-gradient(135deg,#0f0,#0ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#victory .stats{margin:16px 0 24px;text-align:center;opacity:.8}
+#victory button{padding:14px 36px;font-size:18px;border:2px solid #0f0;background:transparent;color:#0f0;border-radius:40px;cursor:pointer;transition:all .2s}
+#victory button:hover,#victory button:active{background:#0f0;color:#0a0a1a}
+</style>
+</head>
+<body>
+<div id="ui">
+  <span>Level <span class="val" id="lvl">1</span></span>
+  <span>⏱ <span class="val" id="timer">0:00</span></span>
+  <span>Steps <span class="val" id="steps">0</span></span>
+</div>
+<canvas id="c"></canvas>
+<canvas id="minimap" width="100" height="100"></canvas>
+<div id="overlay">
+  <h1>Maze Runner</h1>
+  <p>Navigate the neon labyrinth</p>
+  <button onclick="startGame()">Play</button>
+</div>
+<div id="victory">
+  <h1>✨ Level Clear!</h1>
+  <div class="stats" id="vStats"></div>
+  <button onclick="nextLevel()">Next Level →</button>
+</div>
+<script>
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+const mc=document.getElementById('minimap'),mctx=mc.getContext('2d');
+let W,H,cellSize,cols,rows,maze,player,exit,trail,visited,stepCount,startTime,level=1,playing=false,camX=0,camY=0,particles=[];
+const WALL_N=1,WALL_S=2,WALL_E=4,WALL_W=8;
+function resize(){W=innerWidth;H=innerHeight;c.width=W;c.height=H}
+window.addEventListener('resize',resize);resize();
+
+function mazeSize(lv){const base=7+lv*2;return Math.min(base,31)}
+
+function generate(c,r){
+  const grid=[];
+  for(let y=0;y<r;y++){const row=[];for(let x=0;x<c;x++)row.push({walls:WALL_N|WALL_S|WALL_E|WALL_W,visited:false});grid.push(row)}
+  const stack=[];let cur={x:0,y:0};grid[0][0].visited=true;let count=1,total=c*r;
+  while(count<total){
+    const nb=[];
+    if(cur.y>0&&!grid[cur.y-1][cur.x].visited)nb.push({x:cur.x,y:cur.y-1,w1:WALL_N,w2:WALL_S});
+    if(cur.y<r-1&&!grid[cur.y+1][cur.x].visited)nb.push({x:cur.x,y:cur.y+1,w1:WALL_S,w2:WALL_N});
+    if(cur.x<c-1&&!grid[cur.y][cur.x+1].visited)nb.push({x:cur.x+1,y:cur.y,w1:WALL_E,w2:WALL_W});
+    if(cur.x>0&&!grid[cur.y][cur.x-1].visited)nb.push({x:cur.x-1,y:cur.y,w1:WALL_W,w2:WALL_E});
+    if(nb.length){
+      const n=nb[Math.random()*nb.length|0];
+      stack.push({...cur});
+      grid[cur.y][cur.x].walls&=~n.w1;
+      grid[n.y][n.x].walls&=~n.w2;
+      grid[n.y][n.x].visited=true;
+      cur={x:n.x,y:n.y};count++;
+    }else{cur=stack.pop()}
+  }
+  return grid;
+}
+
+function initLevel(){
+  const s=mazeSize(level);cols=s;rows=s;
+  cellSize=Math.min((W-40)/cols,(H-80)/rows,60);
+  maze=generate(cols,rows);
+  player={x:0,y:0};exit={x:cols-1,y:rows-1};
+  trail=[[0,0]];visited=Array.from({length:rows},()=>Array(cols).fill(false));
+  visited[0][0]=true;stepCount=0;startTime=Date.now();
+  document.getElementById('lvl').textContent=level;
+  document.getElementById('steps').textContent=0;
+}
+
+function startGame(){
+  document.getElementById('overlay').classList.add('hidden');
+  level=1;initLevel();playing=true;requestAnimationFrame(loop);
+}
+
+function nextLevel(){
+  document.getElementById('victory').style.display='none';
+  level++;initLevel();playing=true;
+}
+
+function movePlayer(dx,dy){
+  if(!playing)return;
+  const cell=maze[player.y][player.x];
+  if(dx===0&&dy===-1&&(cell.walls&WALL_N))return;
+  if(dx===0&&dy===1&&(cell.walls&WALL_S))return;
+  if(dx===1&&dy===0&&(cell.walls&WALL_E))return;
+  if(dx===-1&&dy===0&&(cell.walls&WALL_W))return;
+  player.x+=dx;player.y+=dy;
+  stepCount++;document.getElementById('steps').textContent=stepCount;
+  trail.push([player.x,player.y]);
+  visited[player.y][player.x]=true;
+  if(player.x===exit.x&&player.y===exit.y)win();
+}
+
+function win(){
+  playing=false;
+  const elapsed=((Date.now()-startTime)/1000)|0;
+  const m=elapsed/60|0,s=elapsed%60;
+  document.getElementById('vStats').innerHTML=`Time: ${m}:${s.toString().padStart(2,'0')}<br>Steps: ${stepCount}`;
+  // particles
+  particles=[];for(let i=0;i<80;i++)particles.push({x:W/2,y:H/2,vx:(Math.random()-.5)*12,vy:(Math.random()-.5)*12,life:1,color:`hsl(${Math.random()*360},100%,70%)`});
+  document.getElementById('victory').style.display='flex';
+}
+
+// keyboard
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowUp'||e.key==='w')movePlayer(0,-1);
+  if(e.key==='ArrowDown'||e.key==='s')movePlayer(0,1);
+  if(e.key==='ArrowLeft'||e.key==='a')movePlayer(-1,0);
+  if(e.key==='ArrowRight'||e.key==='d')movePlayer(1,0);
+});
+
+// touch
+let tx=0,ty=0;
+c.addEventListener('touchstart',e=>{const t=e.touches[0];tx=t.clientX;ty=t.clientY;e.preventDefault()},{passive:false});
+c.addEventListener('touchend',e=>{
+  const t=e.changedTouches[0];const dx=t.clientX-tx,dy=t.clientY-ty;
+  if(Math.abs(dx)<20&&Math.abs(dy)<20)return;
+  if(Math.abs(dx)>Math.abs(dy))movePlayer(dx>0?1:-1,0);
+  else movePlayer(0,dy>0?1:-1);
+  e.preventDefault();
+},{passive:false});
+
+function drawMaze(){
+  const offX=(W-cols*cellSize)/2,offY=(H-rows*cellSize)/2+20;
+  // target camera
+  const tcx=offX+player.x*cellSize+cellSize/2-W/2;
+  const tcy=offY+player.y*cellSize+cellSize/2-H/2;
+  camX+=(tcx-camX)*.1;camY+=(tcy-camY)*.1;
+  ctx.save();ctx.translate(-camX,-camY);
+
+  // trail glow
+  ctx.lineWidth=cellSize*.35;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.strokeStyle='rgba(0,255,255,.12)';
+  if(trail.length>1){ctx.beginPath();ctx.moveTo(offX+trail[0][0]*cellSize+cellSize/2,offY+trail[0][1]*cellSize+cellSize/2);
+  for(let i=1;i<trail.length;i++)ctx.lineTo(offX+trail[i][0]*cellSize+cellSize/2,offY+trail[i][1]*cellSize+cellSize/2);ctx.stroke()}
+
+  // trail line
+  ctx.lineWidth=cellSize*.12;ctx.strokeStyle='rgba(0,255,255,.5)';
+  if(trail.length>1){ctx.beginPath();ctx.moveTo(offX+trail[0][0]*cellSize+cellSize/2,offY+trail[0][1]*cellSize+cellSize/2);
+  for(let i=1;i<trail.length;i++)ctx.lineTo(offX+trail[i][0]*cellSize+cellSize/2,offY+trail[i][1]*cellSize+cellSize/2);ctx.stroke()}
+
+  // walls
+  ctx.strokeStyle='#0ff';ctx.lineWidth=2;ctx.shadowColor='#0ff';ctx.shadowBlur=8;
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+    const cx=offX+x*cellSize,cy=offY+y*cellSize,w=maze[y][x].walls;
+    if(w&WALL_N){ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+cellSize,cy);ctx.stroke()}
+    if(w&WALL_S){ctx.beginPath();ctx.moveTo(cx,cy+cellSize);ctx.lineTo(cx+cellSize,cy+cellSize);ctx.stroke()}
+    if(w&WALL_W){ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx,cy+cellSize);ctx.stroke()}
+    if(w&WALL_E){ctx.beginPath();ctx.moveTo(cx+cellSize,cy);ctx.lineTo(cx+cellSize,cy+cellSize);ctx.stroke()}
+  }
+  ctx.shadowBlur=0;
+
+  // exit
+  const t=Date.now()/1000;
+  ctx.fillStyle=`hsla(${120+Math.sin(t*3)*30},100%,60%,.3)`;
+  ctx.fillRect(offX+exit.x*cellSize+4,offY+exit.y*cellSize+4,cellSize-8,cellSize-8);
+  ctx.fillStyle=`hsla(${120+Math.sin(t*3)*30},100%,70%,.8)`;
+  ctx.font=`${cellSize*.5}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('★',offX+exit.x*cellSize+cellSize/2,offY+exit.y*cellSize+cellSize/2);
+
+  // player
+  const px=offX+player.x*cellSize+cellSize/2,py=offY+player.y*cellSize+cellSize/2;
+  const grd=ctx.createRadialGradient(px,py,0,px,py,cellSize*.6);
+  grd.addColorStop(0,'rgba(0,255,255,.4)');grd.addColorStop(1,'transparent');
+  ctx.fillStyle=grd;ctx.fillRect(px-cellSize,py-cellSize,cellSize*2,cellSize*2);
+  ctx.beginPath();ctx.arc(px,py,cellSize*.28,0,Math.PI*2);
+  ctx.fillStyle='#0ff';ctx.fill();
+  ctx.beginPath();ctx.arc(px,py,cellSize*.18,0,Math.PI*2);
+  ctx.fillStyle='#fff';ctx.fill();
+
+  ctx.restore();
+}
+
+function drawMinimap(){
+  const ms=100;mc.width=ms;mc.height=ms;
+  const cs=ms/Math.max(cols,rows);
+  mctx.fillStyle='rgba(10,10,26,.9)';mctx.fillRect(0,0,ms,ms);
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+    if(!visited[y][x])continue;
+    mctx.fillStyle='rgba(0,255,255,.15)';mctx.fillRect(x*cs,y*cs,cs,cs);
+  }
+  // player on minimap
+  mctx.fillStyle='#0ff';mctx.beginPath();
+  mctx.arc(player.x*cs+cs/2,player.y*cs+cs/2,cs*.6,0,Math.PI*2);mctx.fill();
+  // exit on minimap
+  mctx.fillStyle='#0f0';mctx.beginPath();
+  mctx.arc(exit.x*cs+cs/2,exit.y*cs+cs/2,cs*.4,0,Math.PI*2);mctx.fill();
+}
+
+function updateTimer(){
+  if(!playing)return;
+  const elapsed=((Date.now()-startTime)/1000)|0;
+  const m=elapsed/60|0,s=elapsed%60;
+  document.getElementById('timer').textContent=`${m}:${s.toString().padStart(2,'0')}`;
+}
+
+function drawParticles(){
+  for(const p of particles){
+    p.x+=p.vx;p.y+=p.vy;p.vy+=.15;p.life-=.012;
+    if(p.life<=0)continue;
+    ctx.globalAlpha=p.life;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function loop(){
+  ctx.fillStyle='#0a0a1a';ctx.fillRect(0,0,W,H);
+  if(playing){drawMaze();drawMinimap();updateTimer()}
+  drawParticles();
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
