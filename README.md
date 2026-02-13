@@ -93,6 +93,11 @@ Synthétiseur de pluie interactif — des gouttes tombent en continu, chaque imp
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/rain-synth/)
 
+### 🏃 [Maze Runner](./maze-runner/)
+Labyrinthe procédural néon — navigue dans des labyrinthes générés algorithmiquement avec un trail lumineux cyan. Difficulté progressive, mini-carte des zones explorées, caméra smooth, animation de victoire avec particules. Swipe mobile + clavier desktop.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/maze-runner/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
