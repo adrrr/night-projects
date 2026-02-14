@@ -98,6 +98,11 @@ Labyrinthe procédural néon — navigue dans des labyrinthes générés algorit
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/maze-runner/)
 
+### 🌌 [Aurora Borealis](./aurora-borealis/)
+Simulation interactive d'aurores boréales — 7 rideaux lumineux ondulent sur un ciel étoilé avec 300 étoiles scintillantes. Touche/glisse pour perturber les aurores, couleurs vives (vert, violet, bleu, rose) en mode screen blending. Silhouettes de collines et sapins en premier plan. Contemplatif.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/aurora-borealis/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
