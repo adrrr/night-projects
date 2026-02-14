@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Aurora Borealis</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.4);font:13px/1.4 -apple-system,system-ui,sans-serif;text-align:center;pointer-events:none;transition:opacity 2s}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">Touch or move to disturb the aurora</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,mx=0.5,my=0.5,influence=0,stars=[];
+const BANDS=7,STAR_COUNT=300;
+
+function resize(){
+  W=canvas.width=window.innerWidth*devicePixelRatio;
+  H=canvas.height=window.innerHeight*devicePixelRatio;
+  canvas.style.width=window.innerWidth+'px';
+  canvas.style.height=window.innerHeight+'px';
+  stars=[];
+  for(let i=0;i<STAR_COUNT;i++){
+    stars.push({x:Math.random()*W,y:Math.random()*H*0.7,r:Math.random()*1.5+0.3,phase:Math.random()*Math.PI*2,speed:Math.random()*2+1});
+  }
+}
+window.addEventListener('resize',resize);resize();
+
+function ptr(e){
+  const r=canvas.getBoundingClientRect();
+  const t=e.touches?e.touches[0]:e;
+  mx=(t.clientX-r.left)/r.width;
+  my=(t.clientY-r.top)/r.height;
+  influence=1;
+}
+window.addEventListener('mousemove',ptr);
+window.addEventListener('touchmove',ptr,{passive:true});
+window.addEventListener('touchstart',e=>{ptr(e);document.getElementById('info').style.opacity='0'},{ passive:true});
+window.addEventListener('mousemove',()=>{document.getElementById('info').style.opacity='0'},{once:true});
+
+const palettes=[
+  [[0,255,128],[0,200,100]],
+  [[80,200,255],[40,150,220]],
+  [[150,80,255],[120,40,200]],
+  [[200,100,255],[255,80,200]],
+  [[0,255,200],[0,220,160]],
+  [[100,255,100],[60,200,80]],
+  [[180,120,255],[140,80,220]]
+];
+
+function lerp(a,b,t){return a+(b-a)*t}
+function lerpColor(c1,c2,t){return c1.map((v,i)=>Math.round(lerp(v,c2[i],t)))}
+
+let time=0;
+function draw(){
+  time+=0.003;
+  influence*=0.97;
+
+  // Night sky gradient
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#0a0a1a');
+  bg.addColorStop(0.5,'#0d1117');
+  bg.addColorStop(1,'#1a1a2e');
+  ctx.fillStyle=bg;
+  ctx.fillRect(0,0,W,H);
+
+  // Stars
+  for(const s of stars){
+    const twinkle=0.4+0.6*Math.abs(Math.sin(time*s.speed+s.phase));
+    ctx.beginPath();
+    ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,255,255,${twinkle})`;
+    ctx.fill();
+  }
+
+  // Aurora bands
+  ctx.globalCompositeOperation='screen';
+  for(let b=0;b<BANDS;b++){
+    const pal=palettes[b%palettes.length];
+    const bandY=H*0.08+b*(H*0.08);
+    const baseAmplitude=H*0.04+b*H*0.015;
+    const freq=0.003+b*0.0005;
+    const speed=0.4+b*0.15;
+    const interactionStrength=influence*(1-Math.abs(b/BANDS-0.5)*1.5);
+
+    ctx.beginPath();
+    ctx.moveTo(0,H);
+    for(let x=0;x<=W;x+=2){
+      const nx=x/W;
+      const distToMouse=Math.abs(nx-mx);
+      const mouseEffect=Math.exp(-distToMouse*distToMouse*12)*interactionStrength*H*0.08;
+      
+      const y1=Math.sin(x*freq+time*speed)*baseAmplitude;
+      const y2=Math.sin(x*freq*1.7+time*speed*0.7+b)*baseAmplitude*0.5;
+      const y3=Math.sin(x*freq*0.4+time*speed*1.3+b*2)*baseAmplitude*0.3;
+      
+      const y=bandY+y1+y2+y3-mouseEffect;
+      ctx.lineTo(x,y);
+    }
+    ctx.lineTo(W,H);
+    ctx.closePath();
+
+    const curtainHeight=H*0.5;
+    const grd=ctx.createLinearGradient(0,bandY-baseAmplitude,0,bandY+curtainHeight);
+    const t=0.5+0.3*Math.sin(time*1.5+b*0.8);
+    const col=lerpColor(pal[0],pal[1],t);
+    
+    const baseAlpha=0.12+0.06*Math.sin(time*2+b);
+    grd.addColorStop(0,`rgba(${col},${baseAlpha+influence*0.08})`);
+    grd.addColorStop(0.15,`rgba(${col},${baseAlpha*0.7})`);
+    grd.addColorStop(0.4,`rgba(${col},${baseAlpha*0.3})`);
+    grd.addColorStop(1,`rgba(${col},0)`);
+    
+    ctx.fillStyle=grd;
+    ctx.fill();
+
+    // Bright edge at the top of each curtain
+    ctx.beginPath();
+    for(let x=0;x<=W;x+=2){
+      const nx=x/W;
+      const distToMouse=Math.abs(nx-mx);
+      const mouseEffect=Math.exp(-distToMouse*distToMouse*12)*interactionStrength*H*0.08;
+      const y1=Math.sin(x*freq+time*speed)*baseAmplitude;
+      const y2=Math.sin(x*freq*1.7+time*speed*0.7+b)*baseAmplitude*0.5;
+      const y3=Math.sin(x*freq*0.4+time*speed*1.3+b*2)*baseAmplitude*0.3;
+      const y=bandY+y1+y2+y3-mouseEffect;
+      if(x===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle=`rgba(${col},${0.25+influence*0.15})`;
+    ctx.lineWidth=2;
+    ctx.shadowColor=`rgba(${col},0.6)`;
+    ctx.shadowBlur=20;
+    ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+  ctx.globalCompositeOperation='source-over';
+
+  // Subtle ground glow
+  const groundGlow=ctx.createLinearGradient(0,H*0.85,0,H);
+  groundGlow.addColorStop(0,'rgba(0,80,60,0)');
+  groundGlow.addColorStop(1,'rgba(0,40,30,0.15)');
+  ctx.fillStyle=groundGlow;
+  ctx.fillRect(0,H*0.85,W,H*0.15);
+
+  // Ground silhouette (hills)
+  ctx.beginPath();
+  ctx.moveTo(0,H);
+  for(let x=0;x<=W;x+=4){
+    const h1=Math.sin(x*0.002)*H*0.03;
+    const h2=Math.sin(x*0.005+2)*H*0.015;
+    const h3=Math.sin(x*0.001+5)*H*0.02;
+    ctx.lineTo(x,H*0.92+h1+h2+h3);
+  }
+  ctx.lineTo(W,H);ctx.closePath();
+  ctx.fillStyle='#0a0a12';
+  ctx.fill();
+
+  // Trees silhouette
+  for(let x=0;x<W;x+=W*0.03){
+    const baseY=H*0.92+Math.sin(x*0.002)*H*0.03+Math.sin(x*0.005+2)*H*0.015+Math.sin(x*0.001+5)*H*0.02;
+    const treeH=H*0.02+Math.random()*H*0.015;
+    ctx.beginPath();
+    ctx.moveTo(x,baseY);
+    ctx.lineTo(x-treeH*0.25,baseY);
+    ctx.lineTo(x,baseY-treeH);
+    ctx.lineTo(x+treeH*0.25,baseY);
+    ctx.closePath();
+    ctx.fillStyle='#060610';
+    ctx.fill();
+  }
+
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>
