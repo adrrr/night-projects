@@ -103,25 +103,17 @@ Simulation interactive d'aurores boréales — 7 rideaux lumineux ondulent sur u
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/aurora-borealis/)
 
-### 🌧️ [Rain Synth](./rain-synth/)
-Synthétiseur de pluie interactif — des gouttes tombent en continu, chaque impact crée des ondulations et un son doux via Web Audio API. Touche pour créer tes propres grosses gouttes. Pitch lié à la position X (grave à gauche, aigu à droite), reverb réglable, 4 thèmes de couleur. Méditatif et hypnotique.
-
-▶️ [Essayer](https://adrrr.github.io/night-projects/rain-synth/)
-
-### 🏃 [Maze Runner](./maze-runner/)
-Labyrinthe procédural néon — navigue dans des labyrinthes générés algorithmiquement avec un trail lumineux cyan. Difficulté progressive, mini-carte des zones explorées, caméra smooth, animation de victoire avec particules. Swipe mobile + clavier desktop.
-
-▶️ [Essayer](https://adrrr.github.io/night-projects/maze-runner/)
-
-### 🌌 [Aurora Borealis](./aurora-borealis/)
-Simulation interactive d'aurores boréales — 7 rideaux lumineux ondulent sur un ciel étoilé avec 300 étoiles scintillantes. Touche/glisse pour perturber les aurores, couleurs vives (vert, violet, bleu, rose) en mode screen blending. Silhouettes de collines et sapins en premier plan. Contemplatif.
-
-▶️ [Essayer](https://adrrr.github.io/night-projects/aurora-borealis/)
-
 ### 🔮 [Kaleidoscope](./kaleidoscope/)
 App de dessin symétrique interactive — 4 modes de symétrie (6/8/12/16 segments), 3 types de brush (round, diamond, star), 5 palettes de couleurs, sliders trail/taille, undo/clear/save PNG. Particules idle hypnotiques quand on ne dessine pas.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/kaleidoscope/)
+
+---
+
+### 🧬 [Reaction-Diffusion](./reaction-diffusion/)
+Simulateur de réaction-diffusion Gray-Scott en temps réel via WebGL — touche pour injecter du réactif et créer des patterns de Turing hypnotiques (spots, coraux, vers, solitons). 5 presets de paramètres, thème sombre avec glow néon. Les patterns émergent comme dans la nature (peau de léopard, motifs de coquillages).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/reaction-diffusion/)
 
 ---
 
