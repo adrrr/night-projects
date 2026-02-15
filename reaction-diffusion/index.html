@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Reaction-Diffusion</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --panel: rgba(12, 12, 20, 0.85);
+    --border: rgba(100, 140, 255, 0.15);
+    --glow: rgba(80, 120, 255, 0.4);
+    --text: #c8d0e8;
+    --text-dim: #6a7090;
+    --accent: #5b8cff;
+    --accent2: #a855f7;
+    --active: #7c3aed;
+    --radius: 12px;
+  }
+
+  html, body {
+    height: 100%; width: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    color: var(--text);
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  canvas#sim {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+
+  /* --- UI Overlay --- */
+  .ui {
+    position: fixed;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .ui > * { pointer-events: auto; }
+
+  /* Title */
+  .title-bar {
+    position: fixed;
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 0.5s;
+  }
+  .title-bar h1 {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    text-shadow: 0 0 20px var(--glow);
+  }
+  .title-bar .subtitle {
+    font-size: 11px;
+    color: rgba(106, 112, 144, 0.6);
+    margin-top: 4px;
+    letter-spacing: 1px;
+  }
+
+  /* Bottom Controls */
+  .controls {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 20;
+    padding: 0 12px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .controls.hidden {
+    transform: translateY(calc(100% + 20px));
+  }
+
+  .preset-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 600px;
+  }
+
+  .btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    white-space: nowrap;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn:active {
+    transform: scale(0.95);
+  }
+  .btn.active {
+    background: rgba(91, 140, 255, 0.2);
+    border-color: var(--accent);
+    box-shadow: 0 0 20px rgba(91, 140, 255, 0.15), inset 0 0 20px rgba(91, 140, 255, 0.05);
+    color: #fff;
+  }
+  .btn .icon { font-size: 16px; }
+
+  .action-row {
+    display: flex;
+    gap: 8px;
+  }
+  .btn-icon {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 44px; height: 44px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    transition: all 0.2s;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .btn-icon:active { transform: scale(0.92); }
+  .btn-icon.active {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* Toggle UI button */
+  .toggle-ui {
+    position: fixed;
+    top: 16px; right: 16px;
+    z-index: 30;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: all 0.2s;
+  }
+  .toggle-ui:active { transform: scale(0.92); }
+
+  /* Parameter sliders panel */
+  .param-panel {
+    position: fixed;
+    bottom: 120px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 20px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    width: min(360px, calc(100vw - 32px));
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  }
+  .param-panel.visible { display: flex; }
+  .param-panel h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+  }
+  .slider-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .slider-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .slider-label .val {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(100, 140, 255, 0.1);
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 10px var(--glow);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 0 10px var(--glow);
+  }
+
+  /* Brush size indicator */
+  .brush-indicator {
+    position: fixed;
+    pointer-events: none;
+    border: 2px solid rgba(91, 140, 255, 0.5);
+    border-radius: 50%;
+    z-index: 15;
+    opacity: 0;
+    transition: opacity 0.3s;
+    box-shadow: 0 0 10px rgba(91, 140, 255, 0.2);
+  }
+  .brush-indicator.visible { opacity: 1; }
+
+  /* FPS counter */
+  .fps {
+    position: fixed;
+    top: 16px; left: 16px;
+    z-index: 20;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    opacity: 0.5;
+  }
+
+  /* Color scheme picker */
+  .color-row {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+  }
+  .color-swatch {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .color-swatch.active {
+    border-color: #fff;
+    box-shadow: 0 0 12px var(--glow);
+    transform: scale(1.15);
+  }
+  .color-swatch:active { transform: scale(0.9); }
+
+  @media (min-width: 640px) {
+    .controls { padding: 0 24px 24px; }
+    .btn { padding: 10px 20px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="sim"></canvas>
+
+<div class="title-bar" id="titleBar">
+  <h1>Reaction-Diffusion</h1>
+  <div class="subtitle">tap to inject chemical</div>
+</div>
+
+<div class="fps" id="fps">60 fps</div>
+
+<button class="toggle-ui" id="toggleUI" aria-label="Toggle UI">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+    <circle cx="12" cy="12" r="1.5"/><circle cx="6" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/>
+  </svg>
+</button>
+
+<div class="brush-indicator" id="brushIndicator"></div>
+
+<div class="param-panel" id="paramPanel">
+  <h3>Parameters</h3>
+  <div class="slider-group">
+    <div class="slider-label"><span>Feed rate (f)</span><span class="val" id="fVal">0.0550</span></div>
+    <input type="range" id="fSlider" min="0.01" max="0.08" step="0.001" value="0.055">
+  </div>
+  <div class="slider-group">
+    <div class="slider-label"><span>Kill rate (k)</span><span class="val" id="kVal">0.0620</span></div>
+    <input type="range" id="kSlider" min="0.03" max="0.075" step="0.001" value="0.062">
+  </div>
+  <div class="slider-group">
+    <div class="slider-label"><span>Brush size</span><span class="val" id="bVal">20</span></div>
+    <input type="range" id="bSlider" min="5" max="60" step="1" value="20">
+  </div>
+  <div class="slider-group">
+    <div class="slider-label"><span>Speed (steps/frame)</span><span class="val" id="sVal">8</span></div>
+    <input type="range" id="sSlider" min="1" max="24" step="1" value="8">
+  </div>
+  <h3 style="margin-top:4px">Color Scheme</h3>
+  <div class="color-row" id="colorRow"></div>
+</div>
+
+<div class="controls" id="controls">
+  <div class="preset-row" id="presetRow"></div>
+  <div class="action-row">
+    <button class="btn-icon" id="btnParams" aria-label="Parameters" title="Parameters">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/>
+        <circle cx="8" cy="7" r="2.5" fill="currentColor"/><circle cx="16" cy="17" r="2.5" fill="currentColor"/>
+      </svg>
+    </button>
+    <button class="btn-icon" id="btnPause" aria-label="Pause" title="Pause/Play">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>
+      </svg>
+    </button>
+    <button class="btn-icon" id="btnClear" aria-label="Clear" title="Clear">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+      </svg>
+    </button>
+    <button class="btn-icon" id="btnSeed" aria-label="Random seed" title="Random seed">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M 4 4 L 10 4 L 4 10 Z M 14 4 L 20 4 L 20 10 Z M 4 14 L 4 20 L 10 20 Z M 20 14 L 20 20 L 14 20 Z M 12 12 m-1.5 0 a 1.5 1.5 0 1 0 3 0 a 1.5 1.5 0 1 0 -3 0"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  Reaction-Diffusion Simulator — Gray-Scott Model (WebGL)
+// ============================================================
+
+const PRESETS = [
+  { name: 'Mitosis',    f: 0.0367, k: 0.0649, icon: '&#x25CB;' },
+  { name: 'Coral',      f: 0.0545, k: 0.062,  icon: '&#x2740;' },
+  { name: 'Solitons',   f: 0.03,   k: 0.06,   icon: '&#x25C6;' },
+  { name: 'Worms',      f: 0.078,  k: 0.061,  icon: '&#x223F;' },
+  { name: 'Maze',       f: 0.029,  k: 0.057,  icon: '&#x2593;' },
+  { name: 'Bubbles',    f: 0.012,  k: 0.047,  icon: '&#x25EF;' },
+  { name: 'Waves',      f: 0.014,  k: 0.054,  icon: '&#x2248;' },
+  { name: 'Fingerprint',f: 0.055,  k: 0.063,  icon: '&#x259A;' },
+];
+
+const COLOR_SCHEMES = [
+  { name: 'Neon Blue',  colors: [[0.02,0.02,0.06,1], [0.05,0.15,0.4,1], [0.2,0.5,1.0,1], [0.6,0.8,1.0,1], [1,1,1,1]] },
+  { name: 'Plasma',     colors: [[0.05,0.0,0.1,1], [0.4,0.0,0.4,1], [0.9,0.2,0.3,1], [1.0,0.7,0.2,1], [1,1,0.9,1]] },
+  { name: 'Ocean',      colors: [[0.0,0.02,0.06,1], [0.0,0.1,0.2,1], [0.0,0.4,0.5,1], [0.2,0.8,0.7,1], [0.8,1.0,0.95,1]] },
+  { name: 'Ember',      colors: [[0.05,0.02,0.0,1], [0.3,0.05,0.0,1], [0.7,0.15,0.0,1], [1.0,0.5,0.1,1], [1.0,0.9,0.6,1]] },
+  { name: 'Toxic',      colors: [[0.02,0.04,0.0,1], [0.0,0.15,0.05,1], [0.1,0.5,0.1,1], [0.3,0.9,0.2,1], [0.8,1.0,0.5,1]] },
+  { name: 'Mono',       colors: [[0.0,0.0,0.0,1], [0.15,0.15,0.17,1], [0.4,0.4,0.42,1], [0.7,0.7,0.72,1], [1,1,1,1]] },
+];
+
+// --- State ---
+let params = { f: 0.0545, k: 0.062 };
+let brushRadius = 20;
+let stepsPerFrame = 8;
+let paused = false;
+let uiVisible = true;
+let paramPanelOpen = false;
+let activePreset = 1; // coral
+let activeColor = 0;
+let simW, simH;
+
+// --- Canvas & GL setup ---
+const canvas = document.getElementById('sim');
+const gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false });
+if (!gl) { document.body.innerHTML = '<p style="color:#fff;padding:40px;text-align:center">WebGL not supported.</p>'; throw 'No WebGL'; }
+
+// Extensions
+const extFloat = gl.getExtension('OES_texture_float');
+const extHalfFloat = gl.getExtension('OES_texture_half_float');
+const extFloatLinear = gl.getExtension('OES_texture_float_linear');
+const extHalfLinear = gl.getExtension('OES_texture_half_float_linear');
+const useFloat = !!extFloat;
+const texType = useFloat ? gl.FLOAT : (extHalfFloat ? extHalfFloat.HALF_FLOAT_OES : gl.UNSIGNED_BYTE);
+
+// --- Shaders ---
+const QUAD_VS = `
+attribute vec2 a_pos;
+varying vec2 v_uv;
+void main() {
+  v_uv = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+
+const SIM_FS = `
+precision highp float;
+varying vec2 v_uv;
+uniform sampler2D u_state;
+uniform vec2 u_texel;
+uniform float u_f;
+uniform float u_k;
+uniform float u_dt;
+
+void main() {
+  vec2 st = texture2D(u_state, v_uv).rg;
+  float a = st.r;
+  float b = st.g;
+
+  // Laplacian (5-point stencil)
+  vec2 l = texture2D(u_state, v_uv + vec2(-u_texel.x, 0.0)).rg;
+  vec2 r = texture2D(u_state, v_uv + vec2( u_texel.x, 0.0)).rg;
+  vec2 t = texture2D(u_state, v_uv + vec2(0.0,  u_texel.y)).rg;
+  vec2 bo= texture2D(u_state, v_uv + vec2(0.0, -u_texel.y)).rg;
+  // Diagonal neighbors for better quality 9-point laplacian
+  vec2 tl = texture2D(u_state, v_uv + vec2(-u_texel.x,  u_texel.y)).rg;
+  vec2 tr = texture2D(u_state, v_uv + vec2( u_texel.x,  u_texel.y)).rg;
+  vec2 bl = texture2D(u_state, v_uv + vec2(-u_texel.x, -u_texel.y)).rg;
+  vec2 br = texture2D(u_state, v_uv + vec2( u_texel.x, -u_texel.y)).rg;
+
+  vec2 lap = (l + r + t + bo) * 0.2 + (tl + tr + bl + br) * 0.05 - st * 1.0;
+
+  float Da = 1.0;
+  float Db = 0.5;
+  float abb = a * b * b;
+
+  float na = a + (Da * lap.r - abb + u_f * (1.0 - a)) * u_dt;
+  float nb = b + (Db * lap.g + abb - (u_k + u_f) * b) * u_dt;
+
+  gl_FragColor = vec4(clamp(na, 0.0, 1.0), clamp(nb, 0.0, 1.0), 0.0, 1.0);
+}`;
+
+const SEED_FS = `
+precision highp float;
+varying vec2 v_uv;
+uniform sampler2D u_state;
+uniform vec2 u_point;    // normalized coords of seed center
+uniform float u_radius;  // normalized radius
+uniform float u_mode;    // 0 = add chemical B, 1 = clear
+
+void main() {
+  vec2 st = texture2D(u_state, v_uv).rg;
+  float d = length(v_uv - u_point);
+  float mask = smoothstep(u_radius, u_radius * 0.3, d);
+
+  if (u_mode < 0.5) {
+    // Inject B
+    st.g = mix(st.g, 1.0, mask);
+    // Slightly reduce A where we inject
+    st.r = mix(st.r, 0.0, mask * 0.5);
+  } else {
+    // Clear to initial state
+    st = mix(st, vec2(1.0, 0.0), mask);
+  }
+
+  gl_FragColor = vec4(st, 0.0, 1.0);
+}`;
+
+const RENDER_FS = `
+precision highp float;
+varying vec2 v_uv;
+uniform sampler2D u_state;
+uniform vec4 u_c0, u_c1, u_c2, u_c3, u_c4;
+
+vec4 palette(float t) {
+  if (t < 0.25) return mix(u_c0, u_c1, t * 4.0);
+  if (t < 0.5)  return mix(u_c1, u_c2, (t - 0.25) * 4.0);
+  if (t < 0.75) return mix(u_c2, u_c3, (t - 0.5) * 4.0);
+  return mix(u_c3, u_c4, (t - 0.75) * 4.0);
+}
+
+void main() {
+  vec2 st = texture2D(u_state, v_uv).rg;
+  float v = st.g;
+  // Enhance contrast
+  v = smoothstep(0.0, 0.45, v);
+  vec4 col = palette(v);
+  // Subtle vignette
+  float vig = 1.0 - 0.3 * length(v_uv - 0.5);
+  col.rgb *= vig;
+  gl_FragColor = col;
+}`;
+
+const INIT_FS = `
+precision highp float;
+varying vec2 v_uv;
+void main() {
+  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+}`;
+
+// --- GL helpers ---
+function createShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+    gl.deleteShader(s);
+    return null;
+  }
+  return s;
+}
+
+function createProgram(vsSrc, fsSrc) {
+  const vs = createShader(gl.VERTEX_SHADER, vsSrc);
+  const fs = createShader(gl.FRAGMENT_SHADER, fsSrc);
+  const p = gl.createProgram();
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(p));
+    return null;
+  }
+  // Get all uniforms
+  const uniforms = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const info = gl.getActiveUniform(p, i);
+    uniforms[info.name] = gl.getUniformLocation(p, info.name);
+  }
+  return { program: p, uniforms };
+}
+
+function createTexture(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, texType, null);
+  return tex;
+}
+
+function createFBO(w, h) {
+  const tex = createTexture(w, h);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { texture: tex, framebuffer: fb };
+}
+
+// Full-screen quad
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+
+function drawQuad(prog) {
+  gl.useProgram(prog.program);
+  const loc = gl.getAttribLocation(prog.program, 'a_pos');
+  gl.enableVertexAttribArray(loc);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+// --- Programs ---
+const simProg    = createProgram(QUAD_VS, SIM_FS);
+const seedProg   = createProgram(QUAD_VS, SEED_FS);
+const renderProg = createProgram(QUAD_VS, RENDER_FS);
+const initProg   = createProgram(QUAD_VS, INIT_FS);
+
+// --- Framebuffers ---
+let fbo0, fbo1;
+
+function initFBOs() {
+  if (fbo0) {
+    gl.deleteTexture(fbo0.texture);
+    gl.deleteFramebuffer(fbo0.framebuffer);
+    gl.deleteTexture(fbo1.texture);
+    gl.deleteFramebuffer(fbo1.framebuffer);
+  }
+  fbo0 = createFBO(simW, simH);
+  fbo1 = createFBO(simW, simH);
+}
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(window.innerWidth * dpr);
+  canvas.height = Math.floor(window.innerHeight * dpr);
+  // Sim resolution: lower for performance
+  const maxDim = 512;
+  const aspect = canvas.width / canvas.height;
+  if (aspect >= 1) {
+    simW = maxDim;
+    simH = Math.floor(maxDim / aspect);
+  } else {
+    simH = maxDim;
+    simW = Math.floor(maxDim * aspect);
+  }
+  // Ensure even dimensions
+  simW = simW & ~1;
+  simH = simH & ~1;
+  initFBOs();
+  clearSim();
+}
+
+function clearSim() {
+  // Fill with A=1, B=0
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo0.framebuffer);
+  gl.viewport(0, 0, simW, simH);
+  drawQuad(initProg);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo1.framebuffer);
+  drawQuad(initProg);
+}
+
+function seedRandom() {
+  // Add random spots of chemical B
+  const count = 15 + Math.floor(Math.random() * 15);
+  for (let i = 0; i < count; i++) {
+    const x = 0.1 + Math.random() * 0.8;
+    const y = 0.1 + Math.random() * 0.8;
+    const r = 0.01 + Math.random() * 0.03;
+    addSeed(x, y, r, 0);
+  }
+}
+
+function addSeed(nx, ny, nr, mode) {
+  // Read from fbo0, write to fbo1
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo1.framebuffer);
+  gl.viewport(0, 0, simW, simH);
+  gl.useProgram(seedProg.program);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fbo0.texture);
+  gl.uniform1i(seedProg.uniforms['u_state'], 0);
+  gl.uniform2f(seedProg.uniforms['u_point'], nx, ny);
+  gl.uniform1f(seedProg.uniforms['u_radius'], nr);
+  gl.uniform1f(seedProg.uniforms['u_mode'], mode);
+  drawQuad(seedProg);
+  // Swap
+  [fbo0, fbo1] = [fbo1, fbo0];
+}
+
+// --- Simulation step ---
+function simStep() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo1.framebuffer);
+  gl.viewport(0, 0, simW, simH);
+  gl.useProgram(simProg.program);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fbo0.texture);
+  gl.uniform1i(simProg.uniforms['u_state'], 0);
+  gl.uniform2f(simProg.uniforms['u_texel'], 1.0/simW, 1.0/simH);
+  gl.uniform1f(simProg.uniforms['u_f'], params.f);
+  gl.uniform1f(simProg.uniforms['u_k'], params.k);
+  gl.uniform1f(simProg.uniforms['u_dt'], 1.0);
+  drawQuad(simProg);
+  [fbo0, fbo1] = [fbo1, fbo0];
+}
+
+// --- Render ---
+function render() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(renderProg.program);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fbo0.texture);
+  gl.uniform1i(renderProg.uniforms['u_state'], 0);
+
+  const cs = COLOR_SCHEMES[activeColor].colors;
+  gl.uniform4fv(renderProg.uniforms['u_c0'], cs[0]);
+  gl.uniform4fv(renderProg.uniforms['u_c1'], cs[1]);
+  gl.uniform4fv(renderProg.uniforms['u_c2'], cs[2]);
+  gl.uniform4fv(renderProg.uniforms['u_c3'], cs[3]);
+  gl.uniform4fv(renderProg.uniforms['u_c4'], cs[4]);
+  drawQuad(renderProg);
+}
+
+// --- Input handling ---
+let pointerDown = false;
+let lastPointerPos = null;
+
+function screenToSim(clientX, clientY) {
+  return [clientX / window.innerWidth, 1.0 - clientY / window.innerHeight];
+}
+
+function handlePointerAt(cx, cy) {
+  const [nx, ny] = screenToSim(cx, cy);
+  const nr = brushRadius / Math.max(simW, simH);
+  addSeed(nx, ny, nr, 0);
+}
+
+// Interpolate between points for smooth painting
+function handlePointerMove(cx, cy) {
+  if (!lastPointerPos) {
+    handlePointerAt(cx, cy);
+    lastPointerPos = [cx, cy];
+    return;
+  }
+  const dx = cx - lastPointerPos[0];
+  const dy = cy - lastPointerPos[1];
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const step = Math.max(brushRadius * 0.5, 4);
+  const steps = Math.max(1, Math.ceil(dist / step));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    handlePointerAt(lastPointerPos[0] + dx*t, lastPointerPos[1] + dy*t);
+  }
+  lastPointerPos = [cx, cy];
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (e.target !== canvas) return;
+  pointerDown = true;
+  lastPointerPos = null;
+  handlePointerMove(e.clientX, e.clientY);
+  // Fade title after first interaction
+  document.getElementById('titleBar').style.opacity = '0';
+});
+
+canvas.addEventListener('pointermove', e => {
+  // Update brush indicator
+  const bi = document.getElementById('brushIndicator');
+  const sz = brushRadius * 2 * (window.innerWidth / simW);
+  bi.style.width = sz + 'px';
+  bi.style.height = sz + 'px';
+  bi.style.left = (e.clientX - sz/2) + 'px';
+  bi.style.top = (e.clientY - sz/2) + 'px';
+  bi.classList.add('visible');
+
+  if (!pointerDown) return;
+  handlePointerMove(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('pointerup', () => { pointerDown = false; lastPointerPos = null; });
+canvas.addEventListener('pointerleave', () => {
+  pointerDown = false;
+  lastPointerPos = null;
+  document.getElementById('brushIndicator').classList.remove('visible');
+});
+canvas.addEventListener('pointercancel', () => { pointerDown = false; lastPointerPos = null; });
+
+// Prevent default touch behaviors on canvas
+canvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+// --- UI ---
+function buildPresetButtons() {
+  const row = document.getElementById('presetRow');
+  row.innerHTML = '';
+  PRESETS.forEach((p, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'btn' + (i === activePreset ? ' active' : '');
+    btn.innerHTML = `<span class="icon">${p.icon}</span> ${p.name}`;
+    btn.addEventListener('click', () => selectPreset(i));
+    row.appendChild(btn);
+  });
+}
+
+function selectPreset(idx) {
+  activePreset = idx;
+  const p = PRESETS[idx];
+  params.f = p.f;
+  params.k = p.k;
+  document.getElementById('fSlider').value = p.f;
+  document.getElementById('kSlider').value = p.k;
+  document.getElementById('fVal').textContent = p.f.toFixed(4);
+  document.getElementById('kVal').textContent = p.k.toFixed(4);
+  // Update buttons
+  document.querySelectorAll('.preset-row .btn').forEach((b, i) => {
+    b.classList.toggle('active', i === idx);
+  });
+}
+
+function buildColorSwatches() {
+  const row = document.getElementById('colorRow');
+  row.innerHTML = '';
+  COLOR_SCHEMES.forEach((cs, i) => {
+    const s = document.createElement('div');
+    s.className = 'color-swatch' + (i === activeColor ? ' active' : '');
+    // Gradient background from the color scheme
+    const c2 = cs.colors[2];
+    const c4 = cs.colors[4];
+    s.style.background = `linear-gradient(135deg, rgb(${c2[0]*255|0},${c2[1]*255|0},${c2[2]*255|0}), rgb(${c4[0]*255|0},${c4[1]*255|0},${c4[2]*255|0}))`;
+    s.addEventListener('click', () => {
+      activeColor = i;
+      document.querySelectorAll('.color-swatch').forEach((sw, j) => sw.classList.toggle('active', j === i));
+    });
+    row.appendChild(s);
+  });
+}
+
+// Slider events
+document.getElementById('fSlider').addEventListener('input', e => {
+  params.f = parseFloat(e.target.value);
+  document.getElementById('fVal').textContent = params.f.toFixed(4);
+  activePreset = -1;
+  document.querySelectorAll('.preset-row .btn').forEach(b => b.classList.remove('active'));
+});
+document.getElementById('kSlider').addEventListener('input', e => {
+  params.k = parseFloat(e.target.value);
+  document.getElementById('kVal').textContent = params.k.toFixed(4);
+  activePreset = -1;
+  document.querySelectorAll('.preset-row .btn').forEach(b => b.classList.remove('active'));
+});
+document.getElementById('bSlider').addEventListener('input', e => {
+  brushRadius = parseInt(e.target.value);
+  document.getElementById('bVal').textContent = brushRadius;
+});
+document.getElementById('sSlider').addEventListener('input', e => {
+  stepsPerFrame = parseInt(e.target.value);
+  document.getElementById('sVal').textContent = stepsPerFrame;
+});
+
+// Prevent slider events from triggering canvas painting
+document.getElementById('paramPanel').addEventListener('pointerdown', e => e.stopPropagation());
+document.getElementById('controls').addEventListener('pointerdown', e => e.stopPropagation());
+
+// Action buttons
+document.getElementById('btnPause').addEventListener('click', () => {
+  paused = !paused;
+  const btn = document.getElementById('btnPause');
+  btn.classList.toggle('active', paused);
+  btn.innerHTML = paused
+    ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
+    : '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+});
+
+document.getElementById('btnClear').addEventListener('click', () => {
+  clearSim();
+});
+
+document.getElementById('btnSeed').addEventListener('click', () => {
+  seedRandom();
+});
+
+document.getElementById('btnParams').addEventListener('click', () => {
+  paramPanelOpen = !paramPanelOpen;
+  document.getElementById('paramPanel').classList.toggle('visible', paramPanelOpen);
+  document.getElementById('btnParams').classList.toggle('active', paramPanelOpen);
+});
+
+document.getElementById('toggleUI').addEventListener('click', () => {
+  uiVisible = !uiVisible;
+  document.getElementById('controls').classList.toggle('hidden', !uiVisible);
+  if (!uiVisible) {
+    paramPanelOpen = false;
+    document.getElementById('paramPanel').classList.remove('visible');
+    document.getElementById('btnParams').classList.remove('active');
+  }
+});
+
+// Close param panel when tapping outside
+document.addEventListener('pointerdown', e => {
+  if (paramPanelOpen &&
+      !document.getElementById('paramPanel').contains(e.target) &&
+      e.target !== document.getElementById('btnParams') &&
+      !document.getElementById('btnParams').contains(e.target)) {
+    paramPanelOpen = false;
+    document.getElementById('paramPanel').classList.remove('visible');
+    document.getElementById('btnParams').classList.remove('active');
+  }
+});
+
+// --- Animation loop ---
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let fps = 60;
+
+function loop() {
+  requestAnimationFrame(loop);
+
+  // FPS
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 500) {
+    fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
+    document.getElementById('fps').textContent = fps + ' fps';
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+
+  // Sim steps
+  if (!paused) {
+    for (let i = 0; i < stepsPerFrame; i++) {
+      simStep();
+    }
+  }
+
+  // Render
+  render();
+}
+
+// --- Init ---
+window.addEventListener('resize', resize);
+resize();
+buildPresetButtons();
+buildColorSwatches();
+selectPreset(activePreset);
+seedRandom();
+loop();
+
+</script>
+</body>
+</html>
