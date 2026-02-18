@@ -8,6 +8,13 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🔫 [Vector Siege](./vector-siege/)
+Shooter arcade vectoriel inspiré d'Asteroids — contrôles joystick mobile, vagues d'ennemis, explosions néon, et bande-son synthwave. Zéro dépendance, 100% addictif.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/vector-siege/)
+
+
+
 ### 🎵 [Audio Vizualizer](./audio-vizualizer/)
 Visualiseur audio réactif au micro — barres de fréquences cyberpunk + particules qui explosent sur les beats. Zéro dépendance, juste l'API Web Audio.
 
