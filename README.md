@@ -8,6 +8,16 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🎵 **[Rhythm Orb](https://adrrr.github.io/night-projects/rhythm-orb/)**
+Jeu de rythme mobile-first — tapez les orbes en rythme sur 3 niveaux de difficulté. Gameplay inspiré d'Osu!, avec sons synthé, particules néon et combos satisfaisants.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/rhythm-orb/)
+
+### 🕹️ **[Plinko Drop](https://adrrr.github.io/night-projects/plinko-drop/)**
+Jeu d'arcade style pachinko/plinko addictif — lâche des balles, regarde-les rebondir sur les clous et vise les zones de score les plus élevées. Physique satisfaisante, boutique d'améliorations et high scores.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/plinko-drop/)
+
 ### 🔫 [Vector Siege](./vector-siege/)
 Shooter arcade vectoriel inspiré d'Asteroids — contrôles joystick mobile, vagues d'ennemis, explosions néon, et bande-son synthwave. Zéro dépendance, 100% addictif.
 
