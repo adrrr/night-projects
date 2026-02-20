@@ -8,6 +8,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### ⏳ **[Sand Art](https://adrrr.github.io/night-projects/sand-art/)**
+Simulateur de sable coloré — physique cellulaire réaliste (automate cellulaire), 10 couleurs + mode rainbow, brush ajustable, shake & save en PNG 3x. Touch-first, 60fps.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/sand-art/)
+
 ### 🎵 **[Rhythm Orb](https://adrrr.github.io/night-projects/rhythm-orb/)**
 Jeu de rythme mobile-first — tapez les orbes en rythme sur 3 niveaux de difficulté. Gameplay inspiré d'Osu!, avec sons synthé, particules néon et combos satisfaisants.
 
