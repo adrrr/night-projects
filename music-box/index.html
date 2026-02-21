@@ -329,6 +329,24 @@ function ensureAudio() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
+// Unlock audio on first user gesture (required by mobile browsers)
+(function unlockAudio() {
+  const events = ['touchstart', 'touchend', 'mousedown', 'click'];
+  function unlock() {
+    ensureAudio();
+    if (audioCtx) {
+      // Play a silent buffer to fully unlock
+      const buf = audioCtx.createBuffer(1, 1, 22050);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start(0);
+    }
+    events.forEach(e => document.removeEventListener(e, unlock, true));
+  }
+  events.forEach(e => document.addEventListener(e, unlock, true));
+})();
+
 function playNote(freq, time, inst) {
   if (!audioCtx) return;
   const ctx = audioCtx;
