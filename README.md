@@ -8,6 +8,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🎵 **[Music Box](https://adrrr.github.io/night-projects/music-box/)**
+Boîte à musique interactive — placez des pins sur un cylindre rotatif pour créer des mélodies. 3 instruments synthétisés (Music Box, Soft Piano, Marimba), gamme pentatonique, tempo ajustable, partage par URL. Web Audio API, touch-first, zéro dépendance.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/music-box/)
+
 ### ⏳ **[Sand Art](https://adrrr.github.io/night-projects/sand-art/)**
 Simulateur de sable coloré — physique cellulaire réaliste (automate cellulaire), 10 couleurs + mode rainbow, brush ajustable, shake & save en PNG 3x. Touch-first, 60fps.
 
