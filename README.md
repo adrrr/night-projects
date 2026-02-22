@@ -8,6 +8,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🪟 **[Stained Glass Creator](https://adrrr.github.io/night-projects/stained-glass/)**
+Générateur de vitraux interactif — tapez pour placer des points seed qui créent un diagramme de Voronoi rendu comme un vitrail. 5 palettes (Cathedral, Tiffany, Modern, Sunset, Ocean), source de lumière déplaçable, effet de verre réaliste avec lead lines, shimmer et sparkles. Export PNG. Touch-first, canvas haute perf.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/stained-glass/)
+
 ### 🎵 **[Music Box](https://adrrr.github.io/night-projects/music-box/)**
 Boîte à musique interactive — placez des pins sur un cylindre rotatif pour créer des mélodies. 3 instruments synthétisés (Music Box, Soft Piano, Marimba), gamme pentatonique, tempo ajustable, partage par URL. Web Audio API, touch-first, zéro dépendance.
 
