@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Stained Glass Creator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; user-select: none; }
+  
+  canvas { display: block; width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+  
+  #ui {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+    padding: 12px 8px calc(env(safe-area-inset-bottom, 8px) + 12px);
+    background: linear-gradient(transparent, rgba(0,0,0,0.7) 30%);
+    z-index: 10;
+  }
+  
+  .btn {
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+    color: #fff; padding: 10px 16px; border-radius: 24px; font-size: 14px;
+    cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    transition: background 0.2s, transform 0.1s; min-height: 44px; min-width: 44px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .btn:active { transform: scale(0.95); background: rgba(255,255,255,0.25); }
+  .btn.active { background: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.5); }
+  
+  #palette-bar {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: center; gap: 8px;
+    padding: calc(env(safe-area-inset-top, 8px) + 12px) 8px 12px;
+    background: linear-gradient(rgba(0,0,0,0.7) 70%, transparent);
+    z-index: 10;
+  }
+  
+  .palette-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3);
+    cursor: pointer; transition: transform 0.2s, border-color 0.2s; position: relative;
+  }
+  .palette-btn.active { border-color: #fff; transform: scale(1.2); }
+  .palette-btn::after {
+    content: attr(data-name); position: absolute; top: 42px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: rgba(255,255,255,0.7); white-space: nowrap; pointer-events: none;
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .palette-btn.active::after { opacity: 1; }
+  
+  #hint {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: rgba(255,255,255,0.4); font-size: 18px; text-align: center;
+    pointer-events: none; transition: opacity 0.5s; z-index: 5;
+  }
+  
+  #count {
+    position: absolute; top: calc(env(safe-area-inset-top, 8px) + 56px); right: 12px;
+    color: rgba(255,255,255,0.4); font-size: 12px; z-index: 10;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="hint">Tap anywhere to place glass seeds ✨<br><small>Long-press to remove</small></div>
+<div id="count"></div>
+
+<div id="palette-bar">
+  <div class="palette-btn active" data-palette="cathedral" data-name="Cathedral" style="background: conic-gradient(#c0392b, #2980b9, #8e44ad, #f39c12, #c0392b)"></div>
+  <div class="palette-btn" data-palette="tiffany" data-name="Tiffany" style="background: conic-gradient(#1abc9c, #3498db, #2ecc71, #16a085, #1abc9c)"></div>
+  <div class="palette-btn" data-palette="modern" data-name="Modern" style="background: conic-gradient(#e74c3c, #e91e63, #ff5722, #ff9800, #e74c3c)"></div>
+  <div class="palette-btn" data-palette="sunset" data-name="Sunset" style="background: conic-gradient(#e74c3c, #f39c12, #e67e22, #d35400, #e74c3c)"></div>
+  <div class="palette-btn" data-palette="ocean" data-name="Ocean" style="background: conic-gradient(#0077b6, #00b4d8, #90e0ef, #023e8a, #0077b6)"></div>
+</div>
+
+<div id="ui">
+  <button class="btn" id="btn-random">🎲 Randomize</button>
+  <button class="btn" id="btn-clear">🗑️ Clear</button>
+  <button class="btn" id="btn-light">💡 Light</button>
+  <button class="btn" id="btn-export">📷 Export</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const hint = document.getElementById('hint');
+const countEl = document.getElementById('count');
+
+let W, H, dpr;
+let points = [];
+let colors = [];
+let targetColors = [];
+let lightX = 0.5, lightY = 0.3;
+let lightMode = false;
+let animating = true;
+let sparkles = [];
+let currentPalette = 'cathedral';
+let longPressTimer = null;
+let longPressPos = null;
+
+const PALETTES = {
+  cathedral: [
+    [192,57,43],[41,128,185],[142,68,173],[243,156,18],[39,174,96],[231,76,60],[52,152,219],[155,89,182]
+  ],
+  tiffany: [
+    [26,188,156],[46,204,113],[22,160,133],[52,152,219],[41,128,185],[39,174,96],[72,201,176],[93,173,226]
+  ],
+  modern: [
+    [231,76,60],[233,30,99],[255,87,34],[255,152,0],[156,39,176],[103,58,183],[244,67,54],[255,193,7]
+  ],
+  sunset: [
+    [231,76,60],[243,156,18],[230,126,34],[211,84,0],[192,57,43],[241,196,15],[235,77,75],[249,105,14]
+  ],
+  ocean: [
+    [0,119,182],[0,180,216],[144,224,239],[2,62,138],[3,4,94],[0,150,199],[72,202,228],[202,240,248]
+  ]
+};
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+function randomColor() {
+  const pal = PALETTES[currentPalette];
+  const base = pal[Math.floor(Math.random() * pal.length)];
+  const vary = 30;
+  return [
+    Math.min(255, Math.max(0, base[0] + (Math.random() - 0.5) * vary)),
+    Math.min(255, Math.max(0, base[1] + (Math.random() - 0.5) * vary)),
+    Math.min(255, Math.max(0, base[2] + (Math.random() - 0.5) * vary))
+  ];
+}
+
+function addPoint(x, y) {
+  points.push([x, y]);
+  const c = randomColor();
+  colors.push([...c]);
+  targetColors.push([...c]);
+  updateHint();
+  addSparkle(x, y);
+}
+
+function removeNearest(x, y) {
+  if (points.length === 0) return;
+  let minD = Infinity, minI = 0;
+  for (let i = 0; i < points.length; i++) {
+    const dx = points[i][0] - x, dy = points[i][1] - y;
+    const d = dx * dx + dy * dy;
+    if (d < minD) { minD = d; minI = i; }
+  }
+  addSparkle(points[minI][0], points[minI][1]);
+  points.splice(minI, 1);
+  colors.splice(minI, 1);
+  targetColors.splice(minI, 1);
+  updateHint();
+}
+
+function updateHint() {
+  hint.style.opacity = points.length === 0 ? '1' : '0';
+  countEl.textContent = points.length > 0 ? `${points.length} seeds` : '';
+}
+
+function addSparkle(x, y) {
+  for (let i = 0; i < 8; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    sparkles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      size: 1 + Math.random() * 2
+    });
+  }
+}
+
+function randomizeColors() {
+  for (let i = 0; i < targetColors.length; i++) {
+    targetColors[i] = randomColor();
+  }
+  // Add sparkles everywhere
+  for (const p of points) addSparkle(p[0], p[1]);
+}
+
+function lerpColor(a, b, t) {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+// Voronoi via brute force per-pixel (optimized with grid stepping)
+function render(time) {
+  if (!animating) return;
+  requestAnimationFrame(render);
+
+  // Lerp colors
+  for (let i = 0; i < colors.length; i++) {
+    colors[i] = lerpColor(colors[i], targetColors[i], 0.05);
+  }
+
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, W, H);
+
+  if (points.length === 0) return;
+
+  const step = 3; // pixel stepping for performance
+  const imgData = ctx.createImageData(Math.ceil(W / step), Math.ceil(H / step));
+  const data = imgData.data;
+  const iw = imgData.width;
+
+  const lx = lightX * W, ly = lightY * H;
+  const maxLightDist = Math.sqrt(W * W + H * H);
+
+  for (let sy = 0; sy < imgData.height; sy++) {
+    const y = sy * step;
+    for (let sx = 0; sx < iw; sx++) {
+      const x = sx * step;
+      
+      // Find nearest and second nearest
+      let minD = Infinity, minI = 0, minD2 = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const dx = points[i][0] - x, dy = points[i][1] - y;
+        const d = dx * dx + dy * dy;
+        if (d < minD) { minD2 = minD; minD = d; minI = i; }
+        else if (d < minD2) { minD2 = d; }
+      }
+
+      const idx = (sy * iw + sx) * 4;
+      const sqrtD = Math.sqrt(minD);
+      const sqrtD2 = Math.sqrt(minD2);
+      const edgeDist = (sqrtD2 - sqrtD);
+      
+      // Lead line detection
+      if (edgeDist < 3) {
+        // Dark lead
+        const leadAlpha = 1 - edgeDist / 3;
+        data[idx] = 30 * (1 - leadAlpha);
+        data[idx + 1] = 30 * (1 - leadAlpha);
+        data[idx + 2] = 40 * (1 - leadAlpha);
+        data[idx + 3] = 255;
+        continue;
+      }
+
+      const c = colors[minI];
+      
+      // Light effect
+      const ldx = x - lx, ldy = y - ly;
+      const lightDist = Math.sqrt(ldx * ldx + ldy * ldy);
+      const lightFactor = 0.6 + 0.4 * (1 - lightDist / maxLightDist);
+      
+      // Glass depth effect (lighter toward center of cell)
+      const depthFactor = 0.85 + 0.15 * Math.min(1, sqrtD / 60);
+
+      const r = Math.min(255, c[0] * lightFactor * depthFactor);
+      const g = Math.min(255, c[1] * lightFactor * depthFactor);
+      const b = Math.min(255, c[2] * lightFactor * depthFactor);
+
+      data[idx] = r;
+      data[idx + 1] = g;
+      data[idx + 2] = b;
+      data[idx + 3] = 255;
+    }
+  }
+
+  // Draw scaled up
+  const offscreen = new OffscreenCanvas(iw, imgData.height);
+  const octx = offscreen.getContext('2d');
+  octx.putImageData(imgData, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(offscreen, 0, 0, W, H);
+
+  // Shimmer / sparkle overlay
+  const t = time * 0.001;
+  for (const p of points) {
+    const shimmerX = p[0] + Math.sin(t * 1.3 + p[1] * 0.01) * 5;
+    const shimmerY = p[1] + Math.cos(t * 1.7 + p[0] * 0.01) * 5;
+    const shimmerSize = 2 + Math.sin(t * 2 + p[0]) * 1;
+    const shimmerAlpha = 0.15 + 0.1 * Math.sin(t * 3 + p[1]);
+    ctx.beginPath();
+    ctx.arc(shimmerX, shimmerY, shimmerSize, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${shimmerAlpha})`;
+    ctx.fill();
+  }
+
+  // Sparkle particles
+  for (let i = sparkles.length - 1; i >= 0; i--) {
+    const s = sparkles[i];
+    s.x += s.vx;
+    s.y += s.vy;
+    s.life -= 0.02;
+    if (s.life <= 0) { sparkles.splice(i, 1); continue; }
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size * s.life, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${s.life * 0.8})`;
+    ctx.fill();
+  }
+
+  // Light source indicator when in light mode
+  if (lightMode) {
+    ctx.beginPath();
+    ctx.arc(lx, ly, 12, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,200,0.3)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(lx, ly, 5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,200,0.8)';
+    ctx.fill();
+  }
+}
+requestAnimationFrame(render);
+
+// Touch / Mouse handling
+let pointerDown = false;
+
+function getPos(e) {
+  const t = e.touches ? e.touches[0] : e;
+  return [t.clientX, t.clientY];
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  pointerDown = true;
+  const [x, y] = [e.clientX, e.clientY];
+  longPressPos = [x, y];
+  
+  if (lightMode) {
+    lightX = x / W;
+    lightY = y / H;
+    return;
+  }
+  
+  longPressTimer = setTimeout(() => {
+    removeNearest(x, y);
+    longPressTimer = null;
+    pointerDown = false; // prevent adding on release
+  }, 500);
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!pointerDown) return;
+  e.preventDefault();
+  const [x, y] = [e.clientX, e.clientY];
+  
+  if (lightMode) {
+    lightX = x / W;
+    lightY = y / H;
+    return;
+  }
+  
+  // Cancel long press if moved too far
+  if (longPressTimer && longPressPos) {
+    const dx = x - longPressPos[0], dy = y - longPressPos[1];
+    if (dx * dx + dy * dy > 100) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+});
+
+canvas.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    if (!lightMode && pointerDown) {
+      addPoint(e.clientX, e.clientY);
+    }
+  }
+  pointerDown = false;
+});
+
+canvas.addEventListener('pointercancel', () => {
+  if (longPressTimer) clearTimeout(longPressTimer);
+  longPressTimer = null;
+  pointerDown = false;
+});
+
+// Buttons
+document.getElementById('btn-random').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (points.length === 0) {
+    // Seed some random points
+    for (let i = 0; i < 20; i++) {
+      addPoint(Math.random() * W, Math.random() * H);
+    }
+  } else {
+    randomizeColors();
+  }
+});
+
+document.getElementById('btn-clear').addEventListener('click', (e) => {
+  e.stopPropagation();
+  points = []; colors = []; targetColors = [];
+  updateHint();
+});
+
+document.getElementById('btn-light').addEventListener('click', (e) => {
+  e.stopPropagation();
+  lightMode = !lightMode;
+  e.currentTarget.classList.toggle('active', lightMode);
+});
+
+document.getElementById('btn-export').addEventListener('click', (e) => {
+  e.stopPropagation();
+  // Render at full resolution for export
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = W * 2;
+  exportCanvas.height = H * 2;
+  const ectx = exportCanvas.getContext('2d');
+  ectx.drawImage(canvas, 0, 0, exportCanvas.width, exportCanvas.height);
+  
+  const link = document.createElement('a');
+  link.download = 'stained-glass.png';
+  link.href = exportCanvas.toDataURL('image/png');
+  link.click();
+});
+
+// Palette switching
+document.querySelectorAll('.palette-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.palette-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPalette = btn.dataset.palette;
+    randomizeColors();
+  });
+});
+
+// Load saved state
+try {
+  const saved = JSON.parse(localStorage.getItem('stained-glass'));
+  if (saved && saved.points && saved.points.length) {
+    points = saved.points;
+    colors = saved.colors;
+    targetColors = saved.targetColors;
+    currentPalette = saved.palette || 'cathedral';
+    document.querySelectorAll('.palette-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.palette === currentPalette);
+    });
+    updateHint();
+  }
+} catch(e) {}
+
+// Auto-save
+setInterval(() => {
+  if (points.length > 0) {
+    localStorage.setItem('stained-glass', JSON.stringify({
+      points, colors, targetColors, palette: currentPalette
+    }));
+  }
+}, 3000);
+</script>
+</body>
+</html>
