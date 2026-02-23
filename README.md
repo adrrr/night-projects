@@ -8,6 +8,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🫧 **[Lava Lamp](https://adrrr.github.io/night-projects/lava-lamp/)**
+Simulation de lampe à lave hypnotique — metaballs avec physique de température (la cire chaude monte, froide descend), fusion organique des blobs, rendu pixel-par-pixel avec glow multi-pass. 4 thèmes (Classic Red, Ocean Blue, Cosmic Purple, Neon Green), mode ambient auto-cycle, tap pour chauffer, shake pour agiter. 60fps, zéro dépendance.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/lava-lamp/)
+
 ### 🪟 **[Stained Glass Creator](https://adrrr.github.io/night-projects/stained-glass/)**
 Générateur de vitraux interactif — tapez pour placer des points seed qui créent un diagramme de Voronoi rendu comme un vitrail. 5 palettes (Cathedral, Tiffany, Modern, Sunset, Ocean), source de lumière déplaçable, effet de verre réaliste avec lead lines, shimmer et sparkles. Export PNG. Touch-first, canvas haute perf.
 
