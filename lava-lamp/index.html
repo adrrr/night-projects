@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Lava Lamp</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #050508;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; justify-content: center; gap: 14px;
+    padding: 18px 12px calc(env(safe-area-inset-bottom, 8px) + 14px);
+    z-index: 10;
+  }
+  .theme-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 2.5px solid rgba(255,255,255,0.12);
+    cursor: pointer; transition: all 0.3s ease;
+    -webkit-tap-highlight-color: transparent;
+    outline: none; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  .theme-btn.active { border-color: rgba(255,255,255,0.75); transform: scale(1.18); box-shadow: 0 0 12px rgba(255,255,255,0.15); }
+  .theme-btn:active { transform: scale(0.92); }
+  .theme-btn.active:active { transform: scale(1.05); }
+  #ambient-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 2.5px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.04);
+    cursor: pointer; color: rgba(255,255,255,0.4);
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    transition: all 0.3s ease;
+    -webkit-tap-highlight-color: transparent;
+    outline: none; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  #ambient-btn.active {
+    border-color: rgba(255,255,255,0.75);
+    color: rgba(255,255,255,0.9);
+    background: rgba(255,255,255,0.08);
+  }
+  #ambient-btn:active { transform: scale(0.92); }
+  #heat-indicator {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.7); font-size: 12px; letter-spacing: 2px;
+    font-weight: 500;
+    opacity: 0; transition: opacity 0.3s ease;
+    pointer-events: none; z-index: 10;
+    text-transform: uppercase;
+  }
+  #heat-indicator.visible { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="heat-indicator">+ HEAT</div>
+<div id="ui">
+  <button class="theme-btn active" id="t0" title="Classic Red"></button>
+  <button class="theme-btn" id="t1" title="Ocean Blue"></button>
+  <button class="theme-btn" id="t2" title="Cosmic Purple"></button>
+  <button class="theme-btn" id="t3" title="Neon Green"></button>
+  <button id="ambient-btn" title="Ambient Mode">&#10227;</button>
+</div>
+<script>
+// ---- THEMES ----
+const THEMES = [
+  { name:'Classic Red',
+    blob:[1.0,0.22,0.02], blob2:[1.0,0.5,0.08], fluid:[0.4,0.08,0.02],
+    bg:[0.1,0.015,0.01], glow:[1.0,0.25,0.03],
+    btnCSS:'radial-gradient(circle at 35% 35%, #ff6622, #cc1800)' },
+  { name:'Ocean Blue',
+    blob:[0.05,0.4,1.0], blob2:[0.15,0.75,0.95], fluid:[0.03,0.12,0.3],
+    bg:[0.008,0.02,0.08], glow:[0.08,0.35,1.0],
+    btnCSS:'radial-gradient(circle at 35% 35%, #22aaff, #0044cc)' },
+  { name:'Cosmic Purple',
+    blob:[0.65,0.1,1.0], blob2:[1.0,0.15,0.55], fluid:[0.18,0.03,0.25],
+    bg:[0.04,0.008,0.08], glow:[0.55,0.08,1.0],
+    btnCSS:'radial-gradient(circle at 35% 35%, #cc44ff, #6600aa)' },
+  { name:'Neon Green',
+    blob:[0.15,0.95,0.25], blob2:[0.55,1.0,0.08], fluid:[0.04,0.2,0.05],
+    bg:[0.008,0.06,0.015], glow:[0.15,0.95,0.15],
+    btnCSS:'radial-gradient(circle at 35% 35%, #33ff44, #009922)' },
+];
+
+let currentTheme = 0;
+let targetTheme = 0;
+let themeBlend = 1;
+let ambientMode = false;
+let ambientTimer = 0;
+const AMBIENT_INTERVAL = 10000;
+
+// ---- CANVAS SETUP ----
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, lampX, lampY, lampW, lampH, dpr;
+let offCanvas, offCtx, offW, offH;
+let aspectRatio = 2.8; // lampH / lampW, updated on resize
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+
+  lampW = Math.min(W * 0.4, 200);
+  lampH = Math.min(H * 0.68, 560);
+  lampX = W / 2;
+  lampY = H * 0.45;
+  aspectRatio = lampH / lampW;
+
+  // Offscreen canvas: render metaballs at reduced resolution
+  // Use pixel scale so each "pixel" = ~3-4 CSS pixels
+  const pxSize = Math.max(2.5, 4 / dpr);
+  offW = Math.ceil(lampW / pxSize);
+  offH = Math.ceil(lampH / pxSize);
+  offCanvas = document.createElement('canvas');
+  offCanvas.width = offW;
+  offCanvas.height = offH;
+  offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- BLOB PHYSICS ----
+// Blobs live in normalized space: x in [0,1] (left to right of lamp at that y)
+// y in [0,1] (top=0, bottom=1)
+const GRAVITY = 0.00012;
+const BUOYANCY_STRENGTH = 0.00032;
+const DAMPING = 0.996;
+const MAX_VEL = 0.003;
+
+let blobs = [];
+let heatBoost = 0;
+let shakeForce = { x: 0, y: 0 };
+
+function initBlobs() {
+  blobs = [];
+  // Large pool blobs at bottom (form the wax pool)
+  for (let i = 0; i < 3; i++) {
+    blobs.push(makeBlob(
+      0.42 + Math.random() * 0.16,
+      0.82 + Math.random() * 0.14,
+      0.20 + Math.random() * 0.07,
+      0.05 + Math.random() * 0.15
+    ));
+  }
+  // Medium rising/falling blobs
+  for (let i = 0; i < 4; i++) {
+    blobs.push(makeBlob(
+      0.35 + Math.random() * 0.3,
+      0.2 + Math.random() * 0.5,
+      0.13 + Math.random() * 0.06,
+      0.3 + Math.random() * 0.5
+    ));
+  }
+  // Small accent blobs
+  for (let i = 0; i < 4; i++) {
+    blobs.push(makeBlob(
+      0.38 + Math.random() * 0.24,
+      0.1 + Math.random() * 0.75,
+      0.07 + Math.random() * 0.05,
+      Math.random()
+    ));
+  }
+}
+
+function makeBlob(x, y, radius, temp) {
+  return {
+    x, y,
+    vx: (Math.random() - 0.5) * 0.0005,
+    vy: (Math.random() - 0.5) * 0.0005,
+    radius,
+    baseRadius: radius,
+    temp,
+    phase: Math.random() * Math.PI * 2,
+    wobbleSpeed: 0.3 + Math.random() * 0.5,
+  };
+}
+initBlobs();
+
+function updateBlobs(dt) {
+  const dtc = Math.min(dt, 40);
+  heatBoost *= 0.97;
+  shakeForce.x *= 0.92;
+  shakeForce.y *= 0.92;
+
+  for (const b of blobs) {
+    // Temperature dynamics
+    if (b.y > 0.82) {
+      // Near the heat source at bottom — warm up
+      b.temp += (0.012 + heatBoost * 0.025) * dtc * 0.06;
+    } else if (b.y < 0.15) {
+      // Near top — cool down
+      b.temp -= 0.010 * dtc * 0.06;
+    } else {
+      // Middle — slow cooling
+      b.temp -= 0.003 * dtc * 0.06;
+    }
+    b.temp = Math.max(0, Math.min(1, b.temp));
+
+    // Physics: hot rises, cold sinks
+    const netForce = b.temp * BUOYANCY_STRENGTH - (1 - b.temp) * GRAVITY;
+    b.vy -= netForce * dtc;
+
+    // Organic wobble
+    b.phase += 0.0015 * dtc * b.wobbleSpeed;
+    b.vx += Math.sin(b.phase) * 0.0000035 * dtc;
+    b.vx += Math.cos(b.phase * 0.7 + 1) * 0.0000015 * dtc;
+
+    // Shake force
+    b.vx += shakeForce.x * 0.00008;
+    b.vy += shakeForce.y * 0.00008;
+
+    // Damping (viscosity of the fluid)
+    b.vx *= DAMPING;
+    b.vy *= DAMPING;
+
+    // Clamp speed
+    const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+    if (speed > MAX_VEL) {
+      b.vx = (b.vx / speed) * MAX_VEL;
+      b.vy = (b.vy / speed) * MAX_VEL;
+    }
+
+    b.x += b.vx * dtc;
+    b.y += b.vy * dtc;
+
+    // Contain in lamp (the widths change with y due to taper)
+    const w = getLampHalfWidth(b.y);
+    const margin = b.radius * 0.15;
+    const minX = 0.5 - w + margin;
+    const maxX = 0.5 + w - margin;
+    if (b.x < minX) { b.x = minX; b.vx = Math.abs(b.vx) * 0.2; }
+    if (b.x > maxX) { b.x = maxX; b.vx = -Math.abs(b.vx) * 0.2; }
+    if (b.y < 0.015) { b.y = 0.015; b.vy = Math.abs(b.vy) * 0.15; b.temp *= 0.95; }
+    if (b.y > 0.985) { b.y = 0.985; b.vy = -Math.abs(b.vy) * 0.15; }
+
+    // Radius breathes with temperature
+    b.radius = b.baseRadius * (1 + b.temp * 0.25 + Math.sin(b.phase * 1.3) * 0.04);
+  }
+
+  // Soft repulsion between blobs (prevents them from all stacking)
+  for (let i = 0; i < blobs.length; i++) {
+    for (let j = i + 1; j < blobs.length; j++) {
+      const a = blobs[i], bi = blobs[j];
+      const dx = a.x - bi.x;
+      const dy = (a.y - bi.y);
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = (a.radius + bi.radius) * 0.25;
+      if (dist < minDist && dist > 0.0001) {
+        const force = (minDist - dist) * 0.00015 * dtc;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        a.vx += nx * force;
+        a.vy += ny * force;
+        bi.vx -= nx * force;
+        bi.vy -= ny * force;
+      }
+    }
+  }
+}
+
+// Lamp shape: half-width in normalized x at given y
+// Returns value such that lamp goes from (0.5 - result) to (0.5 + result) in x
+function getLampHalfWidth(y) {
+  // Narrower at top and bottom, wider in middle
+  let w;
+  if (y < 0.06) {
+    // Top neck
+    w = 0.14 + (y / 0.06) * 0.18;
+  } else if (y > 0.93) {
+    // Bottom neck
+    w = 0.32 + ((1 - y) / 0.07) * 0.06;
+  } else {
+    // Main body with gentle bulge
+    const t = (y - 0.06) / 0.87;
+    const bulge = Math.sin(t * Math.PI);
+    w = 0.32 + bulge * 0.08;
+  }
+  return w;
+}
+
+// ---- METABALL RENDERING ----
+function lerpColor(a, b, t) {
+  return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
+}
+
+function getThemeColors() {
+  if (themeBlend >= 1) return THEMES[currentTheme];
+  const a = THEMES[currentTheme];
+  const b = THEMES[targetTheme];
+  const t = 1 - themeBlend;
+  return {
+    blob: lerpColor(a.blob, b.blob, t),
+    blob2: lerpColor(a.blob2, b.blob2, t),
+    fluid: lerpColor(a.fluid, b.fluid, t),
+    bg: lerpColor(a.bg, b.bg, t),
+    glow: lerpColor(a.glow, b.glow, t),
+  };
+}
+
+function renderMetaballs(time) {
+  const tc = getThemeColors();
+  const imgData = offCtx.createImageData(offW, offH);
+  const d = imgData.data;
+  const threshold = 3.5;
+  const edgeStart = threshold * 0.4;
+
+  for (let py = 0; py < offH; py++) {
+    const ny = py / offH; // normalized y [0,1]
+    const hw = getLampHalfWidth(ny);
+    const lampLeft = 0.5 - hw;
+    const lampRight = 0.5 + hw;
+
+    for (let px = 0; px < offW; px++) {
+      const idx = (py * offW + px) * 4;
+      // Map pixel to normalized lamp x
+      // offscreen x [0, offW] maps to the full lamp width
+      const nx = px / offW;
+      // Map to world x considering that pixel space is rectangular
+      // but lamp body is tapered. We render the full bounding box
+      // and alpha-out pixels outside the lamp.
+      // The offscreen canvas spans the widest part of the lamp.
+      // We need to check if this pixel is inside the lamp at this y.
+      const worldX = nx; // just [0,1]
+
+      // Check bounds
+      if (worldX < lampLeft || worldX > lampRight) {
+        d[idx] = d[idx+1] = d[idx+2] = 0;
+        d[idx+3] = 0;
+        continue;
+      }
+
+      // Compute metaball field
+      // For visually round blobs, we need pixel-space distances
+      // dx_vis = (worldX - bx) * lampW, dy_vis = (ny - by) * lampH
+      // distSq_vis = dx_vis^2 + dy_vis^2
+      // = lampW^2 * (dx^2 + dy^2 * (lampH/lampW)^2)
+      // We fold lampW^2 into the radius, so just correct dy
+      let field = 0;
+      let wTemp = 0;
+      let wTotal = 0;
+      for (const b of blobs) {
+        const dx = worldX - b.x;
+        const dy = (ny - b.y) * aspectRatio;
+        const distSq = dx * dx + dy * dy;
+        const r = b.radius;
+        const contrib = (r * r) / (distSq + 0.00005);
+        field += contrib;
+        wTemp += b.temp * contrib;
+        wTotal += contrib;
+      }
+
+      if (field > threshold) {
+        const avgTemp = wTotal > 0 ? wTemp / wTotal : 0;
+        const blobColor = lerpColor(tc.blob, tc.blob2, avgTemp);
+        // Inner glow: brighter deeper inside
+        const depth = Math.min((field - threshold) / (threshold * 3), 1);
+        const brightness = 0.7 + depth * 0.5;
+        // Subtle specular highlight near top of blobs
+        const specular = depth > 0.5 ? (depth - 0.5) * 0.3 : 0;
+        d[idx]   = Math.min(255, (blobColor[0] * brightness + specular) * 255);
+        d[idx+1] = Math.min(255, (blobColor[1] * brightness + specular * 0.6) * 255);
+        d[idx+2] = Math.min(255, (blobColor[2] * brightness + specular * 0.3) * 255);
+        d[idx+3] = 255;
+      } else if (field > edgeStart) {
+        // Soft glowing edge
+        const t = (field - edgeStart) / (threshold - edgeStart);
+        const t2 = t * t; // ease-in for smoother edge
+        const avgTemp = wTotal > 0 ? wTemp / wTotal : 0;
+        const blobColor = lerpColor(tc.blob, tc.blob2, avgTemp);
+        d[idx]   = blobColor[0] * 255 * t2 * 0.7;
+        d[idx+1] = blobColor[1] * 255 * t2 * 0.7;
+        d[idx+2] = blobColor[2] * 255 * t2 * 0.7;
+        d[idx+3] = t2 * 255;
+      } else {
+        // Fluid background — faint tinted
+        const fluidBrightness = 0.12 + ny * 0.08 + Math.sin(ny * 8 + time * 0.0008) * 0.02;
+        d[idx]   = tc.fluid[0] * 255 * fluidBrightness;
+        d[idx+1] = tc.fluid[1] * 255 * fluidBrightness;
+        d[idx+2] = tc.fluid[2] * 255 * fluidBrightness;
+        d[idx+3] = 60 + ny * 30;
+      }
+    }
+  }
+
+  offCtx.putImageData(imgData, 0, 0);
+}
+
+// ---- LAMP DRAWING ----
+function buildLampPath(ctx, top, bot, halfW, steps) {
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const y = top + t * (bot - top);
+    const w = getLampHalfWidth(t) * halfW / 0.4; // scale from normalized to pixel
+    if (i === 0) ctx.moveTo(lampX + w, y);
+    else ctx.lineTo(lampX + w, y);
+  }
+  // Bottom round
+  const bw = getLampHalfWidth(1) * halfW / 0.4;
+  ctx.quadraticCurveTo(lampX + bw * 0.9, bot + 5, lampX, bot + 7);
+  ctx.quadraticCurveTo(lampX - bw * 0.9, bot + 5, lampX - bw, bot);
+  // Left side
+  for (let i = steps; i >= 0; i--) {
+    const t = i / steps;
+    const y = top + t * (bot - top);
+    const w = getLampHalfWidth(t) * halfW / 0.4;
+    ctx.lineTo(lampX - w, y);
+  }
+  // Top round
+  const tw = getLampHalfWidth(0) * halfW / 0.4;
+  ctx.quadraticCurveTo(lampX - tw * 0.9, top - 5, lampX, top - 7);
+  ctx.quadraticCurveTo(lampX + tw * 0.9, top - 5, lampX + tw, top);
+  ctx.closePath();
+}
+
+function drawScene(time) {
+  const tc = getThemeColors();
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  // ---- BACKGROUND ----
+  const bgGrad = ctx.createRadialGradient(lampX, lampY, 0, lampX, lampY, Math.max(W, H) * 0.75);
+  bgGrad.addColorStop(0, `rgba(${tc.glow[0]*50|0},${tc.glow[1]*50|0},${tc.glow[2]*50|0},0.25)`);
+  bgGrad.addColorStop(0.4, `rgba(${tc.bg[0]*255|0},${tc.bg[1]*255|0},${tc.bg[2]*255|0},1)`);
+  bgGrad.addColorStop(1, '#030306');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Ambient glow behind lamp
+  const glowPulse = 0.6 + Math.sin(time * 0.0008) * 0.15 + heatBoost * 0.2;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const ambGlow = ctx.createRadialGradient(lampX, lampY + lampH * 0.15, lampW * 0.3, lampX, lampY, lampW * 1.8);
+  ambGlow.addColorStop(0, `rgba(${tc.glow[0]*255|0},${tc.glow[1]*255|0},${tc.glow[2]*255|0},${0.08 * glowPulse})`);
+  ambGlow.addColorStop(0.5, `rgba(${tc.glow[0]*200|0},${tc.glow[1]*200|0},${tc.glow[2]*200|0},${0.03 * glowPulse})`);
+  ambGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = ambGlow;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  const top = lampY - lampH / 2;
+  const bot = lampY + lampH / 2;
+  const halfW = lampW / 2;
+  const steps = 50;
+
+  // ---- LAMP GLASS ----
+  // Build clipping path
+  buildLampPath(ctx, top, bot, halfW, steps);
+
+  // Glass fill
+  const glassFill = ctx.createLinearGradient(lampX - halfW, top, lampX + halfW, top);
+  glassFill.addColorStop(0, 'rgba(255,255,255,0.025)');
+  glassFill.addColorStop(0.5, 'rgba(255,255,255,0.005)');
+  glassFill.addColorStop(1, 'rgba(255,255,255,0.015)');
+  ctx.fillStyle = glassFill;
+  ctx.fill();
+
+  // Clip & draw metaballs
+  ctx.save();
+  buildLampPath(ctx, top, bot, halfW, steps);
+  ctx.clip();
+
+  // Enable additive blending for glow
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(offCanvas, 0, 0, offW, offH,
+    lampX - halfW, top, halfW * 2, lampH
+  );
+
+  // Second pass with lighter blending for inner glow
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.35;
+  ctx.filter = 'blur(6px)';
+  ctx.drawImage(offCanvas, 0, 0, offW, offH,
+    lampX - halfW, top, halfW * 2, lampH
+  );
+  // Third pass: wider, softer glow
+  ctx.globalAlpha = 0.15;
+  ctx.filter = 'blur(16px)';
+  ctx.drawImage(offCanvas, 0, 0, offW, offH,
+    lampX - halfW, top, halfW * 2, lampH
+  );
+  ctx.filter = 'none';
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  ctx.restore();
+
+  // Glass reflection (left side highlight)
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const y = top + t * (bot - top);
+    const w = getLampHalfWidth(t) * halfW / 0.4;
+    if (i === 0) ctx.moveTo(lampX - w * 0.72, y);
+    else ctx.lineTo(lampX - w * 0.72, y);
+  }
+  for (let i = steps; i >= 0; i--) {
+    const t = i / steps;
+    const y = top + t * (bot - top);
+    const w = getLampHalfWidth(t) * halfW / 0.4;
+    ctx.lineTo(lampX - w * 0.85, y);
+  }
+  ctx.closePath();
+  const reflGrad = ctx.createLinearGradient(lampX - halfW * 1.2, top, lampX - halfW * 0.3, top);
+  reflGrad.addColorStop(0, 'rgba(255,255,255,0)');
+  reflGrad.addColorStop(0.5, 'rgba(255,255,255,0.06)');
+  reflGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = reflGrad;
+  ctx.fill();
+  ctx.restore();
+
+  // Smaller right reflection
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const y = top + t * (bot - top);
+    const w = getLampHalfWidth(t) * halfW / 0.4;
+    if (i === 0) ctx.moveTo(lampX + w * 0.82, y);
+    else ctx.lineTo(lampX + w * 0.82, y);
+  }
+  for (let i = steps; i >= 0; i--) {
+    const t = i / steps;
+    const y = top + t * (bot - top);
+    const w = getLampHalfWidth(t) * halfW / 0.4;
+    ctx.lineTo(lampX + w * 0.88, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,0.025)';
+  ctx.fill();
+  ctx.restore();
+
+  // Glass edge stroke
+  buildLampPath(ctx, top, bot, halfW, steps);
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // ---- CAP (top) ----
+  const topW = getLampHalfWidth(0) * halfW / 0.4;
+  const capH = 28;
+  const capTopW = topW * 0.55;
+  const capBotW = topW * 1.08;
+  const capTop = top - 7 - capH;
+
+  ctx.beginPath();
+  ctx.moveTo(lampX - capBotW, top - 7);
+  ctx.bezierCurveTo(lampX - capBotW, capTop + capH * 0.4, lampX - capTopW * 1.1, capTop, lampX - capTopW, capTop);
+  ctx.lineTo(lampX + capTopW, capTop);
+  ctx.bezierCurveTo(lampX + capTopW * 1.1, capTop, lampX + capBotW, capTop + capH * 0.4, lampX + capBotW, top - 7);
+  ctx.closePath();
+
+  const capGrad = ctx.createLinearGradient(lampX - capBotW, capTop, lampX + capBotW, capTop);
+  capGrad.addColorStop(0, '#1e1e1e');
+  capGrad.addColorStop(0.2, '#484848');
+  capGrad.addColorStop(0.4, '#5e5e5e');
+  capGrad.addColorStop(0.5, '#6a6a6a');
+  capGrad.addColorStop(0.6, '#555');
+  capGrad.addColorStop(0.8, '#3a3a3a');
+  capGrad.addColorStop(1, '#1a1a1a');
+  ctx.fillStyle = capGrad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  // Cap knob
+  ctx.beginPath();
+  ctx.ellipse(lampX, capTop - 3, 5, 7, 0, 0, Math.PI * 2);
+  const knobGrad = ctx.createRadialGradient(lampX - 1, capTop - 5, 0.5, lampX, capTop - 3, 7);
+  knobGrad.addColorStop(0, '#7a7a7a');
+  knobGrad.addColorStop(1, '#2a2a2a');
+  ctx.fillStyle = knobGrad;
+  ctx.fill();
+
+  // ---- BASE (bottom) ----
+  const botW = getLampHalfWidth(1) * halfW / 0.4;
+  const baseH = 36;
+  const baseTopW = botW * 1.08;
+  const baseBotW = botW * 1.3;
+  const baseTop = bot + 7;
+  const baseBot = baseTop + baseH;
+
+  ctx.beginPath();
+  ctx.moveTo(lampX - baseTopW, baseTop);
+  ctx.bezierCurveTo(lampX - baseBotW * 1.03, baseTop + baseH * 0.3, lampX - baseBotW, baseBot - 8, lampX - baseBotW, baseBot);
+  ctx.lineTo(lampX + baseBotW, baseBot);
+  ctx.bezierCurveTo(lampX + baseBotW, baseBot - 8, lampX + baseBotW * 1.03, baseTop + baseH * 0.3, lampX + baseTopW, baseTop);
+  ctx.closePath();
+
+  const baseGrad = ctx.createLinearGradient(lampX - baseBotW, baseTop, lampX + baseBotW, baseTop);
+  baseGrad.addColorStop(0, '#141414');
+  baseGrad.addColorStop(0.2, '#3e3e3e');
+  baseGrad.addColorStop(0.4, '#505050');
+  baseGrad.addColorStop(0.5, '#585858');
+  baseGrad.addColorStop(0.6, '#484848');
+  baseGrad.addColorStop(0.8, '#333');
+  baseGrad.addColorStop(1, '#121212');
+  ctx.fillStyle = baseGrad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  // Base rim
+  ctx.beginPath();
+  ctx.moveTo(lampX - baseBotW + 3, baseBot);
+  ctx.lineTo(lampX + baseBotW - 3, baseBot);
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Heat glow from base (warm light)
+  const heatGlowAlpha = 0.08 + heatBoost * 0.25 + Math.sin(time * 0.002) * 0.025;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const hGlow = ctx.createRadialGradient(lampX, baseTop - 5, 0, lampX, baseTop, baseTopW * 1.8);
+  hGlow.addColorStop(0, `rgba(${tc.glow[0]*255|0},${tc.glow[1]*180|0},${tc.glow[2]*60|0},${heatGlowAlpha})`);
+  hGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = hGlow;
+  ctx.fillRect(lampX - baseBotW * 2, baseTop - 30, baseBotW * 4, 80);
+  ctx.restore();
+
+  // Reflection on surface below lamp
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const surfGlow = ctx.createRadialGradient(lampX, baseBot + 5, 0, lampX, baseBot + 40, baseBotW * 2);
+  surfGlow.addColorStop(0, `rgba(${tc.glow[0]*200|0},${tc.glow[1]*200|0},${tc.glow[2]*200|0},${0.04 * glowPulse})`);
+  surfGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = surfGlow;
+  ctx.fillRect(lampX - baseBotW * 3, baseBot, baseBotW * 6, 80);
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// ---- INTERACTIONS ----
+const heatIndicator = document.getElementById('heat-indicator');
+let heatIndicatorTimeout = null;
+
+function addHeat(screenX, screenY) {
+  heatBoost = Math.min(heatBoost + 0.6, 2.5);
+  heatIndicator.classList.add('visible');
+  clearTimeout(heatIndicatorTimeout);
+  heatIndicatorTimeout = setTimeout(() => heatIndicator.classList.remove('visible'), 700);
+
+  // Map screen coords to normalized lamp space
+  const top = lampY - lampH / 2;
+  const normY = (screenY - top) / lampH;
+  const normX = (screenX - (lampX - lampW / 2)) / lampW;
+  for (const b of blobs) {
+    const dx = b.x - normX;
+    const dy = (b.y - normY) * aspectRatio;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.4) {
+      const strength = (0.4 - dist) / 0.4;
+      b.vy -= 0.0015 * strength;
+      b.temp = Math.min(1, b.temp + 0.25 * strength);
+    }
+  }
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  addHeat(e.clientX, e.clientY);
+});
+
+// Device motion for shake
+let lastAccel = { x: 0, y: 0, z: 0 };
+window.addEventListener('devicemotion', (e) => {
+  const a = e.accelerationIncludingGravity;
+  if (!a) return;
+  const dx = (a.x || 0) - lastAccel.x;
+  const dy = (a.y || 0) - lastAccel.y;
+  const mag = Math.sqrt(dx * dx + dy * dy);
+  if (mag > 3) {
+    shakeForce.x += dx * 0.4;
+    shakeForce.y += dy * 0.4;
+    heatBoost = Math.min(heatBoost + mag * 0.04, 2.5);
+  }
+  lastAccel = { x: a.x || 0, y: a.y || 0, z: a.z || 0 };
+});
+
+// iOS motion permission
+document.addEventListener('click', () => {
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission().catch(() => {});
+  }
+}, { once: true });
+
+// ---- THEME PICKER ----
+const themeButtons = [
+  document.getElementById('t0'),
+  document.getElementById('t1'),
+  document.getElementById('t2'),
+  document.getElementById('t3'),
+];
+
+themeButtons.forEach((btn, i) => {
+  btn.style.background = THEMES[i].btnCSS;
+  btn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    setTheme(i);
+    if (ambientMode) toggleAmbient();
+  });
+});
+
+function setTheme(idx) {
+  if (idx === currentTheme && themeBlend >= 1) return;
+  targetTheme = idx;
+  themeBlend = 0;
+  themeButtons.forEach((b, i) => b.classList.toggle('active', i === idx));
+}
+
+function updateThemeTransition(dt) {
+  if (themeBlend < 1) {
+    themeBlend += dt * 0.0012;
+    if (themeBlend >= 1) {
+      themeBlend = 1;
+      currentTheme = targetTheme;
+    }
+  }
+}
+
+// ---- AMBIENT MODE ----
+const ambientBtn = document.getElementById('ambient-btn');
+ambientBtn.addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  toggleAmbient();
+});
+
+function toggleAmbient() {
+  ambientMode = !ambientMode;
+  ambientBtn.classList.toggle('active', ambientMode);
+  ambientTimer = 0;
+}
+
+function updateAmbient(dt) {
+  if (!ambientMode) return;
+  ambientTimer += dt;
+  if (ambientTimer > AMBIENT_INTERVAL) {
+    ambientTimer = 0;
+    const next = (targetTheme + 1) % THEMES.length;
+    setTheme(next);
+    ambientMode = true;
+    ambientBtn.classList.add('active');
+  }
+}
+
+// ---- MAIN LOOP ----
+let lastTime = 0;
+function frame(time) {
+  const dt = lastTime ? time - lastTime : 16;
+  lastTime = time;
+
+  updateThemeTransition(dt);
+  updateAmbient(dt);
+  updateBlobs(dt);
+  renderMetaballs(time);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawScene(time);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
