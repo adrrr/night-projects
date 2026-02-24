@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Magnetic Pendulum</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e0e0e0;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#ui{position:absolute;bottom:0;left:0;right:0;padding:12px 16px 20px;background:linear-gradient(transparent,rgba(0,0,0,.85) 40%);pointer-events:none;z-index:10}
+#ui>*{pointer-events:auto}
+.row{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.label{font-size:12px;opacity:.7;min-width:70px;text-transform:uppercase;letter-spacing:.5px}
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:4px;background:rgba(255,255,255,.15);border-radius:2px;outline:none;min-width:100px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#fff;cursor:pointer;box-shadow:0 0 8px rgba(255,255,255,.4)}
+input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#fff;cursor:pointer;border:none}
+.btn{padding:10px 18px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#e0e0e0;border-radius:8px;font-size:13px;cursor:pointer;transition:all .2s;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap}
+.btn:active,.btn.active{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.4)}
+.btn.fractal-btn{background:linear-gradient(135deg,rgba(120,40,200,.3),rgba(40,120,200,.3));border-color:rgba(150,100,255,.4)}
+.btn.fractal-btn:active,.btn.fractal-btn.active{background:linear-gradient(135deg,rgba(120,40,200,.5),rgba(40,120,200,.5))}
+#status{position:absolute;top:16px;left:50%;transform:translateX(-50%);font-size:13px;opacity:.6;text-align:center;pointer-events:none;z-index:10;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+#fractal-progress{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;color:#fff;z-index:20;pointer-events:none;display:none;text-align:center;text-shadow:0 0 20px rgba(100,100,255,.8)}
+#fractal-progress .bar{width:200px;height:4px;background:rgba(255,255,255,.1);border-radius:2px;margin:12px auto 0;overflow:hidden}
+#fractal-progress .fill{height:100%;background:linear-gradient(90deg,#7040c0,#4080ff);width:0%;transition:width .1s}
+.magnet-palette{display:flex;gap:8px;align-items:center}
+.magnet-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.3);cursor:pointer;transition:all .2s;position:relative}
+.magnet-dot.selected{border-color:#fff;transform:scale(1.2);box-shadow:0 0 12px currentColor}
+.magnet-dot .count{position:absolute;top:-6px;right:-6px;font-size:9px;background:rgba(0,0,0,.7);border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="status">Tap to place magnets, then drag to launch pendulum</div>
+<div id="fractal-progress"><div>Rendering fractal...<br><span id="fpct">0%</span></div><div class="bar"><div class="fill" id="fbar"></div></div></div>
+<div id="ui">
+  <div class="row">
+    <span class="label">Damping</span>
+    <input type="range" id="damping" min="0" max="100" value="25">
+  </div>
+  <div class="row">
+    <span class="label">Magnets</span>
+    <div class="magnet-palette" id="palette"></div>
+  </div>
+  <div class="row" style="justify-content:flex-end;gap:8px">
+    <button class="btn" id="clearBtn">Clear All</button>
+    <button class="btn fractal-btn" id="fractalBtn">Fractal Mode</button>
+  </div>
+</div>
+<script>
+(function(){
+'use strict';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const dampingSlider = document.getElementById('damping');
+const clearBtn = document.getElementById('clearBtn');
+const fractalBtn = document.getElementById('fractalBtn');
+const fractalProgress = document.getElementById('fractal-progress');
+const fpct = document.getElementById('fpct');
+const fbar = document.getElementById('fbar');
+const paletteEl = document.getElementById('palette');
+
+const MAGNET_COLORS = [
+  {r:255,g:60,b:90,  hex:'#ff3c5a',name:'Red'},
+  {r:50,g:180,b:255, hex:'#32b4ff',name:'Blue'},
+  {r:60,g:220,b:120, hex:'#3cdc78',name:'Green'},
+  {r:255,g:180,b:40, hex:'#ffb428',name:'Gold'},
+  {r:200,g:80,b:255, hex:'#c850ff',name:'Purple'}
+];
+
+let W, H, dpr;
+let magnets = [];
+let pendulum = null;
+let trail = [];
+let isDragging = false;
+let dragStart = null;
+let selectedMagnetColor = 0;
+let fractalMode = false;
+let fractalCanvas = null;
+let fractalWorking = false;
+let animId = null;
+
+// Physics constants
+const GRAVITY = 0.5;
+const PENDULUM_HEIGHT = 0.15;
+const MAGNET_STRENGTH = 0.8;
+const SPRING_K = 0.3;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fractalCanvas = null;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Build palette
+MAGNET_COLORS.forEach(function(c, i) {
+  const dot = document.createElement('div');
+  dot.className = 'magnet-dot' + (i === 0 ? ' selected' : '');
+  dot.style.background = c.hex;
+  dot.style.color = c.hex;
+  dot.addEventListener('click', function(e) {
+    e.stopPropagation();
+    selectedMagnetColor = i;
+    document.querySelectorAll('.magnet-dot').forEach(function(d,j) {
+      d.classList.toggle('selected', j === i);
+    });
+  });
+  paletteEl.appendChild(dot);
+});
+
+function getDamping() {
+  return 0.001 + (dampingSlider.value / 100) * 0.04;
+}
+
+function screenToWorld(sx, sy) {
+  const scale = Math.min(W, H) * 0.4;
+  return {
+    x: (sx - W / 2) / scale,
+    y: (sy - H / 2) / scale
+  };
+}
+
+function worldToScreen(wx, wy) {
+  const scale = Math.min(W, H) * 0.4;
+  return {
+    x: wx * scale + W / 2,
+    y: wy * scale + H / 2
+  };
+}
+
+function findMagnetAt(wx, wy) {
+  const threshold = 0.12;
+  for (let i = magnets.length - 1; i >= 0; i--) {
+    const m = magnets[i];
+    const dx = m.x - wx;
+    const dy = m.y - wy;
+    if (dx * dx + dy * dy < threshold * threshold) return i;
+  }
+  return -1;
+}
+
+function computeAcceleration(x, y, vx, vy, damping) {
+  let ax = 0, ay = 0;
+  // Spring restoring force toward center (gravity component)
+  ax -= SPRING_K * x;
+  ay -= SPRING_K * y;
+  // Magnetic attraction
+  for (let i = 0; i < magnets.length; i++) {
+    const m = magnets[i];
+    const dx = m.x - x;
+    const dy = m.y - y;
+    const distSq = dx * dx + dy * dy + PENDULUM_HEIGHT * PENDULUM_HEIGHT;
+    const dist = Math.sqrt(distSq);
+    const force = MAGNET_STRENGTH / (distSq * dist);
+    ax += force * dx;
+    ay += force * dy;
+  }
+  // Damping
+  ax -= damping * vx;
+  ay -= damping * vy;
+  return { ax: ax, ay: ay };
+}
+
+function rk4Step(x, y, vx, vy, dt, damping) {
+  const a1 = computeAcceleration(x, y, vx, vy, damping);
+  const k1vx = a1.ax * dt, k1vy = a1.ay * dt;
+  const k1x = vx * dt, k1y = vy * dt;
+
+  const a2 = computeAcceleration(x + k1x * 0.5, y + k1y * 0.5, vx + k1vx * 0.5, vy + k1vy * 0.5, damping);
+  const k2vx = a2.ax * dt, k2vy = a2.ay * dt;
+  const k2x = (vx + k1vx * 0.5) * dt, k2y = (vy + k1vy * 0.5) * dt;
+
+  const a3 = computeAcceleration(x + k2x * 0.5, y + k2y * 0.5, vx + k2vx * 0.5, vy + k2vy * 0.5, damping);
+  const k3vx = a3.ax * dt, k3vy = a3.ay * dt;
+  const k3x = (vx + k2vx * 0.5) * dt, k3y = (vy + k2vy * 0.5) * dt;
+
+  const a4 = computeAcceleration(x + k3x, y + k3y, vx + k3vx, vy + k3vy, damping);
+  const k4vx = a4.ax * dt, k4vy = a4.ay * dt;
+  const k4x = (vx + k3vx) * dt, k4y = (vy + k3vy) * dt;
+
+  return {
+    x: x + (k1x + 2 * k2x + 2 * k3x + k4x) / 6,
+    y: y + (k1y + 2 * k2y + 2 * k3y + k4y) / 6,
+    vx: vx + (k1vx + 2 * k2vx + 2 * k3vx + k4vx) / 6,
+    vy: vy + (k1vy + 2 * k2vy + 2 * k3vy + k4vy) / 6
+  };
+}
+
+function getBlendedColor(x, y) {
+  if (magnets.length === 0) return {r: 200, g: 200, b: 200};
+  let totalWeight = 0;
+  let r = 0, g = 0, b = 0;
+  for (let i = 0; i < magnets.length; i++) {
+    const m = magnets[i];
+    const dx = m.x - x, dy = m.y - y;
+    const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
+    const w = 1 / (dist * dist);
+    const c = MAGNET_COLORS[m.colorIdx];
+    r += c.r * w;
+    g += c.g * w;
+    b += c.b * w;
+    totalWeight += w;
+  }
+  return {r: r / totalWeight, g: g / totalWeight, b: b / totalWeight};
+}
+
+function closestMagnet(x, y) {
+  let minDist = Infinity, idx = -1;
+  for (let i = 0; i < magnets.length; i++) {
+    const m = magnets[i];
+    const dx = m.x - x, dy = m.y - y;
+    const d = dx * dx + dy * dy;
+    if (d < minDist) { minDist = d; idx = i; }
+  }
+  return idx;
+}
+
+function stepPhysics() {
+  if (!pendulum || fractalMode) return;
+  const dt = 0.016;
+  const substeps = 4;
+  const subDt = dt / substeps;
+  const damping = getDamping() * 60;
+  for (let i = 0; i < substeps; i++) {
+    const s = rk4Step(pendulum.x, pendulum.y, pendulum.vx, pendulum.vy, subDt, damping);
+    pendulum.x = s.x;
+    pendulum.y = s.y;
+    pendulum.vx = s.vx;
+    pendulum.vy = s.vy;
+  }
+  // Clamp
+  const maxR = 3;
+  const r = Math.sqrt(pendulum.x * pendulum.x + pendulum.y * pendulum.y);
+  if (r > maxR) {
+    pendulum.x *= maxR / r;
+    pendulum.y *= maxR / r;
+    pendulum.vx *= -0.3;
+    pendulum.vy *= -0.3;
+  }
+  // Trail
+  const color = getBlendedColor(pendulum.x, pendulum.y);
+  trail.push({x: pendulum.x, y: pendulum.y, r: color.r, g: color.g, b: color.b, age: 0});
+  // Limit trail
+  if (trail.length > 3000) trail.splice(0, trail.length - 3000);
+}
+
+function drawGlow(sx, sy, radius, color, alpha) {
+  const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
+  grad.addColorStop(0, 'rgba(' + color + ',' + alpha + ')');
+  grad.addColorStop(1, 'rgba(' + color + ',0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient
+  const bgGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+  bgGrad.addColorStop(0, '#12121f');
+  bgGrad.addColorStop(1, '#0a0a0f');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Fractal overlay
+  if (fractalMode && fractalCanvas) {
+    ctx.drawImage(fractalCanvas, 0, 0, W, H);
+  }
+
+  // Grid (subtle)
+  if (!fractalMode) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 1;
+    const scale = Math.min(W, H) * 0.4;
+    const gridStep = 0.5;
+    for (let gx = -3; gx <= 3; gx += gridStep) {
+      const sp1 = worldToScreen(gx, -3);
+      const sp2 = worldToScreen(gx, 3);
+      ctx.beginPath(); ctx.moveTo(sp1.x, sp1.y); ctx.lineTo(sp2.x, sp2.y); ctx.stroke();
+    }
+    for (let gy = -3; gy <= 3; gy += gridStep) {
+      const sp1 = worldToScreen(-3, gy);
+      const sp2 = worldToScreen(3, gy);
+      ctx.beginPath(); ctx.moveTo(sp1.x, sp1.y); ctx.lineTo(sp2.x, sp2.y); ctx.stroke();
+    }
+  }
+
+  // Trail
+  for (let i = 0; i < trail.length; i++) {
+    trail[i].age += 0.004;
+  }
+  // Remove old
+  while (trail.length > 0 && trail[0].age > 1) trail.shift();
+
+  if (trail.length > 1) {
+    for (let i = 1; i < trail.length; i++) {
+      const t0 = trail[i - 1], t1 = trail[i];
+      const alpha = Math.max(0, 1 - t1.age);
+      if (alpha <= 0) continue;
+      const sp0 = worldToScreen(t0.x, t0.y);
+      const sp1 = worldToScreen(t1.x, t1.y);
+      ctx.strokeStyle = 'rgba(' + Math.round(t1.r) + ',' + Math.round(t1.g) + ',' + Math.round(t1.b) + ',' + (alpha * 0.8) + ')';
+      ctx.lineWidth = 2 + alpha * 2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sp0.x, sp0.y);
+      ctx.lineTo(sp1.x, sp1.y);
+      ctx.stroke();
+    }
+    // Glow on recent trail
+    if (trail.length > 0) {
+      const last = trail[trail.length - 1];
+      const sp = worldToScreen(last.x, last.y);
+      drawGlow(sp.x, sp.y, 30, Math.round(last.r) + ',' + Math.round(last.g) + ',' + Math.round(last.b), 0.3);
+    }
+  }
+
+  // Draw magnets
+  for (let i = 0; i < magnets.length; i++) {
+    const m = magnets[i];
+    const sp = worldToScreen(m.x, m.y);
+    const c = MAGNET_COLORS[m.colorIdx];
+    // Outer glow
+    drawGlow(sp.x, sp.y, 50, c.r + ',' + c.g + ',' + c.b, 0.15);
+    drawGlow(sp.x, sp.y, 25, c.r + ',' + c.g + ',' + c.b, 0.3);
+    // Magnet body
+    ctx.fillStyle = c.hex;
+    ctx.shadowColor = c.hex;
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Inner highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.beginPath();
+    ctx.arc(sp.x - 2, sp.y - 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Pendulum bob
+  if (pendulum) {
+    const sp = worldToScreen(pendulum.x, pendulum.y);
+    const c = getBlendedColor(pendulum.x, pendulum.y);
+    drawGlow(sp.x, sp.y, 40, Math.round(c.r) + ',' + Math.round(c.g) + ',' + Math.round(c.b), 0.25);
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(' + Math.round(c.r) + ',' + Math.round(c.g) + ',' + Math.round(c.b) + ',0.8)';
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.arc(sp.x - 2, sp.y - 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Drag preview
+  if (isDragging && dragStart) {
+    const sp = worldToScreen(dragStart.x, dragStart.y);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, 12, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function loop() {
+  stepPhysics();
+  draw();
+  animId = requestAnimationFrame(loop);
+}
+
+// Input handling
+function getPointerPos(e) {
+  const t = e.touches ? e.touches[0] : e;
+  return {x: t.clientX, y: t.clientY};
+}
+
+function isOverUI(e) {
+  const t = e.touches ? e.touches[0] : e;
+  const el = document.elementFromPoint(t.clientX, t.clientY);
+  if (!el) return false;
+  const ui = document.getElementById('ui');
+  return ui.contains(el) || el === ui;
+}
+
+let pointerDownTime = 0;
+let pointerMoved = false;
+let pointerDownPos = null;
+
+canvas.addEventListener('touchstart', onDown, {passive: false});
+canvas.addEventListener('mousedown', onDown);
+
+function onDown(e) {
+  e.preventDefault();
+  if (fractalMode) {
+    exitFractalMode();
+    return;
+  }
+  if (isOverUI(e)) return;
+  const pos = getPointerPos(e);
+  pointerDownPos = pos;
+  pointerDownTime = Date.now();
+  pointerMoved = false;
+  const wp = screenToWorld(pos.x, pos.y);
+
+  // Check if tapping on existing magnet to remove
+  const mi = findMagnetAt(wp.x, wp.y);
+  if (mi >= 0) {
+    magnets.splice(mi, 1);
+    updateStatus();
+    return;
+  }
+
+  // Start drag for pendulum
+  isDragging = true;
+  dragStart = wp;
+  pendulum = null;
+  trail = [];
+}
+
+canvas.addEventListener('touchmove', onMove, {passive: false});
+canvas.addEventListener('mousemove', onMove);
+
+function onMove(e) {
+  e.preventDefault();
+  if (!isDragging) return;
+  const pos = getPointerPos(e);
+  if (pointerDownPos) {
+    const dx = pos.x - pointerDownPos.x;
+    const dy = pos.y - pointerDownPos.y;
+    if (dx * dx + dy * dy > 100) pointerMoved = true;
+  }
+  dragStart = screenToWorld(pos.x, pos.y);
+}
+
+canvas.addEventListener('touchend', onUp, {passive: false});
+canvas.addEventListener('mouseup', onUp);
+
+function onUp(e) {
+  e.preventDefault();
+  if (!isDragging) return;
+  isDragging = false;
+  const elapsed = Date.now() - pointerDownTime;
+
+  if (!pointerMoved && elapsed < 300) {
+    // It was a tap — place a magnet
+    if (magnets.length < 5) {
+      magnets.push({x: dragStart.x, y: dragStart.y, colorIdx: selectedMagnetColor});
+      // Auto-advance color
+      if (magnets.length < 5) {
+        const usedColors = new Set(magnets.map(function(m){return m.colorIdx}));
+        for (let i = 0; i < 5; i++) {
+          if (!usedColors.has(i)) { selectedMagnetColor = i; break; }
+        }
+        document.querySelectorAll('.magnet-dot').forEach(function(d,j) {
+          d.classList.toggle('selected', j === selectedMagnetColor);
+        });
+      }
+    }
+    dragStart = null;
+    updateStatus();
+    return;
+  }
+
+  // Release pendulum from drag position
+  if (dragStart && magnets.length > 0) {
+    pendulum = {x: dragStart.x, y: dragStart.y, vx: 0, vy: 0};
+    trail = [];
+    updateStatus();
+  }
+  dragStart = null;
+}
+
+function updateStatus() {
+  if (magnets.length === 0) {
+    statusEl.textContent = 'Tap to place magnets (up to 5)';
+  } else if (!pendulum) {
+    statusEl.textContent = magnets.length + '/5 magnets \u2014 Drag to set pendulum start, tap magnet to remove';
+  } else {
+    statusEl.textContent = magnets.length + '/5 magnets \u2014 Tap to add, drag to relaunch';
+  }
+}
+
+// Clear
+clearBtn.addEventListener('click', function() {
+  magnets = [];
+  pendulum = null;
+  trail = [];
+  fractalCanvas = null;
+  if (fractalMode) exitFractalMode();
+  updateStatus();
+});
+
+// Fractal mode
+function exitFractalMode() {
+  fractalMode = false;
+  fractalWorking = false;
+  fractalCanvas = null;
+  fractalBtn.classList.remove('active');
+  fractalBtn.textContent = 'Fractal Mode';
+  fractalProgress.style.display = 'none';
+  statusEl.style.display = '';
+  document.getElementById('ui').style.display = '';
+  updateStatus();
+}
+
+fractalBtn.addEventListener('click', function() {
+  if (fractalMode) {
+    exitFractalMode();
+    return;
+  }
+  if (magnets.length < 2) {
+    statusEl.textContent = 'Place at least 2 magnets for fractal mode';
+    return;
+  }
+  startFractalMode();
+});
+
+function startFractalMode() {
+  fractalMode = true;
+  fractalWorking = true;
+  fractalBtn.classList.add('active');
+  fractalBtn.textContent = 'Exit Fractal';
+  pendulum = null;
+  trail = [];
+  fractalProgress.style.display = 'block';
+  statusEl.style.display = 'none';
+
+  const fw = Math.floor(W * Math.min(dpr, 1.5));
+  const fh = Math.floor(H * Math.min(dpr, 1.5));
+  const fc = document.createElement('canvas');
+  fc.width = fw;
+  fc.height = fh;
+  const fctx = fc.getContext('2d');
+  const imageData = fctx.createImageData(fw, fh);
+  const data = imageData.data;
+
+  const scale = Math.min(fw, fh) * 0.4;
+  const cx = fw / 2, cy = fh / 2;
+  const damping = getDamping() * 60;
+  const dt = 0.02;
+  const maxSteps = 800;
+  const settleThreshold = 0.005;
+
+  // Copy magnets for computation
+  const mags = magnets.map(function(m) { return {x: m.x, y: m.y, colorIdx: m.colorIdx}; });
+
+  let row = 0;
+  const rowsPerChunk = 4;
+
+  function computeChunk() {
+    if (!fractalMode || !fractalWorking) return;
+    const endRow = Math.min(row + rowsPerChunk, fh);
+    for (let py = row; py < endRow; py++) {
+      for (let px = 0; px < fw; px++) {
+        const startX = (px - cx) / scale;
+        const startY = (py - cy) / scale;
+
+        let x = startX, y = startY, vx = 0, vy = 0;
+        let settled = -1;
+
+        for (let step = 0; step < maxSteps; step++) {
+          const s = rk4StepInline(x, y, vx, vy, dt, damping, mags);
+          x = s.x; y = s.y; vx = s.vx; vy = s.vy;
+
+          if (vx * vx + vy * vy < settleThreshold * settleThreshold) {
+            // Find closest
+            let minD = Infinity, mi2 = 0;
+            for (let m = 0; m < mags.length; m++) {
+              const dx2 = mags[m].x - x, dy2 = mags[m].y - y;
+              const d2 = dx2 * dx2 + dy2 * dy2;
+              if (d2 < minD) { minD = d2; mi2 = m; }
+            }
+            settled = mi2;
+            break;
+          }
+        }
+
+        if (settled < 0) {
+          let minD = Infinity, mi2 = 0;
+          for (let m = 0; m < mags.length; m++) {
+            const dx2 = mags[m].x - x, dy2 = mags[m].y - y;
+            const d2 = dx2 * dx2 + dy2 * dy2;
+            if (d2 < minD) { minD = d2; mi2 = m; }
+          }
+          settled = mi2;
+        }
+
+        const c = MAGNET_COLORS[mags[settled].colorIdx];
+        // Compute a brightness variation based on distance to settled magnet
+        const fdx = mags[settled].x - x, fdy = mags[settled].y - y;
+        const fd = Math.sqrt(fdx * fdx + fdy * fdy);
+        const brightness = Math.max(0.3, 1 - fd * 0.5);
+
+        const idx = (py * fw + px) * 4;
+        data[idx] = Math.round(c.r * brightness);
+        data[idx + 1] = Math.round(c.g * brightness);
+        data[idx + 2] = Math.round(c.b * brightness);
+        data[idx + 3] = 255;
+      }
+    }
+    row = endRow;
+    const pct = Math.round((row / fh) * 100);
+    fpct.textContent = pct + '%';
+    fbar.style.width = pct + '%';
+
+    if (row < fh) {
+      requestAnimationFrame(computeChunk);
+    } else {
+      fctx.putImageData(imageData, 0, 0);
+      fractalCanvas = fc;
+      fractalWorking = false;
+      fractalProgress.style.display = 'none';
+      document.getElementById('ui').style.display = '';
+    }
+  }
+
+  requestAnimationFrame(computeChunk);
+}
+
+function rk4StepInline(x, y, vx, vy, dt, damping, mags) {
+  function accel(px, py, pvx, pvy) {
+    let ax = -SPRING_K * px - damping * pvx;
+    let ay = -SPRING_K * py - damping * pvy;
+    for (let i = 0; i < mags.length; i++) {
+      const dx = mags[i].x - px, dy = mags[i].y - py;
+      const distSq = dx * dx + dy * dy + PENDULUM_HEIGHT * PENDULUM_HEIGHT;
+      const dist = Math.sqrt(distSq);
+      const f = MAGNET_STRENGTH / (distSq * dist);
+      ax += f * dx;
+      ay += f * dy;
+    }
+    return {ax: ax, ay: ay};
+  }
+
+  const a1 = accel(x, y, vx, vy);
+  const k1vx = a1.ax * dt, k1vy = a1.ay * dt;
+  const k1x = vx * dt, k1y = vy * dt;
+
+  const a2 = accel(x + k1x * 0.5, y + k1y * 0.5, vx + k1vx * 0.5, vy + k1vy * 0.5);
+  const k2vx = a2.ax * dt, k2vy = a2.ay * dt;
+  const k2x = (vx + k1vx * 0.5) * dt, k2y = (vy + k1vy * 0.5) * dt;
+
+  const a3 = accel(x + k2x * 0.5, y + k2y * 0.5, vx + k2vx * 0.5, vy + k2vy * 0.5);
+  const k3vx = a3.ax * dt, k3vy = a3.ay * dt;
+  const k3x = (vx + k2vx * 0.5) * dt, k3y = (vy + k2vy * 0.5) * dt;
+
+  const a4 = accel(x + k3x, y + k3y, vx + k3vx, vy + k3vy);
+  const k4vx = a4.ax * dt, k4vy = a4.ay * dt;
+  const k4x = (vx + k3vx) * dt, k4y = (vy + k3vy) * dt;
+
+  return {
+    x: x + (k1x + 2 * k2x + 2 * k3x + k4x) / 6,
+    y: y + (k1y + 2 * k2y + 2 * k3y + k4y) / 6,
+    vx: vx + (k1vx + 2 * k2vx + 2 * k3vx + k4vx) / 6,
+    vy: vy + (k1vy + 2 * k2vy + 2 * k3vy + k4vy) / 6
+  };
+}
+
+// Start
+updateStatus();
+loop();
+
+})();
+</script>
+</body>
+</html>
