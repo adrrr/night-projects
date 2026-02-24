@@ -152,6 +152,11 @@ Simulateur de réaction-diffusion Gray-Scott en temps réel via WebGL — touche
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/reaction-diffusion/)
 
+### 🧲 [Magnetic Pendulum](./magnetic-pendulum/)
+Simulateur de pendule magnétique — place jusqu'à 5 aimants colorés sur un plan, lance le pendule depuis n'importe quelle position et observe les trajectoires chaotiques avec trails colorés par proximité. Mode fractal qui révèle les bassins d'attraction (chaque pixel coloré selon l'aimant vers lequel le pendule converge). Physique RK4, damping réglable, dark theme avec effets glow.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/magnetic-pendulum/)
+
 ---
 
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
