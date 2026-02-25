@@ -8,6 +8,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🎼 **[Cellular Symphony](https://adrrr.github.io/night-projects/cellular-symphony/)**
+Automate cellulaire musical — Game of Life où chaque cellule vivante joue une note sur une gamme pentatonique. Les colonnes mappent les notes, les rangées les octaves. Les cellules vieillissent en couleur (violet → rose → corail → orange → jaune) avec des effets de glow. Dessin tactile, contrôle vitesse/volume, mute, step-by-step. Web Audio API, dark theme, touch-first, zéro dépendance.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/cellular-symphony/)
+
 ### 🫧 **[Lava Lamp](https://adrrr.github.io/night-projects/lava-lamp/)**
 Simulation de lampe à lave hypnotique — metaballs avec physique de température (la cire chaude monte, froide descend), fusion organique des blobs, rendu pixel-par-pixel avec glow multi-pass. 4 thèmes (Classic Red, Ocean Blue, Cosmic Purple, Neon Green), mode ambient auto-cycle, tap pour chauffer, shake pour agiter. 60fps, zéro dépendance.
 
