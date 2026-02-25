@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Cellular Symphony</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a12;
+    --surface: #12121f;
+    --border: #1e1e35;
+    --text: #e0dff0;
+    --text-dim: #7a78a0;
+    --accent: #7c6cf0;
+    --accent-glow: rgba(124, 108, 240, 0.4);
+    --cell-0: #7c6cf0;
+    --cell-1: #c06cf0;
+    --cell-2: #f06ca0;
+    --cell-3: #f0a06c;
+    --cell-4: #f0dc6c;
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  /* Header */
+  header {
+    padding: 12px 16px 8px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, var(--cell-0), var(--cell-1), var(--cell-2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 6px;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+  }
+
+  .stats span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .stats .val {
+    color: var(--accent);
+    font-weight: 600;
+    min-width: 2ch;
+  }
+
+  /* Grid */
+  #grid-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #grid {
+    display: grid;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(124, 108, 240, 0.08);
+  }
+
+  .cell {
+    background: var(--surface);
+    transition: background 0.15s ease, box-shadow 0.2s ease;
+    position: relative;
+    cursor: pointer;
+  }
+
+  .cell.alive {
+    box-shadow: inset 0 0 8px rgba(124, 108, 240, 0.3);
+  }
+
+  .cell.alive.age-0 {
+    background: var(--cell-0);
+    box-shadow: 0 0 10px var(--accent-glow), inset 0 0 6px rgba(255,255,255,0.15);
+  }
+  .cell.alive.age-1 {
+    background: var(--cell-1);
+    box-shadow: 0 0 10px rgba(192, 108, 240, 0.4), inset 0 0 6px rgba(255,255,255,0.12);
+  }
+  .cell.alive.age-2 {
+    background: var(--cell-2);
+    box-shadow: 0 0 10px rgba(240, 108, 160, 0.4), inset 0 0 6px rgba(255,255,255,0.1);
+  }
+  .cell.alive.age-3 {
+    background: var(--cell-3);
+    box-shadow: 0 0 10px rgba(240, 160, 108, 0.4), inset 0 0 6px rgba(255,255,255,0.08);
+  }
+  .cell.alive.age-4 {
+    background: var(--cell-4);
+    box-shadow: 0 0 12px rgba(240, 220, 108, 0.5), inset 0 0 6px rgba(255,255,255,0.06);
+  }
+
+  .cell.dying {
+    animation: cellDeath 0.3s ease-out forwards;
+  }
+
+  @keyframes cellDeath {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; background: rgba(124, 108, 240, 0.15); }
+    100% { opacity: 1; background: var(--surface); }
+  }
+
+  @keyframes cellBirth {
+    0% { transform: scale(0.3); opacity: 0; }
+    60% { transform: scale(1.15); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .cell.born {
+    animation: cellBirth 0.25s ease-out;
+  }
+
+  /* Controls */
+  #controls {
+    flex-shrink: 0;
+    padding: 10px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .control-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 16px;
+    min-height: 44px;
+    min-width: 44px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  .btn:active {
+    transform: scale(0.95);
+  }
+
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+
+  .btn.primary:active {
+    background: #6b5ce0;
+  }
+
+  .btn .icon {
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  .slider-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    max-width: 300px;
+  }
+
+  .slider-group label {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    letter-spacing: 0.06em;
+    min-width: 42px;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    outline: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 10px var(--accent-glow);
+    cursor: pointer;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 10px var(--accent-glow);
+    cursor: pointer;
+  }
+
+  .slider-val {
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-weight: 600;
+    min-width: 28px;
+    text-align: right;
+  }
+
+  /* Volume toggle */
+  .btn.muted {
+    color: var(--text-dim);
+    border-color: rgba(122, 120, 160, 0.3);
+  }
+
+  /* Responsive: larger screens */
+  @media (min-width: 600px) {
+    header h1 { font-size: 1.4rem; }
+    .stats { font-size: 0.8rem; gap: 30px; }
+    #controls { padding: 12px 24px 20px; }
+    .btn { padding: 10px 20px; font-size: 0.82rem; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Cellular Symphony</h1>
+    <div class="stats">
+      <span>GEN <span class="val" id="gen-count">0</span></span>
+      <span>ALIVE <span class="val" id="alive-count">0</span></span>
+      <span>BPM <span class="val" id="bpm-display">120</span></span>
+    </div>
+  </header>
+
+  <div id="grid-container">
+    <div id="grid"></div>
+  </div>
+
+  <div id="controls">
+    <div class="control-row">
+      <button class="btn primary" id="btn-play"><span class="icon">&#9654;</span> Play</button>
+      <button class="btn" id="btn-step"><span class="icon">&#9193;</span> Step</button>
+      <button class="btn" id="btn-clear"><span class="icon">&#10005;</span> Clear</button>
+      <button class="btn" id="btn-random"><span class="icon">&#9881;</span> Random</button>
+      <button class="btn" id="btn-mute"><span class="icon">&#9835;</span></button>
+    </div>
+    <div class="control-row">
+      <div class="slider-group">
+        <label>SPEED</label>
+        <input type="range" id="speed-slider" min="1" max="20" value="4">
+        <span class="slider-val" id="speed-val">4</span>
+      </div>
+      <div class="slider-group">
+        <label>VOL</label>
+        <input type="range" id="vol-slider" min="0" max="100" value="40">
+        <span class="slider-val" id="vol-val">40</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // --- Configuration ---
+  const PENTATONIC_RATIOS = [1, 9/8, 5/4, 3/2, 5/3]; // C D E G A pentatonic
+  const BASE_FREQ = 130.81; // C3
+  const MAX_AGE = 4;
+  const MAX_SIMULTANEOUS = 24; // limit polyphony
+
+  // --- State ---
+  let cols, rows;
+  let grid = [];       // current state: 0 = dead, 1+ = age (generations alive)
+  let nextGrid = [];
+  let running = false;
+  let muted = false;
+  let generation = 0;
+  let speed = 4;       // steps per second
+  let volume = 0.4;
+  let lastStepTime = 0;
+  let animFrameId = null;
+  let drawMode = null; // 'draw' or 'erase'
+
+  // --- Audio ---
+  let audioCtx = null;
+  let masterGain = null;
+  let activeNotes = 0;
+
+  function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = volume;
+    masterGain.connect(audioCtx.destination);
+  }
+
+  function getFrequency(col, row) {
+    const noteIndex = col % PENTATONIC_RATIOS.length;
+    const octave = Math.floor(row / 2);
+    const freq = BASE_FREQ * PENTATONIC_RATIOS[noteIndex] * Math.pow(2, octave);
+    return Math.min(freq, 4000); // cap at 4kHz
+  }
+
+  function playNote(col, row, duration) {
+    if (muted || !audioCtx || activeNotes >= MAX_SIMULTANEOUS) return;
+    activeNotes++;
+
+    const freq = getFrequency(col, rows - 1 - row); // higher rows = higher octaves
+    const now = audioCtx.currentTime;
+    const attack = 0.02;
+    const decay = duration * 0.3;
+    const sustain = 0.3;
+    const release = duration * 0.5;
+    const noteEnd = now + duration;
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now);
+
+    // Add subtle detune for warmth
+    const detune = (Math.random() - 0.5) * 6;
+    osc.detune.setValueAtTime(detune, now);
+
+    // ADSR envelope
+    const peakGain = 0.15 / Math.sqrt(Math.max(activeNotes, 1));
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(peakGain, now + attack);
+    gain.gain.linearRampToValueAtTime(peakGain * sustain, now + attack + decay);
+    gain.gain.linearRampToValueAtTime(peakGain * sustain, noteEnd - release);
+    gain.gain.linearRampToValueAtTime(0, noteEnd);
+
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start(now);
+    osc.stop(noteEnd + 0.05);
+
+    osc.onended = () => {
+      activeNotes--;
+      gain.disconnect();
+      osc.disconnect();
+    };
+  }
+
+  // --- Grid Logic ---
+  const gridEl = document.getElementById('grid');
+  const gridContainer = document.getElementById('grid-container');
+  let cellElements = [];
+
+  function calculateGridSize() {
+    const rect = gridContainer.getBoundingClientRect();
+    const available_w = rect.width - 16;
+    const available_h = rect.height - 16;
+    const cellSize = window.innerWidth < 600 ? 22 : 20;
+    const gap = 1;
+
+    cols = Math.floor((available_w + gap) / (cellSize + gap));
+    rows = Math.floor((available_h + gap) / (cellSize + gap));
+    cols = Math.max(8, Math.min(cols, 50));
+    rows = Math.max(8, Math.min(rows, 40));
+
+    gridEl.style.gridTemplateColumns = `repeat(${cols}, ${cellSize}px)`;
+    gridEl.style.gridTemplateRows = `repeat(${rows}, ${cellSize}px)`;
+  }
+
+  function createGrid() {
+    calculateGridSize();
+    grid = new Array(rows * cols).fill(0);
+    nextGrid = new Array(rows * cols).fill(0);
+    gridEl.innerHTML = '';
+    cellElements = [];
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+        gridEl.appendChild(cell);
+        cellElements.push(cell);
+      }
+    }
+    updateDisplay();
+  }
+
+  function idx(r, c) {
+    return r * cols + c;
+  }
+
+  function countNeighbors(r, c) {
+    let count = 0;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = (r + dr + rows) % rows;
+        const nc = (c + dc + cols) % cols;
+        if (grid[idx(nr, nc)] > 0) count++;
+      }
+    }
+    return count;
+  }
+
+  function step() {
+    const newBorn = [];
+    const newDead = [];
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const i = idx(r, c);
+        const alive = grid[i] > 0;
+        const neighbors = countNeighbors(r, c);
+
+        if (alive) {
+          if (neighbors === 2 || neighbors === 3) {
+            nextGrid[i] = Math.min(grid[i] + 1, MAX_AGE + 1);
+          } else {
+            nextGrid[i] = 0;
+            newDead.push(i);
+          }
+        } else {
+          if (neighbors === 3) {
+            nextGrid[i] = 1;
+            newBorn.push({ i, r, c });
+          } else {
+            nextGrid[i] = 0;
+          }
+        }
+      }
+    }
+
+    // Swap grids
+    [grid, nextGrid] = [nextGrid, grid];
+    generation++;
+
+    // Play notes for newly born cells (random subset if too many)
+    const stepDuration = Math.max(0.08, 1 / speed);
+    let toPlay = newBorn;
+    if (toPlay.length > MAX_SIMULTANEOUS) {
+      toPlay = toPlay.sort(() => Math.random() - 0.5).slice(0, MAX_SIMULTANEOUS);
+    }
+    for (const { r, c } of toPlay) {
+      playNote(c, r, stepDuration * 0.9);
+    }
+
+    updateDisplay(newBorn.map(b => b.i), newDead);
+  }
+
+  function updateDisplay(bornIndices = [], deadIndices = []) {
+    const bornSet = new Set(bornIndices);
+    const deadSet = new Set(deadIndices);
+
+    for (let i = 0; i < grid.length; i++) {
+      const el = cellElements[i];
+      const age = grid[i];
+      const alive = age > 0;
+
+      // Remove previous age/state classes efficiently
+      if (alive) {
+        const ageClass = 'age-' + Math.min(age - 1, MAX_AGE);
+        el.className = 'cell alive ' + ageClass + (bornSet.has(i) ? ' born' : '');
+      } else if (deadSet.has(i)) {
+        el.className = 'cell dying';
+      } else if (!alive && el.classList.contains('alive')) {
+        el.className = 'cell';
+      } else if (!alive) {
+        el.className = 'cell';
+      }
+    }
+
+    document.getElementById('gen-count').textContent = generation;
+    document.getElementById('alive-count').textContent = grid.filter(v => v > 0).length;
+  }
+
+  // --- Drawing ---
+  function getCellFromEvent(e) {
+    const touch = e.touches ? e.touches[0] : e;
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (el && el.classList.contains('cell')) {
+      return { r: +el.dataset.r, c: +el.dataset.c, el };
+    }
+    return null;
+  }
+
+  function toggleCell(r, c) {
+    const i = idx(r, c);
+    if (drawMode === 'draw') {
+      if (grid[i] === 0) {
+        grid[i] = 1;
+        initAudio();
+        playNote(c, r, 0.15);
+      }
+    } else if (drawMode === 'erase') {
+      grid[i] = 0;
+    }
+    updateDisplay();
+  }
+
+  function handlePointerDown(e) {
+    e.preventDefault();
+    const cell = getCellFromEvent(e);
+    if (!cell) return;
+    const i = idx(cell.r, cell.c);
+    drawMode = grid[i] > 0 ? 'erase' : 'draw';
+    toggleCell(cell.r, cell.c);
+  }
+
+  function handlePointerMove(e) {
+    e.preventDefault();
+    if (drawMode === null) return;
+    const cell = getCellFromEvent(e);
+    if (cell) toggleCell(cell.r, cell.c);
+  }
+
+  function handlePointerUp(e) {
+    drawMode = null;
+  }
+
+  gridEl.addEventListener('mousedown', handlePointerDown);
+  gridEl.addEventListener('mousemove', handlePointerMove);
+  window.addEventListener('mouseup', handlePointerUp);
+
+  gridEl.addEventListener('touchstart', handlePointerDown, { passive: false });
+  gridEl.addEventListener('touchmove', handlePointerMove, { passive: false });
+  window.addEventListener('touchend', handlePointerUp);
+
+  // --- Game Loop ---
+  function gameLoop(timestamp) {
+    if (!running) return;
+    const interval = 1000 / speed;
+    if (timestamp - lastStepTime >= interval) {
+      step();
+      lastStepTime = timestamp;
+    }
+    animFrameId = requestAnimationFrame(gameLoop);
+  }
+
+  function startGame() {
+    if (running) return;
+    initAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    running = true;
+    lastStepTime = performance.now();
+    animFrameId = requestAnimationFrame(gameLoop);
+    updatePlayButton();
+  }
+
+  function stopGame() {
+    running = false;
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+    updatePlayButton();
+  }
+
+  function updatePlayButton() {
+    const btn = document.getElementById('btn-play');
+    if (running) {
+      btn.innerHTML = '<span class="icon">&#9646;&#9646;</span> Pause';
+    } else {
+      btn.innerHTML = '<span class="icon">&#9654;</span> Play';
+    }
+  }
+
+  // --- Controls ---
+  document.getElementById('btn-play').addEventListener('click', () => {
+    if (running) stopGame(); else startGame();
+  });
+
+  document.getElementById('btn-step').addEventListener('click', () => {
+    initAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (running) stopGame();
+    step();
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    if (running) stopGame();
+    grid.fill(0);
+    generation = 0;
+    updateDisplay();
+  });
+
+  document.getElementById('btn-random').addEventListener('click', () => {
+    initAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    for (let i = 0; i < grid.length; i++) {
+      grid[i] = Math.random() < 0.25 ? 1 : 0;
+    }
+    generation = 0;
+    updateDisplay();
+  });
+
+  document.getElementById('btn-mute').addEventListener('click', () => {
+    muted = !muted;
+    const btn = document.getElementById('btn-mute');
+    if (muted) {
+      btn.innerHTML = '<span class="icon">&#128263;</span>';
+      btn.classList.add('muted');
+    } else {
+      btn.innerHTML = '<span class="icon">&#9835;</span>';
+      btn.classList.remove('muted');
+    }
+  });
+
+  const speedSlider = document.getElementById('speed-slider');
+  const speedVal = document.getElementById('speed-val');
+  const bpmDisplay = document.getElementById('bpm-display');
+  speedSlider.addEventListener('input', () => {
+    speed = +speedSlider.value;
+    speedVal.textContent = speed;
+    bpmDisplay.textContent = speed * 30;
+  });
+
+  const volSlider = document.getElementById('vol-slider');
+  const volVal = document.getElementById('vol-val');
+  volSlider.addEventListener('input', () => {
+    volume = +volSlider.value / 100;
+    volVal.textContent = volSlider.value;
+    if (masterGain) masterGain.gain.value = volume;
+  });
+
+  // --- Init ---
+  createGrid();
+
+  // Seed a small glider and a pulsar-ish pattern so it's not empty
+  function seedPatterns() {
+    const cx = Math.floor(cols / 2);
+    const cy = Math.floor(rows / 2);
+
+    // Glider
+    const glider = [[0,1],[1,2],[2,0],[2,1],[2,2]];
+    const gx = Math.floor(cols * 0.2);
+    const gy = Math.floor(rows * 0.2);
+    for (const [dr, dc] of glider) {
+      const r = gy + dr, c = gx + dc;
+      if (r >= 0 && r < rows && c >= 0 && c < cols) grid[idx(r, c)] = 1;
+    }
+
+    // R-pentomino (chaotic, interesting)
+    const rpent = [[0,1],[0,2],[1,0],[1,1],[2,1]];
+    for (const [dr, dc] of rpent) {
+      const r = cy + dr, c = cx + dc;
+      if (r >= 0 && r < rows && c >= 0 && c < cols) grid[idx(r, c)] = 1;
+    }
+
+    // Lightweight spaceship
+    const lwss = [[0,1],[0,4],[1,0],[2,0],[2,4],[3,0],[3,1],[3,2],[3,3]];
+    const sx = Math.floor(cols * 0.7);
+    const sy = Math.floor(rows * 0.6);
+    for (const [dr, dc] of lwss) {
+      const r = sy + dr, c = sx + dc;
+      if (r >= 0 && r < rows && c >= 0 && c < cols) grid[idx(r, c)] = 1;
+    }
+
+    // Blinker
+    const blinker = [[0,0],[0,1],[0,2]];
+    const bx = Math.floor(cols * 0.6);
+    const by = Math.floor(rows * 0.3);
+    for (const [dr, dc] of blinker) {
+      const r = by + dr, c = bx + dc;
+      if (r >= 0 && r < rows && c >= 0 && c < cols) grid[idx(r, c)] = 1;
+    }
+
+    updateDisplay();
+  }
+
+  seedPatterns();
+
+  // Handle resize
+  let resizeTimeout;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      const wasRunning = running;
+      if (running) stopGame();
+      createGrid();
+      seedPatterns();
+      if (wasRunning) startGame();
+    }, 300);
+  });
+})();
+</script>
+</body>
+</html>
