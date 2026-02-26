@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Glass Shatter</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:-apple-system,system-ui,sans-serif;touch-action:none;user-select:none}
+canvas{display:block;position:absolute;top:0;left:0}
+#bg{z-index:0}
+#glass{z-index:1}
+#ui{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10;display:flex;gap:10px;align-items:center}
+button{background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:24px;padding:8px 18px;font-size:14px;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .2s}
+button:active,button.active{background:rgba(255,255,255,0.35)}
+#counter{position:fixed;top:20px;right:20px;z-index:10;color:rgba(255,255,255,0.7);font-size:14px;font-weight:600;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);background:rgba(0,0,0,0.3);padding:6px 14px;border-radius:16px}
+#hint{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;color:rgba(255,255,255,0.4);font-size:18px;pointer-events:none;transition:opacity .5s}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<canvas id="glass"></canvas>
+<div id="counter">Hits: 0</div>
+<div id="hint">Tap to shatter</div>
+<div id="ui">
+  <button id="btnClear" data-type="clear">Clear</button>
+  <button id="btnFrosted" data-type="frosted">Frosted</button>
+  <button id="btnTinted" data-type="tinted">Tinted</button>
+  <button id="btnReset">↺ Reset</button>
+</div>
+<script>
+(()=>{
+const bgC=document.getElementById('bg'),glC=document.getElementById('glass');
+const bgCtx=bgC.getContext('2d'),glCtx=glC.getContext('2d');
+const counter=document.getElementById('counter'),hint=document.getElementById('hint');
+let W,H,dpr;
+let impacts=[];
+let shards=[];
+let glassType='clear'; // clear, frosted, tinted
+let hitCount=0;
+let shattered=false;
+let animating=false;
+let hintVisible=true;
+let audioCtx=null;
+
+function resize(){
+  dpr=window.devicePixelRatio||1;
+  W=window.innerWidth;H=window.innerHeight;
+  [bgC,glC].forEach(c=>{c.width=W*dpr;c.height=H*dpr;c.style.width=W+'px';c.style.height=H+'px';c.getContext('2d').scale(dpr,dpr)});
+  if(!shattered&&shards.length===0)rebuildGlass();
+}
+
+// Background: animated gradient
+let bgTime=0;
+function drawBg(){
+  bgTime+=0.003;
+  const g=bgCtx.createLinearGradient(0,0,W,H);
+  const hue1=(bgTime*30)%360,hue2=(hue1+120)%360,hue3=(hue1+240)%360;
+  g.addColorStop(0,`hsl(${hue1},80%,40%)`);
+  g.addColorStop(0.5,`hsl(${hue2},70%,50%)`);
+  g.addColorStop(1,`hsl(${hue3},80%,40%)`);
+  bgCtx.fillStyle=g;
+  bgCtx.fillRect(0,0,W,H);
+  // Stars
+  const seed=42;
+  for(let i=0;i<80;i++){
+    const x=((Math.sin(seed+i*137.5)*43758.5453)%1+1)%1*W;
+    const y=((Math.sin(seed+i*257.3)*23421.631)%1+1)%1*H;
+    const r=((Math.sin(seed+i*97.1)*12345.6)%1+1)%1*2+0.5;
+    const twinkle=Math.sin(bgTime*3+i)*0.3+0.7;
+    bgCtx.globalAlpha=twinkle;
+    bgCtx.fillStyle='#fff';
+    bgCtx.beginPath();bgCtx.arc(x,y,r,0,Math.PI*2);bgCtx.fill();
+  }
+  bgCtx.globalAlpha=1;
+}
+
+// Voronoi via Fortune's simplified: use random points + Delaunay to get edges
+// Simpler approach: for each impact, generate radial cracks + random Voronoi cells
+
+class Shard{
+  constructor(pts,cx,cy){
+    this.pts=pts; // polygon points [{x,y}]
+    this.cx=cx;this.cy=cy;
+    this.vx=0;this.vy=0;this.va=0;this.angle=0;
+    this.falling=false;
+    this.opacity=1;
+    this.y_offset=0;this.x_offset=0;
+  }
+  startFall(impactX,impactY){
+    this.falling=true;
+    const dx=this.cx-impactX,dy=this.cy-impactY;
+    const dist=Math.sqrt(dx*dx+dy*dy)+1;
+    this.vx=dx/dist*(2+Math.random()*3);
+    this.vy=dy/dist*2+Math.random()*2-3;
+    this.va=(Math.random()-0.5)*0.08;
+  }
+  update(){
+    if(!this.falling)return;
+    this.vy+=0.3;
+    this.x_offset+=this.vx;
+    this.y_offset+=this.vy;
+    this.angle+=this.va;
+    this.opacity=Math.max(0,this.opacity-0.005);
+  }
+  draw(ctx){
+    ctx.save();
+    ctx.translate(this.cx+this.x_offset,this.cy+this.y_offset);
+    ctx.rotate(this.angle);
+    ctx.translate(-this.cx,-this.cy);
+    ctx.globalAlpha=this.opacity;
+    // Glass fill
+    if(glassType==='frosted'){
+      ctx.fillStyle='rgba(200,220,240,0.55)';
+    }else if(glassType==='tinted'){
+      ctx.fillStyle='rgba(80,160,200,0.4)';
+    }else{
+      ctx.fillStyle='rgba(220,235,255,0.2)';
+    }
+    ctx.beginPath();
+    ctx.moveTo(this.pts[0].x,this.pts[0].y);
+    for(let i=1;i<this.pts.length;i++)ctx.lineTo(this.pts[i].x,this.pts[i].y);
+    ctx.closePath();
+    ctx.fill();
+    // Shimmer
+    const shimmer=ctx.createLinearGradient(this.pts[0].x,this.pts[0].y,this.pts[Math.floor(this.pts.length/2)]?.x||this.cx,this.pts[Math.floor(this.pts.length/2)]?.y||this.cy);
+    shimmer.addColorStop(0,'rgba(255,255,255,0.15)');
+    shimmer.addColorStop(0.5,'rgba(255,255,255,0.02)');
+    shimmer.addColorStop(1,'rgba(255,255,255,0.1)');
+    ctx.fillStyle=shimmer;
+    ctx.fill();
+    // Edge
+    ctx.strokeStyle='rgba(255,255,255,0.4)';
+    ctx.lineWidth=0.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+  isOffScreen(){
+    return this.cy+this.y_offset>H+200||this.opacity<=0;
+  }
+}
+
+// Generate Voronoi-like shards using seed points
+function generateShards(seeds,bounds){
+  // Simple approach: for each pixel-area, assign to nearest seed → build polygons via convex hull approximation
+  // Better: compute Voronoi edges directly
+  // Using a simple scanline approach for cell membership, then trace borders
+  // Actually let's use a geometric approach with Delaunay triangulation
+  
+  // Simplest robust approach: create polygons by angular sweep around each seed
+  const result=[];
+  const {x:bx,y:by,w:bw,h:bh}=bounds;
+  
+  for(let i=0;i<seeds.length;i++){
+    const s=seeds[i];
+    // Find boundary polygon of Voronoi cell by intersecting half-planes
+    // Start with bounding rect, clip by each bisector
+    let poly=[{x:bx,y:by},{x:bx+bw,y:by},{x:bx+bw,y:by+bh},{x:bx,y:by+bh}];
+    
+    for(let j=0;j<seeds.length;j++){
+      if(i===j)continue;
+      const mx=(s.x+seeds[j].x)/2, my=(s.y+seeds[j].y)/2;
+      const dx=seeds[j].x-s.x, dy=seeds[j].y-s.y;
+      // Keep side closer to s: dot(p - mid, d) < 0
+      poly=clipPolygon(poly,mx,my,dx,dy);
+      if(poly.length<3)break;
+    }
+    if(poly.length>=3){
+      const cx=poly.reduce((a,p)=>a+p.x,0)/poly.length;
+      const cy=poly.reduce((a,p)=>a+p.y,0)/poly.length;
+      result.push(new Shard(poly,cx,cy));
+    }
+  }
+  return result;
+}
+
+function clipPolygon(poly,mx,my,dx,dy){
+  // Sutherland-Hodgman clip: keep points where dot(p-mid, d) <= 0
+  const out=[];
+  for(let i=0;i<poly.length;i++){
+    const curr=poly[i], next=poly[(i+1)%poly.length];
+    const dc=(curr.x-mx)*dx+(curr.y-my)*dy;
+    const dn=(next.x-mx)*dx+(next.y-my)*dy;
+    if(dc<=0)out.push(curr);
+    if((dc<=0)!==(dn<=0)){
+      const t=dc/(dc-dn);
+      out.push({x:curr.x+t*(next.x-curr.x),y:curr.y+t*(next.y-curr.y)});
+    }
+  }
+  return out;
+}
+
+function rebuildGlass(){
+  // Full-screen glass = one big shard
+  shards=[];
+  // Generate a grid of Voronoi seeds for pre-fragmented glass (invisible until hit)
+  // Actually start with intact glass, fragment on impact
+  shards=[new Shard([{x:0,y:0},{x:W,y:0},{x:W,y:H},{x:0,y:H}],W/2,H/2)];
+  impacts=[];hitCount=0;shattered=false;
+  counter.textContent='Hits: 0';
+}
+
+function addImpact(ix,iy){
+  if(hintVisible){hint.style.opacity='0';hintVisible=false;}
+  hitCount++;
+  counter.textContent='Hits: '+hitCount;
+  
+  playCrack();
+  
+  // Collect all existing non-falling shard polygons
+  const existing=shards.filter(s=>!s.falling);
+  if(existing.length===0)return;
+  
+  // Generate new seed points around impact
+  const newSeeds=[];
+  // Radial seeds near impact
+  const ringCount=3;
+  for(let r=0;r<ringCount;r++){
+    const radius=20+r*30+Math.random()*20;
+    const count=6+r*4;
+    for(let a=0;a<count;a++){
+      const angle=(a/count)*Math.PI*2+Math.random()*0.3;
+      newSeeds.push({x:ix+Math.cos(angle)*radius,y:iy+Math.sin(angle)*radius});
+    }
+  }
+  // Add some random seeds in wider area
+  for(let i=0;i<8;i++){
+    const angle=Math.random()*Math.PI*2;
+    const dist=80+Math.random()*150;
+    newSeeds.push({x:ix+Math.cos(angle)*dist,y:iy+Math.sin(angle)*dist});
+  }
+  
+  // Collect seeds from existing shard centers (to preserve previous cracks)
+  const allSeeds=[...newSeeds];
+  if(existing.length>1){
+    existing.forEach(s=>allSeeds.push({x:s.cx,y:s.cy}));
+  }else{
+    // First hit: add grid seeds for overall structure
+    const step=Math.max(W,H)/6;
+    for(let x=step/2;x<W;x+=step){
+      for(let y=step/2;y<H;y+=step){
+        allSeeds.push({x:x+(Math.random()-0.5)*step*0.5,y:y+(Math.random()-0.5)*step*0.5});
+      }
+    }
+  }
+  
+  // Remove shards that aren't falling
+  shards=shards.filter(s=>s.falling);
+  
+  // Generate new Voronoi shards
+  const newShards=generateShards(allSeeds,{x:-10,y:-10,w:W+20,h:H+20});
+  
+  // Shards very close to impact start falling
+  const fallRadius=60+hitCount*15;
+  newShards.forEach(s=>{
+    const dx=s.cx-ix,dy=s.cy-iy;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist<fallRadius&&Math.random()<0.6+hitCount*0.05){
+      s.startFall(ix,iy);
+    }
+  });
+  
+  shards.push(...newShards);
+  impacts.push({x:ix,y:iy,time:Date.now()});
+}
+
+function shatterAll(){
+  if(shattered)return;
+  shattered=true;
+  playCrack();
+  const cx=W/2,cy=H/2;
+  shards.forEach(s=>{
+    if(!s.falling)s.startFall(cx,cy);
+  });
+}
+
+function resetGlass(){
+  shards=[];
+  rebuildGlass();
+}
+
+// Audio
+function initAudio(){
+  if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+}
+
+function playCrack(){
+  initAudio();
+  if(!audioCtx)return;
+  const dur=0.15;
+  const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*dur,audioCtx.sampleRate);
+  const data=buf.getChannelData(0);
+  for(let i=0;i<data.length;i++){
+    const t=i/audioCtx.sampleRate;
+    const env=Math.exp(-t*40);
+    data[i]=(Math.random()*2-1)*env*0.5;
+    // Add some crackle
+    if(Math.random()<0.02)data[i]+=((Math.random()>0.5)?1:-1)*env*0.8;
+  }
+  const src=audioCtx.createBufferSource();
+  src.buffer=buf;
+  // Filter for glass-like sound
+  const filt=audioCtx.createBiquadFilter();
+  filt.type='highpass';filt.frequency.value=2000+Math.random()*3000;
+  src.connect(filt);filt.connect(audioCtx.destination);
+  src.start();
+}
+
+// Input
+function onTap(x,y){
+  addImpact(x,y);
+}
+
+glC.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  onTap(e.clientX,e.clientY);
+});
+
+// Shake detection
+let lastAcc={x:0,y:0,z:0},shakeThreshold=25;
+window.addEventListener('devicemotion',e=>{
+  const a=e.accelerationIncludingGravity;
+  if(!a)return;
+  const dx=Math.abs(a.x-lastAcc.x),dy=Math.abs(a.y-lastAcc.y),dz=Math.abs(a.z-lastAcc.z);
+  if(dx+dy+dz>shakeThreshold)shatterAll();
+  lastAcc={x:a.x,y:a.y,z:a.z};
+});
+
+// Buttons
+document.getElementById('btnReset').addEventListener('click',e=>{e.stopPropagation();resetGlass()});
+['clear','frosted','tinted'].forEach(t=>{
+  const btn=document.getElementById('btn'+t.charAt(0).toUpperCase()+t.slice(1));
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    glassType=t;
+    document.querySelectorAll('#ui button[data-type]').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+document.getElementById('btnClear').classList.add('active');
+
+// Render loop
+function draw(){
+  requestAnimationFrame(draw);
+  drawBg();
+  
+  glCtx.clearRect(0,0,W,H);
+  
+  // Update & draw shards
+  for(let i=shards.length-1;i>=0;i--){
+    shards[i].update();
+    if(shards[i].isOffScreen()){shards.splice(i,1);continue;}
+    shards[i].draw(glCtx);
+  }
+  
+  // Draw impact points
+  const now=Date.now();
+  impacts.forEach(imp=>{
+    const age=(now-imp.time)/1000;
+    if(age>2)return;
+    const alpha=Math.max(0,1-age/2)*0.6;
+    glCtx.save();
+    glCtx.globalAlpha=alpha;
+    // Radial crack lines
+    glCtx.strokeStyle='rgba(255,255,255,0.8)';
+    glCtx.lineWidth=1;
+    const cracks=8+Math.floor(Math.random()*0.01); // deterministic per impact
+    for(let i=0;i<12;i++){
+      const a=(i/12)*Math.PI*2+imp.x*0.01;
+      const len=30+Math.sin(imp.y+i*73)*20;
+      glCtx.beginPath();
+      glCtx.moveTo(imp.x,imp.y);
+      // Jagged line
+      let px=imp.x,py=imp.y;
+      const steps=4;
+      for(let s=1;s<=steps;s++){
+        const t=s/steps;
+        const nx=imp.x+Math.cos(a)*len*t+(Math.random()-0.5)*8;
+        const ny=imp.y+Math.sin(a)*len*t+(Math.random()-0.5)*8;
+        glCtx.lineTo(nx,ny);
+      }
+      glCtx.stroke();
+    }
+    // Impact circle
+    glCtx.beginPath();
+    glCtx.arc(imp.x,imp.y,5,0,Math.PI*2);
+    glCtx.fillStyle='rgba(255,255,255,0.5)';
+    glCtx.fill();
+    glCtx.restore();
+  });
+}
+
+window.addEventListener('resize',resize);
+resize();
+draw();
+})();
+</script>
+</body>
+</html>
