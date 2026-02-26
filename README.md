@@ -8,6 +8,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 💎 **[Glass Shatter](https://adrrr.github.io/night-projects/glass-shatter/)**
+Simulateur interactif de vitre brisée — tap pour créer des impacts avec tessellation Voronoi réaliste. Les éclats proches de l'impact tombent avec gravité et rotation, révélant un gradient animé étoilé derrière. 3 types de verre (Clear, Frosted, Tinted), shake pour tout fracasser, son de craquement Web Audio, compteur d'impacts. Satisfaisant et hypnotique.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/glass-shatter/)
+
 ### 🎼 **[Cellular Symphony](https://adrrr.github.io/night-projects/cellular-symphony/)**
 Automate cellulaire musical — Game of Life où chaque cellule vivante joue une note sur une gamme pentatonique. Les colonnes mappent les notes, les rangées les octaves. Les cellules vieillissent en couleur (violet → rose → corail → orange → jaune) avec des effets de glow. Dessin tactile, contrôle vitesse/volume, mute, step-by-step. Web Audio API, dark theme, touch-first, zéro dépendance.
 
