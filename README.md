@@ -8,6 +8,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🕳️ **[Black Hole Simulator](https://adrrr.github.io/night-projects/black-hole/)**
+Simulateur de trou noir interactif — lentille gravitationnelle réaliste (les étoiles se courbent autour du trou noir, anneau d'Einstein visible), disque d'accrétion avec 800 particules en orbite képlérienne et effet Doppler prononcé (côté approchant bleu-blanc, côté s'éloignant rouge-orange), gradient de température blackbody (intérieur blanc chaud → extérieur orange-rouge), rayonnement Hawking subtil, champ d'étoiles parallaxe sur 3 couches avec scintillement. Drag pour déplacer, pinch/scroll pour changer la masse (1.0–10.0 M☉), persistance LocalStorage. Touch-first, canvas haute perf, zéro dépendance.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/black-hole/)
+
 ### 💎 **[Glass Shatter](https://adrrr.github.io/night-projects/glass-shatter/)**
 Simulateur interactif de vitre brisée — tap pour créer des impacts avec tessellation Voronoi réaliste. Les éclats proches de l'impact tombent avec gravité et rotation, révélant un gradient animé étoilé derrière. 3 types de verre (Clear, Frosted, Tinted), shake pour tout fracasser, son de craquement Web Audio, compteur d'impacts. Satisfaisant et hypnotique.
 
