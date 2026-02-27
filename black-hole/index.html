@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Black Hole Simulator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    color: #ccc;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    width: 100%; height: 100%;
+    position: fixed; top: 0; left: 0;
+  }
+  #ui {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    padding: 16px 20px 28px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.9) 50%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #ui > * { pointer-events: auto; }
+  .ctrl-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ctrl-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.35);
+    white-space: nowrap;
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 120px;
+    height: 3px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ffb060, #d04000);
+    border: 2px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    box-shadow: 0 0 12px rgba(255,120,0,0.5), 0 0 4px rgba(255,80,0,0.8);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ffb060, #d04000);
+    border: 2px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    box-shadow: 0 0 12px rgba(255,120,0,0.5);
+  }
+  .btn {
+    min-width: 44px; min-height: 44px;
+    padding: 8px 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    color: rgba(255,255,255,0.5);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: all 0.25s;
+    white-space: nowrap;
+  }
+  .btn:active, .btn.active {
+    background: rgba(255,120,0,0.15);
+    border-color: rgba(255,120,0,0.35);
+    color: #ff9030;
+  }
+  .spacer { flex: 1; }
+  #info {
+    position: fixed;
+    top: 20px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.2);
+    z-index: 10;
+    pointer-events: none;
+    text-align: center;
+    transition: opacity 1s;
+  }
+  #mass-display {
+    position: fixed;
+    top: 46px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 24px;
+    font-weight: 100;
+    color: rgba(255,255,255,0.08);
+    z-index: 10;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 3px;
+  }
+  @media (max-width: 500px) {
+    #ui { gap: 8px; padding: 12px 12px 24px; }
+    input[type="range"] { width: 80px; }
+    .ctrl-label { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">Drag to move &middot; Scroll to change mass</div>
+<div id="mass-display"></div>
+<div id="ui">
+  <div class="ctrl-group">
+    <span class="ctrl-label">Mass</span>
+    <input type="range" id="massSlider" min="20" max="200" value="80">
+  </div>
+  <div class="spacer"></div>
+  <button class="btn active" id="toggleDisk">Disk</button>
+  <button class="btn" id="resetBtn">Reset</button>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const massSlider = document.getElementById('massSlider');
+  const toggleDiskBtn = document.getElementById('toggleDisk');
+  const resetBtn = document.getElementById('resetBtn');
+  const infoEl = document.getElementById('info');
+  const massDisplay = document.getElementById('mass-display');
+
+  let W, H, dpr;
+  let showDisk = true;
+  let dragging = false;
+  let dragOffset = { x: 0, y: 0 };
+
+  const bh = { x: 0, y: 0, mass: 80, targetMass: 80 };
+
+  // --- Stars ---
+  const STAR_COUNT = 1200;
+  const stars = [];
+
+  // --- Accretion disk ---
+  const DISK_COUNT = 800;
+  const diskParticles = [];
+
+  // --- Hawking radiation ---
+  const HAWKING_COUNT = 50;
+  const hawkingParticles = [];
+
+  // Offscreen trail canvas
+  let trailCanvas, trailCtx;
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!trailCanvas) {
+      trailCanvas = document.createElement('canvas');
+      trailCtx = trailCanvas.getContext('2d');
+    }
+    trailCanvas.width = W * dpr;
+    trailCanvas.height = H * dpr;
+    trailCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function initStars() {
+    stars.length = 0;
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const layer = [0.15, 0.4, 1.0][i % 3];
+      stars.push({
+        baseX: (Math.random() - 0.5) * W * 3,
+        baseY: (Math.random() - 0.5) * H * 3,
+        size: Math.random() < 0.05 ? 1.2 + Math.random() * 0.8 : 0.3 + Math.random() * 0.9,
+        brightness: Math.random() * 0.6 + 0.4,
+        layer,
+        twinkleSpeed: Math.random() * 3 + 0.5,
+        twinklePhase: Math.random() * Math.PI * 2,
+        // Some stars have color
+        temp: Math.random(), // 0=red, 0.5=white, 1=blue
+      });
+    }
+  }
+
+  function starColor(temp, alpha) {
+    if (temp < 0.2) return `rgba(255,180,130,${alpha})`;
+    if (temp < 0.4) return `rgba(255,220,180,${alpha})`;
+    if (temp > 0.85) return `rgba(160,190,255,${alpha})`;
+    if (temp > 0.7) return `rgba(200,210,255,${alpha})`;
+    return `rgba(255,255,255,${alpha})`;
+  }
+
+  function initDisk() {
+    diskParticles.length = 0;
+    for (let i = 0; i < DISK_COUNT; i++) {
+      diskParticles.push(createDiskParticle(true));
+    }
+  }
+
+  function createDiskParticle(randomAngle) {
+    // Store orbit as ratio so it scales dynamically with mass
+    const band = Math.random();
+    const rRatio = 1.3 + band * 4; // multiplied by bh.mass at render time
+    const angle = randomAngle ? Math.random() * Math.PI * 2 : 0;
+    // Kepler-ish: inner orbits faster
+    const speed = 1 / Math.sqrt(rRatio);
+    return {
+      rRatio, angle, speed,
+      band, // 0=inner(hot), 1=outer(cool)
+      brightness: 0.4 + Math.random() * 0.6,
+      size: band < 0.3 ? 0.4 + Math.random() * 1.0 : 0.3 + Math.random() * 1.5,
+      trail: [],
+    };
+  }
+
+  function initHawking() {
+    hawkingParticles.length = 0;
+    for (let i = 0; i < HAWKING_COUNT; i++) {
+      hawkingParticles.push(createHawkingParticle());
+    }
+  }
+
+  function createHawkingParticle() {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = bh.mass * 0.72 + Math.random() * bh.mass * 0.15;
+    return {
+      x: Math.cos(angle) * dist,
+      y: Math.sin(angle) * dist,
+      vx: (Math.random() - 0.5) * 0.8,
+      vy: (Math.random() - 0.5) * 0.8,
+      life: 0.5 + Math.random() * 0.5,
+      decay: 0.003 + Math.random() * 0.008,
+      size: 0.3 + Math.random() * 0.7,
+    };
+  }
+
+  function reset() {
+    bh.x = W / 2;
+    bh.y = H / 2;
+    bh.mass = 80;
+    bh.targetMass = 80;
+    massSlider.value = 80;
+    showDisk = true;
+    toggleDiskBtn.classList.add('active');
+    initDisk();
+    initHawking();
+    // Clear trail canvas
+    trailCtx.clearRect(0, 0, W, H);
+    save();
+  }
+
+  function save() {
+    try {
+      localStorage.setItem('bh-sim', JSON.stringify({ mass: bh.targetMass, showDisk }));
+    } catch (e) {}
+  }
+
+  function load() {
+    try {
+      const d = JSON.parse(localStorage.getItem('bh-sim'));
+      if (d) {
+        bh.mass = d.mass || 80;
+        bh.targetMass = d.mass || 80;
+        massSlider.value = d.mass || 80;
+        showDisk = d.showDisk !== false;
+        if (!showDisk) toggleDiskBtn.classList.remove('active');
+      }
+    } catch (e) {}
+  }
+
+  // ========== DRAWING ==========
+
+  function drawStarfield(t) {
+    const cx = W / 2, cy = H / 2;
+    const bhOffX = (bh.x - cx) / W;
+    const bhOffY = (bh.y - cy) / H;
+    const eventR = bh.mass * 0.7;
+    const einsteinR = bh.mass * 1.8;
+    const lensOuter = bh.mass * 5;
+
+    for (const s of stars) {
+      // Parallax
+      const px = s.baseX + cx - bhOffX * 150 * s.layer;
+      const py = s.baseY + cy - bhOffY * 150 * s.layer;
+      // Wrap
+      const wrap = 3;
+      let sx = ((px % (W * wrap)) + W * wrap) % (W * wrap) - W * (wrap - 1) * 0.5;
+      let sy = ((py % (H * wrap)) + H * wrap) % (H * wrap) - H * (wrap - 1) * 0.5;
+
+      // Distance to black hole
+      const dx = sx - bh.x;
+      const dy = sy - bh.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Skip if inside event horizon
+      if (dist < eventR) continue;
+
+      // Twinkle
+      const twinkle = Math.sin(t * s.twinkleSpeed + s.twinklePhase) * 0.25 + 0.75;
+
+      if (dist < lensOuter) {
+        // Gravitational lensing
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // Deflection angle: inversely proportional to distance
+        // Stronger near the Einstein radius, creates the ring effect
+        const deflection = (einsteinR * einsteinR) / (dist + 1);
+
+        // Radial push outward (light bends away from BH)
+        const pushX = nx * deflection * 0.6;
+        const pushY = ny * deflection * 0.6;
+
+        sx += pushX;
+        sy += pushY;
+
+        // Brightness amplification near Einstein ring
+        const ringProximity = Math.abs(dist - einsteinR);
+        const ringWidth = bh.mass * 1.2;
+        let amplification = 1;
+        if (ringProximity < ringWidth) {
+          amplification = 1 + (1 - ringProximity / ringWidth) * 2.5;
+        }
+
+        // Fade stars that are very close to event horizon
+        const fadeFactor = Math.min(1, (dist - eventR) / (eventR * 0.5));
+
+        const alpha = Math.min(1, s.brightness * twinkle * amplification * fadeFactor);
+        const sz = Math.min(s.size * (1 + (amplification - 1) * 0.15), s.size + 0.8);
+
+        ctx.fillStyle = starColor(s.temp, alpha);
+        ctx.beginPath();
+        ctx.arc(sx, sy, sz, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Subtle bloom for strongly amplified stars
+        if (amplification > 2) {
+          ctx.fillStyle = starColor(s.temp, (amplification - 2) * 0.08);
+          ctx.beginPath();
+          ctx.arc(sx, sy, sz + 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // Normal rendering
+        const alpha = s.brightness * twinkle;
+        ctx.fillStyle = starColor(s.temp, alpha);
+        ctx.beginPath();
+        ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function drawEinsteinRing() {
+    const r = bh.mass * 1.8;
+    // Subtle, elegant ring glow
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const grad = ctx.createRadialGradient(bh.x, bh.y, r * 0.8, bh.x, bh.y, r * 1.4);
+    grad.addColorStop(0, 'rgba(140,160,220,0)');
+    grad.addColorStop(0.35, 'rgba(140,160,220,0.015)');
+    grad.addColorStop(0.5, 'rgba(170,190,255,0.035)');
+    grad.addColorStop(0.65, 'rgba(140,160,220,0.015)');
+    grad.addColorStop(1, 'rgba(140,160,220,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(bh.x, bh.y, r * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBlackHole() {
+    const r = bh.mass * 0.7;
+
+    // Photon sphere: subtle purple/dark glow outside event horizon
+    const photon = ctx.createRadialGradient(bh.x, bh.y, r * 0.85, bh.x, bh.y, r * 1.8);
+    photon.addColorStop(0, 'rgba(0,0,0,1)');
+    photon.addColorStop(0.2, 'rgba(5,2,10,0.95)');
+    photon.addColorStop(0.5, 'rgba(15,5,25,0.3)');
+    photon.addColorStop(0.8, 'rgba(10,3,20,0.08)');
+    photon.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = photon;
+    ctx.beginPath();
+    ctx.arc(bh.x, bh.y, r * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hard event horizon
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(bh.x, bh.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Thin bright ring right at the photon sphere
+    ctx.strokeStyle = 'rgba(80,60,120,0.12)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(bh.x, bh.y, r * 1.05, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function drawDiskGlow() {
+    if (!showDisk) return;
+    const r = bh.mass * 4;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.translate(bh.x, bh.y);
+    ctx.scale(1, 0.22);
+
+    // Warm inner glow
+    const inner = ctx.createRadialGradient(0, 0, bh.mass * 0.6, 0, 0, r * 0.5);
+    inner.addColorStop(0, 'rgba(255,200,100,0.06)');
+    inner.addColorStop(0.5, 'rgba(255,130,40,0.03)');
+    inner.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = inner;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Outer cooler glow
+    const outer = ctx.createRadialGradient(0, 0, bh.mass * 1.5, 0, 0, r);
+    outer.addColorStop(0, 'rgba(255,100,30,0.025)');
+    outer.addColorStop(0.6, 'rgba(180,50,10,0.01)');
+    outer.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = outer;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function getDiskColor(band, doppler, alpha) {
+    // band: 0=inner(very hot), 1=outer(cooler)
+    // doppler: -1=fully redshifted, +1=fully blueshifted
+    let r, g, b;
+
+    // Base blackbody temperature: inner = white-hot, outer = deep orange-red
+    if (band < 0.15) {
+      r = 255; g = 245; b = 235; // White-hot core
+    } else if (band < 0.35) {
+      const t = (band - 0.15) / 0.2;
+      r = 255; g = Math.floor(245 - t * 60); b = Math.floor(235 - t * 135);
+    } else if (band < 0.6) {
+      const t = (band - 0.35) / 0.25;
+      r = 255; g = Math.floor(185 - t * 50); b = Math.floor(100 - t * 70);
+    } else {
+      const t = (band - 0.6) / 0.4;
+      r = Math.floor(255 - t * 40); g = Math.floor(135 - t * 80); b = Math.floor(30 - t * 20);
+    }
+
+    // Apply strong Doppler shift
+    const d = doppler; // -1 to +1
+    if (d > 0) {
+      // Approaching: blue shift — dramatically boost blue, cool down
+      const f = d * d; // Quadratic for stronger effect at extremes
+      r = Math.floor(r * (1 - f * 0.55));
+      g = Math.floor(g * (1 - f * 0.15) + f * 40);
+      b = Math.min(255, Math.floor(b + f * (255 - b) * 0.9));
+    } else {
+      // Receding: red shift — boost red, kill blue/green
+      const f = d * d;
+      r = Math.min(255, Math.floor(r + f * (255 - r) * 0.4));
+      g = Math.floor(g * (1 - f * 0.65));
+      b = Math.floor(b * (1 - f * 0.85));
+    }
+
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function updateAndDrawDisk(t, dt) {
+    if (!showDisk) return;
+
+    // Fade trail buffer — fast enough to prevent muddy accumulation
+    trailCtx.globalCompositeOperation = 'source-over';
+    trailCtx.fillStyle = 'rgba(0,0,0,0.15)';
+    trailCtx.fillRect(0, 0, W, H);
+
+    const eventR = bh.mass * 0.7;
+    const TILT = 0.22;
+
+    // Separate front/back passes for depth ordering
+    const frontParticles = [];
+    const backParticles = [];
+
+    for (const p of diskParticles) {
+      // Dynamic radius scales with current mass
+      const r = p.rRatio * bh.mass;
+      // Keplerian orbit
+      const orbitSpeed = p.speed * 40 / (r + 5);
+      p.angle += orbitSpeed * dt;
+      if (p.angle > Math.PI * 2) p.angle -= Math.PI * 2;
+
+      const x3d = Math.cos(p.angle) * r;
+      const z3d = Math.sin(p.angle) * r;
+      const screenX = bh.x + x3d;
+      const screenY = bh.y + z3d * TILT;
+
+      // Skip if occluded by event horizon
+      const ddx = screenX - bh.x;
+      const ddy = screenY - bh.y;
+      if (ddx * ddx + ddy * ddy < eventR * eventR && z3d < 0) continue;
+
+      // Doppler: tangential velocity projected onto line of sight
+      // Left side of disk approaches viewer = blue shift
+      const doppler = -Math.sin(p.angle);
+
+      // Depth brightness
+      const depthBrightness = 0.4 + 0.6 * ((z3d / r + 1) / 2);
+      const alpha = p.brightness * depthBrightness;
+
+      // Update trail (shorter to keep clean)
+      p.trail.push({ x: screenX, y: screenY });
+      if (p.trail.length > 5) p.trail.shift();
+
+      const data = { p, screenX, screenY, doppler, depthBrightness, alpha, z3d };
+      if (z3d >= 0) frontParticles.push(data);
+      else backParticles.push(data);
+    }
+
+    // Draw function for a particle set
+    function drawParticleSet(particles) {
+      for (const { p, screenX, screenY, doppler, depthBrightness, alpha } of particles) {
+        const color = getDiskColor(p.band, doppler, alpha);
+
+        // Trail on offscreen canvas
+        if (p.trail.length > 1) {
+          const last = p.trail[p.trail.length - 1];
+          const prev = p.trail[p.trail.length - 2];
+          trailCtx.strokeStyle = getDiskColor(p.band, doppler, alpha * 0.15);
+          trailCtx.lineWidth = p.size * 0.5;
+          trailCtx.beginPath();
+          trailCtx.moveTo(prev.x, prev.y);
+          trailCtx.lineTo(last.x, last.y);
+          trailCtx.stroke();
+        }
+
+        // Particle dot
+        const sz = p.size * depthBrightness;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, sz, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Hot inner glow for innermost particles
+        if (p.band < 0.3 && alpha > 0.35) {
+          ctx.fillStyle = getDiskColor(p.band, doppler, alpha * 0.1);
+          ctx.beginPath();
+          ctx.arc(screenX, screenY, sz * 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // Draw back particles, then front (depth order)
+    drawParticleSet(backParticles);
+    drawParticleSet(frontParticles);
+
+    // Composite trails
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.drawImage(trailCanvas, 0, 0, W, H);
+    ctx.restore();
+  }
+
+  function updateAndDrawHawking(dt) {
+    for (let i = 0; i < hawkingParticles.length; i++) {
+      const p = hawkingParticles[i];
+      const dist = Math.sqrt(p.x * p.x + p.y * p.y) || 1;
+      const nx = p.x / dist;
+      const ny = p.y / dist;
+
+      // Gentle radial acceleration outward
+      p.vx += nx * 0.05;
+      p.vy += ny * 0.05;
+      p.x += p.vx * dt * 40;
+      p.y += p.vy * dt * 40;
+      p.life -= p.decay * dt * 60;
+
+      if (p.life <= 0) {
+        hawkingParticles[i] = createHawkingParticle();
+        continue;
+      }
+
+      const sx = bh.x + p.x;
+      const sy = bh.y + p.y;
+      if (sx < -100 || sx > W + 100 || sy < -100 || sy > H + 100) {
+        hawkingParticles[i] = createHawkingParticle();
+        continue;
+      }
+
+      const alpha = p.life * 0.3;
+      const sz = p.size * p.life;
+
+      // Bluish-white Hawking particles
+      ctx.fillStyle = `rgba(170,190,240,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, sz, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tiny bloom
+      if (alpha > 0.1) {
+        ctx.fillStyle = `rgba(170,190,240,${alpha * 0.15})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sz + 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // ========== INTERACTION ==========
+
+  function getPos(e) {
+    return e.touches
+      ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      : { x: e.clientX, y: e.clientY };
+  }
+
+  function hitTest(x, y) {
+    const dx = x - bh.x, dy = y - bh.y;
+    const r = Math.max(bh.mass * 1.5, 50);
+    return dx * dx + dy * dy < r * r;
+  }
+
+  function onDown(e) {
+    const p = getPos(e);
+    if (hitTest(p.x, p.y)) {
+      dragging = true;
+      dragOffset.x = bh.x - p.x;
+      dragOffset.y = bh.y - p.y;
+      infoEl.style.opacity = '0';
+    }
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    const p = getPos(e);
+    bh.x = Math.max(10, Math.min(W - 10, p.x + dragOffset.x));
+    bh.y = Math.max(10, Math.min(H - 10, p.y + dragOffset.y));
+  }
+  function onUp() { dragging = false; }
+
+  function onWheel(e) {
+    e.preventDefault();
+    bh.targetMass = Math.max(20, Math.min(200, bh.targetMass - Math.sign(e.deltaY) * 5));
+    massSlider.value = Math.round(bh.targetMass);
+    save();
+  }
+
+  let lastPinch = 0;
+  function onTouchStart(e) {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastPinch = Math.sqrt(dx * dx + dy * dy);
+    } else if (e.touches.length === 1) {
+      onDown(e);
+    }
+  }
+  function onTouchMove(e) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      bh.targetMass = Math.max(20, Math.min(200, bh.targetMass + (d - lastPinch) * 0.4));
+      massSlider.value = Math.round(bh.targetMass);
+      lastPinch = d;
+      save();
+    } else if (dragging) {
+      onMove(e);
+    }
+  }
+
+  canvas.addEventListener('mousedown', onDown);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  window.addEventListener('touchmove', onTouchMove, { passive: false });
+  window.addEventListener('touchend', onUp);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+
+  massSlider.addEventListener('input', () => {
+    bh.targetMass = Number(massSlider.value);
+    save();
+  });
+  toggleDiskBtn.addEventListener('click', () => {
+    showDisk = !showDisk;
+    toggleDiskBtn.classList.toggle('active', showDisk);
+    save();
+  });
+  resetBtn.addEventListener('click', reset);
+
+  window.addEventListener('resize', () => {
+    const ow = W, oh = H;
+    resize();
+    bh.x = (bh.x / ow) * W;
+    bh.y = (bh.y / oh) * H;
+    initStars();
+  });
+
+  // ========== MAIN LOOP ==========
+
+  let lastTime = 0;
+
+  function frame(ts) {
+    const t = ts * 0.001;
+    const dt = Math.min((ts - lastTime) * 0.001, 0.05);
+    lastTime = ts;
+
+    // Smooth mass lerp
+    bh.mass += (bh.targetMass - bh.mass) * 0.06;
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    // Background -> foreground
+    drawStarfield(t);
+    drawEinsteinRing();
+    drawDiskGlow();
+    updateAndDrawDisk(t, dt);
+    drawBlackHole();
+    updateAndDrawHawking(dt);
+
+    // HUD
+    massDisplay.textContent = `${(bh.mass / 20).toFixed(1)} M\u2609`;
+
+    requestAnimationFrame(frame);
+  }
+
+  // ========== INIT ==========
+  resize();
+  load();
+  bh.x = W / 2;
+  bh.y = H / 2;
+  initStars();
+  initDisk();
+  initHawking();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
