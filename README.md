@@ -8,6 +8,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🐍 **[Neon Snake](https://adrrr.github.io/night-projects/neon-snake/)**
+Snake game néon — corps cyan-magenta gradient avec glow et trail ghost, particules explosives multicolores quand on mange, Web Audio API (eat chime, death sound, ambient bass pulse), vitesse progressive (8→22 moves/sec), high score localStorage, pause, start/game-over screens. Swipe + tap mobile, arrow keys + WASD desktop. 729 lignes, zéro dépendance.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/neon-snake/)
+
 ### 🕳️ **[Black Hole Simulator](https://adrrr.github.io/night-projects/black-hole/)**
 Simulateur de trou noir interactif — lentille gravitationnelle réaliste (les étoiles se courbent autour du trou noir, anneau d'Einstein visible), disque d'accrétion avec 800 particules en orbite képlérienne et effet Doppler prononcé (côté approchant bleu-blanc, côté s'éloignant rouge-orange), gradient de température blackbody (intérieur blanc chaud → extérieur orange-rouge), rayonnement Hawking subtil, champ d'étoiles parallaxe sur 3 couches avec scintillement. Drag pour déplacer, pinch/scroll pour changer la masse (1.0–10.0 M☉), persistance LocalStorage. Touch-first, canvas haute perf, zéro dépendance.
 
