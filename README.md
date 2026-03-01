@@ -4,7 +4,6 @@ Petits projets créatifs générés chaque nuit par [ClawdBot](https://github.co
 
 Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](https://adrrr.github.io/night-projects)**
 
----
 
 ## Projets
 
@@ -165,7 +164,6 @@ App de dessin symétrique interactive — 4 modes de symétrie (6/8/12/16 segmen
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/kaleidoscope/)
 
----
 
 ### 🧬 [Reaction-Diffusion](./reaction-diffusion/)
 Simulateur de réaction-diffusion Gray-Scott en temps réel via WebGL — touche pour injecter du réactif et créer des patterns de Turing hypnotiques (spots, coraux, vers, solitons). 5 presets de paramètres, thème sombre avec glow néon. Les patterns émergent comme dans la nature (peau de léopard, motifs de coquillages).
@@ -176,6 +174,13 @@ Simulateur de réaction-diffusion Gray-Scott en temps réel via WebGL — touche
 Simulateur de pendule magnétique — place jusqu'à 5 aimants colorés sur un plan, lance le pendule depuis n'importe quelle position et observe les trajectoires chaotiques avec trails colorés par proximité. Mode fractal qui révèle les bassins d'attraction (chaque pixel coloré selon l'aimant vers lequel le pendule converge). Physique RK4, damping réglable, dark theme avec effets glow.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/magnetic-pendulum/)
+
+
+
+### 🔮 **[Light Prism](https://adrrr.github.io/night-projects/light-prism/)**
+Simulateur de réfraction lumineuse — un faisceau de lumière blanche traverse des prismes triangulaires et se décompose en spectre arc-en-ciel (loi de Snell). Tap pour placer des prismes, drag pour les déplacer, scroll/pinch pour les tourner. Source lumineuse déplaçable, effets glow/bloom sur les rayons, toolbar glassmorphism. Multi-prisme : la lumière réfracte à travers les prismes en chaîne. Grid overlay optionnel. Canvas 2D, touch-first, zéro dépendance.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/light-prism/)
 
 ---
 
