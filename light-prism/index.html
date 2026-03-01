@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Light Prism</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;touch-action:none;-webkit-user-select:none;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a12;font-family:'Segoe UI',system-ui,sans-serif}
+canvas{display:block;width:100%;height:100%}
+#toolbar{position:fixed;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:10px;padding:8px 16px;background:rgba(255,255,255,.08);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);border-radius:16px;z-index:10}
+#toolbar button{background:rgba(255,255,255,.1);color:#e0e0e0;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px 16px;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap;min-height:44px}
+#toolbar button:active,#toolbar button.active{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.3)}
+#hint{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.4);font-size:13px;text-align:center;pointer-events:none;transition:opacity .5s}
+#source-ctrl{position:fixed;left:0;top:50%;transform:translateY(-50%);width:28px;height:80px;background:rgba(255,255,255,.06);border-radius:0 10px 10px 0;border:1px solid rgba(255,255,255,.1);border-left:none;display:flex;align-items:center;justify-content:center;cursor:ns-resize;z-index:10}
+#source-ctrl::after{content:'';width:3px;height:30px;background:rgba(255,255,255,.25);border-radius:2px}
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button id="btn-add">➕ Prism</button>
+  <button id="btn-clear">🗑️ Clear</button>
+  <button id="btn-grid">⊞ Grid</button>
+</div>
+<div id="source-ctrl" title="Drag to move light source"></div>
+<div id="hint">Tap canvas to place a prism · Drag to move · Scroll/pinch to rotate</div>
+<canvas id="c"></canvas>
+<script>
+(function(){
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,dpr;
+const prisms=[];
+let dragging=null,dragOff={x:0,y:0},showGrid=false,addMode=true;
+let sourceY=0.5;
+const SPECTRUM=[
+  {nm:700,color:'#ff0000',n:1.3},
+  {nm:620,color:'#ff6600',n:1.4},
+  {nm:580,color:'#ffdd00',n:1.5},
+  {nm:530,color:'#00cc00',n:1.6},
+  {nm:470,color:'#0066ff',n:1.7},
+  {nm:430,color:'#4400cc',n:1.8},
+  {nm:400,color:'#8800ff',n:1.9}
+];
+
+function resize(){
+  dpr=window.devicePixelRatio||1;
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=W*dpr;canvas.height=H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  updateSourceCtrl();
+}
+window.addEventListener('resize',resize);
+resize();
+
+function updateSourceCtrl(){
+  document.getElementById('source-ctrl').style.top=(sourceY*H)+'px';
+}
+
+class Prism{
+  constructor(x,y){
+    this.x=x;this.y=y;this.angle=0;
+    this.size=Math.min(W,H)*0.1;
+  }
+  getVertices(){
+    const s=this.size,h=s*Math.sqrt(3)/2;
+    const pts=[{x:0,y:-h*0.66},{x:-s/2,y:h*0.33},{x:s/2,y:h*0.33}];
+    const cos=Math.cos(this.angle),sin=Math.sin(this.angle);
+    return pts.map(p=>({x:this.x+p.x*cos-p.y*sin,y:this.y+p.x*sin+p.y*cos}));
+  }
+  getEdges(){
+    const v=this.getVertices();
+    return[[v[0],v[1]],[v[1],v[2]],[v[2],v[0]]];
+  }
+  contains(px,py){
+    const v=this.getVertices();
+    const d1=sign(px,py,v[0],v[1]),d2=sign(px,py,v[1],v[2]),d3=sign(px,py,v[2],v[0]);
+    return !((d1<0||d2<0||d3<0)&&(d1>0||d2>0||d3>0));
+  }
+  draw(){
+    const v=this.getVertices();
+    ctx.beginPath();ctx.moveTo(v[0].x,v[0].y);ctx.lineTo(v[1].x,v[1].y);ctx.lineTo(v[2].x,v[2].y);ctx.closePath();
+    const g=ctx.createLinearGradient(v[0].x,v[0].y,v[1].x,v[2].y);
+    g.addColorStop(0,'rgba(200,220,255,.12)');g.addColorStop(1,'rgba(150,180,255,.06)');
+    ctx.fillStyle=g;ctx.fill();
+    ctx.strokeStyle='rgba(180,200,255,.3)';ctx.lineWidth=1.5;ctx.stroke();
+  }
+}
+
+function sign(px,py,a,b){return(px-b.x)*(a.y-b.y)-(a.x-b.x)*(py-b.y)}
+
+function intersectRayEdge(ox,oy,dx,dy,a,b){
+  const ex=b.x-a.x,ey=b.y-a.y;
+  const denom=dx*ey-dy*ex;
+  if(Math.abs(denom)<1e-10)return null;
+  const t=((a.x-ox)*ey-(a.y-oy)*ex)/denom;
+  const u=((a.x-ox)*dy-(a.y-oy)*dx)/denom;
+  if(t>0.001&&u>=0&&u<=1)return{t,x:ox+dx*t,y:oy+dy*t,edge:[a,b]};
+  return null;
+}
+
+function edgeNormal(a,b,prism){
+  let nx=-(b.y-a.y),ny=b.x-a.x;
+  const len=Math.sqrt(nx*nx+ny*ny);nx/=len;ny/=len;
+  const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+  if(nx*(prism.x-mx)+ny*(prism.y-my)>0){nx=-nx;ny=-ny;}
+  return{nx,ny};
+}
+
+function refract(dx,dy,nx,ny,n1,n2){
+  const dot=dx*nx+dy*ny;
+  const ratio=n1/n2;
+  const disc=1-ratio*ratio*(1-dot*dot);
+  if(disc<0)return null;
+  const coeff=ratio*dot-Math.sqrt(disc);
+  return{dx:ratio*dx+coeff*nx,dy:ratio*dy+coeff*ny};
+}
+
+function traceRay(ox,oy,dx,dy,n_ior,depth,rays){
+  if(depth>12)return;
+  const len=Math.sqrt(dx*dx+dy*dy);dx/=len;dy/=len;
+  let closest=null,closestPrism=null;
+  for(const p of prisms){
+    for(const[a,b] of p.getEdges()){
+      const hit=intersectRayEdge(ox,oy,dx,dy,a,b);
+      if(hit&&(!closest||hit.t<closest.t)){closest=hit;closestPrism=p;}
+    }
+  }
+  if(!closest){
+    const t=Math.max(W,H)*2;
+    rays.push({x1:ox,y1:oy,x2:ox+dx*t,y2:oy+dy*t});
+    return;
+  }
+  rays.push({x1:ox,y1:oy,x2:closest.x,y2:closest.y});
+  const{nx,ny}=edgeNormal(closest.edge[0],closest.edge[1],closestPrism);
+  const entering=dx*nx+dy*ny<0;
+  const n1=entering?1.0:n_ior,n2=entering?n_ior:1.0;
+  const ni=entering?{nx,ny}:{nx:-nx,ny:-ny};
+  const r=refract(dx,dy,ni.nx,ni.ny,n1,n2);
+  if(!r){
+    const rd=dx*ni.nx+dy*ni.ny;
+    traceRay(closest.x,closest.y,dx-2*rd*ni.nx,dy-2*rd*ni.ny,n_ior,depth+1,rays);
+  }else{
+    traceRay(closest.x,closest.y,r.dx,r.dy,n_ior,depth+1,rays);
+  }
+}
+
+function drawRays(rays,color,alpha){
+  ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.globalAlpha=alpha*0.9;
+  ctx.shadowColor=color;ctx.shadowBlur=12;
+  ctx.beginPath();
+  for(const r of rays){ctx.moveTo(r.x1,r.y1);ctx.lineTo(r.x2,r.y2);}
+  ctx.stroke();
+  ctx.lineWidth=6;ctx.globalAlpha=alpha*0.25;ctx.shadowBlur=25;
+  ctx.beginPath();
+  for(const r of rays){ctx.moveTo(r.x1,r.y1);ctx.lineTo(r.x2,r.y2);}
+  ctx.stroke();
+  ctx.shadowBlur=0;ctx.globalAlpha=1;
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H);
+  if(showGrid){
+    ctx.strokeStyle='rgba(255,255,255,.04)';ctx.lineWidth=1;
+    for(let x=0;x<W;x+=50){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+    for(let y=0;y<H;y+=50){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  }
+  const sy=sourceY*H;
+  const sg=ctx.createRadialGradient(0,sy,0,0,sy,40);
+  sg.addColorStop(0,'rgba(255,255,240,.5)');sg.addColorStop(1,'rgba(255,255,240,0)');
+  ctx.fillStyle=sg;ctx.beginPath();ctx.arc(0,sy,40,0,Math.PI*2);ctx.fill();
+  for(const p of prisms)p.draw();
+  if(prisms.length===0){
+    ctx.strokeStyle='rgba(255,255,240,.6)';ctx.lineWidth=3;ctx.shadowColor='#fffef0';ctx.shadowBlur=15;
+    ctx.beginPath();ctx.moveTo(0,sy);ctx.lineTo(W,sy);ctx.stroke();
+    ctx.lineWidth=8;ctx.globalAlpha=.15;ctx.beginPath();ctx.moveTo(0,sy);ctx.lineTo(W,sy);ctx.stroke();
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+  }else{
+    for(const s of SPECTRUM){
+      const rays=[];
+      traceRay(0,sy,1,0,s.n,0,rays);
+      drawRays(rays,s.color,0.8);
+    }
+  }
+  requestAnimationFrame(render);
+}
+render();
+
+function getPos(e){const t=e.touches?e.touches[0]:e;return{x:t.clientX,y:t.clientY};}
+function findPrism(x,y){for(let i=prisms.length-1;i>=0;i--)if(prisms[i].contains(x,y))return prisms[i];return null;}
+
+function onDown(e){
+  e.preventDefault();const{x,y}=getPos(e);
+  if(y<60)return;
+  const found=findPrism(x,y);
+  if(found){dragging=found;dragOff.x=x-found.x;dragOff.y=y-found.y;}
+  else if(addMode){prisms.push(new Prism(x,y));document.getElementById('hint').style.opacity='0';}
+}
+function onMove(e){e.preventDefault();if(!dragging)return;const{x,y}=getPos(e);dragging.x=x-dragOff.x;dragging.y=y-dragOff.y;}
+function onUp(){dragging=null;}
+
+canvas.addEventListener('mousedown',onDown);canvas.addEventListener('mousemove',onMove);canvas.addEventListener('mouseup',onUp);
+canvas.addEventListener('touchstart',onDown,{passive:false});canvas.addEventListener('touchmove',onMove,{passive:false});canvas.addEventListener('touchend',onUp);
+
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();let best=null,bestD=Infinity;
+  for(const p of prisms){const d=Math.hypot(p.x-e.clientX,p.y-e.clientY);if(d<bestD){bestD=d;best=p;}}
+  if(best&&bestD<200)best.angle+=e.deltaY*0.005;
+},{passive:false});
+
+let lastAngle=null;
+canvas.addEventListener('touchstart',e=>{if(e.touches.length===2){const dx=e.touches[1].clientX-e.touches[0].clientX,dy=e.touches[1].clientY-e.touches[0].clientY;lastAngle=Math.atan2(dy,dx);}},{passive:false});
+canvas.addEventListener('touchmove',e=>{if(e.touches.length===2&&lastAngle!==null){e.preventDefault();const dx=e.touches[1].clientX-e.touches[0].clientX,dy=e.touches[1].clientY-e.touches[0].clientY;const ang=Math.atan2(dy,dx),cx=(e.touches[0].clientX+e.touches[1].clientX)/2,cy=(e.touches[0].clientY+e.touches[1].clientY)/2;let best=null,bestD=Infinity;for(const p of prisms){const d=Math.hypot(p.x-cx,p.y-cy);if(d<bestD){bestD=d;best=p;}}if(best&&bestD<250)best.angle+=ang-lastAngle;lastAngle=ang;}},{passive:false});
+canvas.addEventListener('touchend',()=>{lastAngle=null;});
+
+let srcDrag=false,srcOff=0;
+const srcCtrl=document.getElementById('source-ctrl');
+function srcDown(e){e.preventDefault();srcDrag=true;srcOff=getPos(e).y-sourceY*H;}
+function srcMove(e){if(!srcDrag)return;e.preventDefault();sourceY=Math.max(0.05,Math.min(0.95,(getPos(e).y-srcOff)/H));updateSourceCtrl();}
+srcCtrl.addEventListener('mousedown',srcDown);srcCtrl.addEventListener('touchstart',srcDown,{passive:false});
+window.addEventListener('mousemove',srcMove);window.addEventListener('touchmove',srcMove,{passive:false});
+window.addEventListener('mouseup',()=>{srcDrag=false;});window.addEventListener('touchend',()=>{srcDrag=false;});
+
+document.getElementById('btn-add').addEventListener('click',()=>{addMode=!addMode;document.getElementById('btn-add').classList.toggle('active',addMode);});
+document.getElementById('btn-add').classList.add('active');
+document.getElementById('btn-clear').addEventListener('click',()=>{prisms.length=0;});
+document.getElementById('btn-grid').addEventListener('click',()=>{showGrid=!showGrid;document.getElementById('btn-grid').classList.toggle('active',showGrid);});
+})();
+</script>
+</body>
+</html>
