@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Orbit Catch</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;top:0;left:0;right:0;padding:env(safe-area-inset-top,12px) 16px 0;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:10;font-family:'SF Pro Display','Segoe UI',system-ui,-apple-system,sans-serif}
+#ui *{pointer-events:none}
+.ui-left,.ui-right{display:flex;flex-direction:column;gap:4px}
+.ui-right{align-items:flex-end}
+.ui-label{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.4);font-weight:600}
+.ui-value{font-size:28px;font-weight:700;color:#fff;line-height:1;text-shadow:0 0 20px rgba(255,255,255,0.3)}
+.ui-value.score{font-size:36px;color:#00f0ff;text-shadow:0 0 30px rgba(0,240,255,0.5)}
+.ui-value.multiplier{color:#ff00aa;text-shadow:0 0 20px rgba(255,0,170,0.5)}
+.lives{display:flex;gap:6px;margin-top:2px}
+.life{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 40% 40%,#ff4466,#cc0033);box-shadow:0 0 10px rgba(255,68,102,0.6);transition:all 0.3s}
+.life.lost{background:rgba(255,255,255,0.1);box-shadow:none}
+#game-over{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:rgba(5,5,10,0.85);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#game-over.show{display:flex}
+#game-over h1{font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:clamp(36px,8vw,56px);font-weight:800;color:#fff;margin-bottom:8px;text-shadow:0 0 40px rgba(255,0,170,0.4)}
+#game-over .final-score{font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:clamp(48px,12vw,80px);font-weight:800;color:#00f0ff;text-shadow:0 0 60px rgba(0,240,255,0.5);margin-bottom:4px}
+#game-over .best{font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:clamp(16px,3vw,22px);color:rgba(255,255,255,0.5);margin-bottom:40px}
+#game-over .best span{color:#ff00aa}
+#game-over .restart-hint{font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:clamp(14px,2.5vw,18px);color:rgba(255,255,255,0.35);letter-spacing:1px;animation:pulse 2s ease-in-out infinite}
+.new-best{font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:clamp(14px,2.5vw,18px);color:#ffcc00;text-shadow:0 0 20px rgba(255,204,0,0.5);margin-bottom:8px;letter-spacing:2px;text-transform:uppercase;animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+#start-screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:25;background:#0a0a0f}
+#start-screen h1{font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:clamp(42px,10vw,64px);font-weight:800;color:#fff;text-shadow:0 0 60px rgba(0,240,255,0.3);margin-bottom:12px}
+#start-screen .subtitle{font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:clamp(14px,2.5vw,18px);color:rgba(255,255,255,0.4);margin-bottom:48px;text-align:center;line-height:1.6;padding:0 24px}
+#start-screen .start-hint{font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:clamp(16px,3vw,20px);color:rgba(255,255,255,0.3);animation:pulse 2s ease-in-out infinite;letter-spacing:1px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+<div class="ui-left">
+<div class="ui-label">Score</div>
+<div class="ui-value score" id="score-display">0</div>
+<div class="ui-label" style="margin-top:6px">Multiplier</div>
+<div class="ui-value multiplier" id="mult-display">x1.0</div>
+</div>
+<div class="ui-right">
+<div class="ui-label">Best</div>
+<div class="ui-value" id="best-display">0</div>
+<div class="ui-label" style="margin-top:6px">Lives</div>
+<div class="lives" id="lives-display"></div>
+</div>
+</div>
+<div id="game-over">
+<h1>GAME OVER</h1>
+<div class="final-score" id="final-score">0</div>
+<div id="new-best-label" class="new-best" style="display:none">NEW BEST!</div>
+<div class="best">Best: <span id="go-best">0</span></div>
+<div class="restart-hint">Tap or press Space to restart</div>
+</div>
+<div id="start-screen">
+<h1>ORBIT CATCH</h1>
+<div class="subtitle">Hold to pull orbs into orbit<br>Don't let them hit your planet</div>
+<div class="start-hint">Tap or press Space to start</div>
+</div>
+<script>
+(function(){
+"use strict";
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy, dpr;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Audio ───
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, dur, type, vol, detune) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.value = freq;
+  if (detune) osc.detune.value = detune;
+  gain.gain.setValueAtTime(vol || 0.15, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(t);
+  osc.stop(t + dur);
+}
+
+function sfxCatch() {
+  playTone(880, 0.15, 'sine', 0.12);
+  playTone(1320, 0.12, 'sine', 0.08, 5);
+  playTone(1760, 0.1, 'triangle', 0.06, -5);
+}
+
+function sfxCollision() {
+  playTone(220, 0.2, 'sawtooth', 0.08);
+  playTone(110, 0.3, 'square', 0.05);
+}
+
+function sfxHit() {
+  playTone(100, 0.4, 'sawtooth', 0.15);
+  playTone(60, 0.5, 'square', 0.1);
+  playTone(40, 0.6, 'sine', 0.08);
+}
+
+function sfxGameOver() {
+  playTone(440, 0.3, 'sawtooth', 0.12);
+  setTimeout(() => playTone(330, 0.3, 'sawtooth', 0.1), 150);
+  setTimeout(() => playTone(220, 0.5, 'sawtooth', 0.12), 300);
+  setTimeout(() => playTone(110, 0.8, 'square', 0.1), 450);
+}
+
+function sfxChain() {
+  playTone(660, 0.1, 'sine', 0.1);
+  playTone(990, 0.1, 'sine', 0.08);
+  playTone(1320, 0.12, 'triangle', 0.06);
+  playTone(1760, 0.15, 'sine', 0.05);
+}
+
+function sfxGravityHum() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = 80;
+  gain.gain.setValueAtTime(0.03, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(t);
+  osc.stop(t + 0.1);
+}
+
+// ─── Constants ───
+const ORB_RADIUS = 8;
+const MAX_LIVES = 3;
+const ORB_COLORS = ['#00f0ff','#ff00aa','#44ff88','#ffaa00','#aa66ff','#ff4466','#66ccff'];
+
+// ─── Game State ───
+let state = 'start';
+let score, lives;
+let orbs = [], particles = [], floatingTexts = [];
+let gravityHeld, gravityHumTimer;
+let shakeX, shakeY, shakeDur;
+let spawnTimer, spawnInterval;
+let highScore = parseInt(localStorage.getItem('orbitcatch_best')) || 0;
+let flashAlpha = 0, flashColor = '#fff';
+let planetPulse = 0;
+let combo = 0, comboTimer = 0;
+let difficultyTimer = 0, orbSpeed = 1;
+let gameTime = 0;
+let gravityFieldAnim = 0;
+let planetRadius, gravityRadius;
+let gameOverDelay = 0;
+let gravityEnergy = 1; // 0-1, drains while holding, recharges while released
+const ENERGY_DRAIN_RATE = 0.45; // per second
+const ENERGY_RECHARGE_RATE = 0.6; // per second
+const ENERGY_MIN_ACTIVATE = 0.1; // need at least this to activate
+
+function recalcSizes() {
+  planetRadius = Math.min(W, H) * 0.04;
+  gravityRadius = Math.min(W, H) * 0.38;
+}
+
+// ─── UI Refs ───
+const scoreDisplay = document.getElementById('score-display');
+const multDisplay = document.getElementById('mult-display');
+const bestDisplay = document.getElementById('best-display');
+const livesDisplay = document.getElementById('lives-display');
+const gameOverScreen = document.getElementById('game-over');
+const finalScoreEl = document.getElementById('final-score');
+const goBestEl = document.getElementById('go-best');
+const newBestLabel = document.getElementById('new-best-label');
+const startScreen = document.getElementById('start-screen');
+
+function updateUI() {
+  scoreDisplay.textContent = score;
+  const m = getMultiplier();
+  multDisplay.textContent = 'x' + m.toFixed(1);
+  bestDisplay.textContent = highScore;
+  let html = '';
+  for (let i = 0; i < MAX_LIVES; i++) {
+    html += '<div class="life' + (i >= lives ? ' lost' : '') + '"></div>';
+  }
+  livesDisplay.innerHTML = html;
+}
+
+function getMultiplier() {
+  const orbitCount = orbs.filter(o => o.orbiting).length;
+  return 1 + orbitCount * 0.3;
+}
+
+// ─── Floating Score Text ───
+function spawnFloatingText(x, y, text, color) {
+  floatingTexts.push({ x, y, text, color, life: 1.2, maxLife: 1.2 });
+}
+
+// ─── Particles ───
+function spawnParticles(x, y, color, count, speed, life) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = (Math.random() * 0.6 + 0.4) * (speed || 3);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      life: life || (Math.random() * 0.5 + 0.3),
+      maxLife: life || (Math.random() * 0.5 + 0.3),
+      color,
+      size: Math.random() * 3 + 1.5
+    });
+  }
+}
+
+function spawnCatchRing(x, y, color) {
+  particles.push({
+    x, y, vx: 0, vy: 0,
+    life: 0.5, maxLife: 0.5,
+    color, size: 0, ring: true
+  });
+}
+
+function shake(dur, intensity) {
+  shakeDur = dur;
+  shakeX = (Math.random() - 0.5) * intensity;
+  shakeY = (Math.random() - 0.5) * intensity;
+}
+
+function flash(color) {
+  flashAlpha = 0.4;
+  flashColor = color;
+}
+
+// ─── Orb Spawn ───
+function spawnOrb() {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = Math.max(W, H) * 0.75;
+  const x = cx + Math.cos(angle) * dist;
+  const y = cy + Math.sin(angle) * dist;
+  const dx = cx - x;
+  const dy = cy - y;
+  const speed = (1.2 + Math.random() * 1.0) * orbSpeed;
+  const color = ORB_COLORS[Math.floor(Math.random() * ORB_COLORS.length)];
+  const aimOffset = (Math.random() - 0.5) * 0.4;
+  const aimAngle = Math.atan2(dy, dx) + aimOffset;
+
+  orbs.push({
+    x, y,
+    vx: Math.cos(aimAngle) * speed,
+    vy: Math.sin(aimAngle) * speed,
+    color, radius: ORB_RADIUS,
+    orbiting: false, orbitDist: 0, targetOrbitDist: 0,
+    orbitAngle: 0, orbitSpeed: 0,
+    trail: [], life: 1, caught: false, age: 0
+  });
+}
+
+// ─── Catch into orbit ───
+function catchOrb(orb) {
+  if (orb.orbiting || orb.caught) return;
+  orb.caught = true;
+
+  const dx = orb.x - cx;
+  const dy = orb.y - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  const orbitCount = orbs.filter(o => o.orbiting).length;
+  const baseOrbit = planetRadius * 2.5;
+  const ringSpacing = ORB_RADIUS * 3;
+  const ring = Math.floor(orbitCount / 8);
+  const targetDist = baseOrbit + ring * ringSpacing + (Math.random() - 0.5) * 6;
+
+  orb.orbiting = true;
+  orb.orbitDist = dist;
+  orb.targetOrbitDist = targetDist;
+  orb.orbitAngle = Math.atan2(dy, dx);
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  orb.orbitSpeed = (1.8 + Math.random() * 1.2) * dir / Math.max(targetDist, 30) * 50;
+
+  const mult = getMultiplier();
+  const pts = Math.round(10 * mult);
+  score += pts;
+
+  combo++;
+  comboTimer = 2.5;
+  if (combo > 2) {
+    sfxChain();
+    spawnParticles(orb.x, orb.y, '#ffcc00', 15, 4, 0.6);
+    const bonus = combo * 5;
+    score += bonus;
+    spawnFloatingText(orb.x, orb.y - 20, `+${pts + bonus}`, '#ffcc00');
+  } else {
+    spawnFloatingText(orb.x, orb.y - 15, `+${pts}`, orb.color);
+  }
+
+  sfxCatch();
+  spawnParticles(orb.x, orb.y, orb.color, 10, 3);
+  spawnCatchRing(orb.x, orb.y, orb.color);
+  flash(orb.color);
+  planetPulse = 1;
+  updateUI();
+}
+
+function loseLife(orb) {
+  lives--;
+  sfxHit();
+  shake(0.4, 15);
+  flash('#ff2244');
+  spawnParticles(cx, cy, '#ff4466', 25, 5, 0.8);
+  spawnParticles(cx, cy, '#ffaa00', 12, 3, 0.5);
+  orb.life = 0;
+  updateUI();
+  if (lives <= 0) gameOver();
+}
+
+function orbCollision(a, b) {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  sfxCollision();
+  spawnParticles(mx, my, a.color, 8, 3);
+  spawnParticles(mx, my, b.color, 8, 3);
+
+  if (a.orbiting && b.orbiting) {
+    const pts = Math.round(25 * getMultiplier());
+    score += pts;
+    spawnFloatingText(mx, my - 15, `+${pts}`, '#ffaa00');
+    a.orbiting = false; b.orbiting = false;
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    a.vx = -Math.cos(angle) * 2.5; a.vy = -Math.sin(angle) * 2.5;
+    b.vx = Math.cos(angle) * 2.5; b.vy = Math.sin(angle) * 2.5;
+    a.caught = false; b.caught = false;
+    flash('#ffaa00');
+  } else {
+    const orbiter = a.orbiting ? a : b;
+    const incomer = a.orbiting ? b : a;
+    const pts = Math.round(50 * getMultiplier());
+    score += pts;
+    spawnFloatingText(mx, my - 15, `+${pts}`, '#44ff88');
+    incomer.life = 0;
+    orbiter.orbitDist += (Math.random() - 0.5) * 8;
+    orbiter.orbitSpeed *= (Math.random() < 0.5 ? 1.15 : 0.85);
+    sfxChain();
+    flash('#44ff88');
+    spawnParticles(mx, my, '#ffcc00', 18, 4, 0.5);
+  }
+  updateUI();
+}
+
+function gameOver() {
+  state = 'gameover';
+  gameOverDelay = 0.6;
+  sfxGameOver();
+
+  const isNewBest = score > highScore;
+  if (isNewBest) {
+    highScore = score;
+    localStorage.setItem('orbitcatch_best', highScore);
+  }
+
+  finalScoreEl.textContent = score;
+  goBestEl.textContent = highScore;
+  newBestLabel.style.display = isNewBest ? 'block' : 'none';
+
+  setTimeout(() => {
+    gameOverScreen.classList.add('show');
+  }, 400);
+}
+
+function initGame() {
+  recalcSizes();
+  score = 0; lives = MAX_LIVES;
+  orbs = []; particles = []; floatingTexts = [];
+  gravityHeld = false; gravityHumTimer = 0;
+  shakeX = 0; shakeY = 0; shakeDur = 0;
+  spawnTimer = 0; spawnInterval = 2.0;
+  flashAlpha = 0; planetPulse = 0;
+  combo = 0; comboTimer = 0;
+  difficultyTimer = 0; orbSpeed = 0.8;
+  gameTime = 0; gravityFieldAnim = 0;
+  gameOverDelay = 0; gravityEnergy = 1;
+  state = 'playing';
+  gameOverScreen.classList.remove('show');
+  startScreen.style.display = 'none';
+  updateUI();
+}
+
+// ─── Input — Hold to pull ───
+let inputDown = false;
+
+function handleDown(e) {
+  ensureAudio();
+  if (e) e.preventDefault();
+  if (state === 'start') { initGame(); return; }
+  if (state === 'gameover') {
+    if (gameOverDelay > 0) return;
+    initGame();
+    return;
+  }
+  inputDown = true;
+  if (gravityEnergy >= ENERGY_MIN_ACTIVATE) {
+    gravityHeld = true;
+  }
+}
+
+function handleUp(e) {
+  if (e) e.preventDefault();
+  inputDown = false;
+  gravityHeld = false;
+}
+
+document.addEventListener('pointerdown', handleDown, {passive: false});
+document.addEventListener('pointerup', handleUp, {passive: false});
+document.addEventListener('pointercancel', handleUp, {passive: false});
+
+document.addEventListener('keydown', function(e) {
+  if (e.code === 'Space' || e.key === ' ') {
+    e.preventDefault();
+    if (!e.repeat) handleDown(null);
+  }
+});
+document.addEventListener('keyup', function(e) {
+  if (e.code === 'Space' || e.key === ' ') {
+    handleUp(null);
+  }
+});
+
+document.addEventListener('touchmove', function(e) { e.preventDefault(); }, {passive: false});
+
+// ─── Update ───
+let lastTime = 0;
+
+function update(dt) {
+  if (state === 'gameover') {
+    if (gameOverDelay > 0) gameOverDelay -= dt;
+    // Still update particles
+    updateParticles(dt);
+    return;
+  }
+  if (state !== 'playing') return;
+
+  gameTime += dt;
+
+  // Difficulty ramp
+  difficultyTimer += dt;
+  if (difficultyTimer > 6) {
+    difficultyTimer = 0;
+    spawnInterval = Math.max(0.5, spawnInterval * 0.93);
+    orbSpeed = Math.min(2.2, orbSpeed + 0.04);
+  }
+
+  // Spawn orbs
+  spawnTimer += dt;
+  if (spawnTimer >= spawnInterval) {
+    spawnTimer = 0;
+    spawnOrb();
+    // Occasionally spawn two at once after 20s
+    if (gameTime > 20 && Math.random() < 0.2) {
+      setTimeout(() => { if (state === 'playing') spawnOrb(); }, 200);
+    }
+  }
+
+  // Gravity energy management
+  if (gravityHeld && gravityEnergy > 0) {
+    gravityEnergy = Math.max(0, gravityEnergy - ENERGY_DRAIN_RATE * dt);
+    if (gravityEnergy <= 0) {
+      gravityHeld = false; // Force release when depleted
+    }
+  } else {
+    gravityEnergy = Math.min(1, gravityEnergy + ENERGY_RECHARGE_RATE * dt);
+    // Re-activate gravity if input still held and recharged enough
+    if (inputDown && gravityEnergy >= ENERGY_MIN_ACTIVATE + 0.15) {
+      gravityHeld = true;
+    }
+  }
+
+  // Effective gravity: only active if held AND has energy
+  const gravityEffective = gravityHeld && gravityEnergy > 0;
+
+  // Gravity hum sound
+  if (gravityEffective) {
+    gravityHumTimer += dt;
+    if (gravityHumTimer > 0.15) {
+      gravityHumTimer = 0;
+      sfxGravityHum();
+    }
+    gravityFieldAnim += dt * 3;
+  } else {
+    gravityFieldAnim = Math.max(0, gravityFieldAnim - dt * 5);
+  }
+
+  // Combo timer
+  if (comboTimer > 0) {
+    comboTimer -= dt;
+    if (comboTimer <= 0) combo = 0;
+  }
+
+  // Update orbs
+  for (let i = orbs.length - 1; i >= 0; i--) {
+    const o = orbs[i];
+    o.age += dt;
+
+    if (o.orbiting) {
+      o.orbitDist += (o.targetOrbitDist - o.orbitDist) * 4 * dt;
+      o.orbitAngle += o.orbitSpeed * dt;
+      o.x = cx + Math.cos(o.orbitAngle) * o.orbitDist;
+      o.y = cy + Math.sin(o.orbitAngle) * o.orbitDist;
+      o.trail.push({x: o.x, y: o.y, life: 1});
+      if (o.trail.length > 25) o.trail.shift();
+    } else {
+      // Gravity pull when held (and has energy)
+      if (gravityEffective && !o.caught) {
+        const dx = cx - o.x;
+        const dy = cy - o.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < gravityRadius && dist > planetRadius * 1.2) {
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const tx = -ny;
+          const ty = nx;
+
+          // Strong radial pull — inverse distance (not inverse square, more forgiving)
+          const pullStrength = 400 / Math.max(dist, 30);
+
+          o.vx += nx * pullStrength * dt;
+          o.vy += ny * pullStrength * dt;
+
+          // Tangential force to create orbit path
+          o.vx += tx * pullStrength * dt * 0.6;
+          o.vy += ty * pullStrength * dt * 0.6;
+
+          // Damping — slows orbs down so they can be captured
+          const dampFactor = 1 - 3.0 * dt;
+          o.vx *= Math.max(dampFactor, 0.85);
+          o.vy *= Math.max(dampFactor, 0.85);
+
+          // Capture check — generous threshold
+          const speed = Math.sqrt(o.vx * o.vx + o.vy * o.vy);
+          if (speed < 3.5 && dist < gravityRadius * 0.6) {
+            catchOrb(o);
+          }
+          // Also capture if they've been in the field a while and are close
+          if (dist < planetRadius * 4 && dist > planetRadius * 1.3 && o.age > 0.5) {
+            const inFieldTime = o.inFieldTime || 0;
+            o.inFieldTime = inFieldTime + dt;
+            if (o.inFieldTime > 0.4) {
+              catchOrb(o);
+            }
+          }
+        } else {
+          o.inFieldTime = 0;
+        }
+      } else {
+        o.inFieldTime = 0;
+      }
+
+      o.x += o.vx;
+      o.y += o.vy;
+
+      o.trail.push({x: o.x, y: o.y, life: 1});
+      if (o.trail.length > 14) o.trail.shift();
+
+      // Planet collision
+      const dx = o.x - cx;
+      const dy = o.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < planetRadius + o.radius && !o.caught) {
+        loseLife(o);
+        continue;
+      }
+
+      // Remove offscreen
+      if (!o.caught && !o.orbiting && o.age > 1.5) {
+        if (o.x < -150 || o.x > W + 150 || o.y < -150 || o.y > H + 150) {
+          o.life = 0;
+        }
+      }
+    }
+  }
+
+  // Orb-orb collisions
+  for (let i = 0; i < orbs.length; i++) {
+    for (let j = i + 1; j < orbs.length; j++) {
+      const a = orbs[i], b = orbs[j];
+      if (a.life <= 0 || b.life <= 0) continue;
+      if (!a.orbiting && !b.orbiting) continue;
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < a.radius + b.radius + 2) {
+        orbCollision(a, b);
+      }
+    }
+  }
+
+  orbs = orbs.filter(o => o.life > 0);
+
+  updateParticles(dt);
+
+  // Floating texts
+  for (let i = floatingTexts.length - 1; i >= 0; i--) {
+    const ft = floatingTexts[i];
+    ft.life -= dt;
+    ft.y -= 30 * dt;
+    if (ft.life <= 0) floatingTexts.splice(i, 1);
+  }
+
+  // Trail decay
+  for (const o of orbs) {
+    for (const t of o.trail) t.life -= dt * 2.5;
+    o.trail = o.trail.filter(t => t.life > 0);
+  }
+
+  // Shake decay
+  if (shakeDur > 0) {
+    shakeDur -= dt;
+    shakeX = (Math.random() - 0.5) * shakeDur * 40;
+    shakeY = (Math.random() - 0.5) * shakeDur * 40;
+  } else {
+    shakeX = 0; shakeY = 0;
+  }
+
+  if (flashAlpha > 0) flashAlpha -= dt * 2.5;
+  if (planetPulse > 0) planetPulse -= dt * 3;
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.96; p.vy *= 0.96;
+  }
+}
+
+// ─── Draw ───
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  const bgGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.7);
+  bgGrad.addColorStop(0, '#0e0e1a');
+  bgGrad.addColorStop(1, '#050508');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  // Gravity field visualization
+  if (gravityFieldAnim > 0.01) {
+    const fieldAlpha = Math.min(gravityFieldAnim, 1);
+
+    // Pulsing rings
+    const time = performance.now() / 1000;
+    for (let ring = 0; ring < 3; ring++) {
+      const phase = (time * 1.5 + ring * 0.33) % 1;
+      const r = gravityRadius * (0.3 + phase * 0.7);
+      const alpha = fieldAlpha * (1 - phase) * 0.12;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,240,255,${alpha})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Outer boundary
+    ctx.beginPath();
+    ctx.arc(cx, cy, gravityRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(0,240,255,${fieldAlpha * 0.08})`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([8, 12]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Radial gradient fill
+    const gGrad = ctx.createRadialGradient(cx, cy, planetRadius, cx, cy, gravityRadius);
+    gGrad.addColorStop(0, `rgba(0,200,255,${fieldAlpha * 0.06})`);
+    gGrad.addColorStop(0.5, `rgba(0,150,255,${fieldAlpha * 0.03})`);
+    gGrad.addColorStop(1, 'rgba(0,100,255,0)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, gravityRadius, 0, Math.PI * 2);
+    ctx.fillStyle = gGrad;
+    ctx.fill();
+  }
+
+  // Incoming orb warnings at screen edges
+  for (const o of orbs) {
+    if (o.orbiting || o.caught) continue;
+    const margin = 40;
+    const onScreen = o.x > margin && o.x < W - margin && o.y > margin && o.y < H - margin;
+    if (onScreen) continue;
+
+    // Project position to screen edge
+    const angle = Math.atan2(o.y - cy, o.x - cx);
+    const edgeX = Math.max(20, Math.min(W - 20, cx + Math.cos(angle) * (Math.min(W, H) * 0.47)));
+    const edgeY = Math.max(20, Math.min(H - 20, cy + Math.sin(angle) * (Math.min(W, H) * 0.47)));
+    const dist = Math.sqrt((o.x - cx) ** 2 + (o.y - cy) ** 2);
+    const maxDist = Math.max(W, H) * 0.75;
+    const proximity = 1 - Math.min(dist / maxDist, 1);
+    const alpha = proximity * 0.6;
+
+    if (alpha > 0.05) {
+      // Warning triangle
+      ctx.save();
+      ctx.translate(edgeX, edgeY);
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-5, -6);
+      ctx.lineTo(-5, 6);
+      ctx.closePath();
+      ctx.fillStyle = o.color;
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = o.color;
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+  }
+
+  // Orb trails
+  for (const o of orbs) {
+    if (o.trail.length < 2) continue;
+    for (let i = 1; i < o.trail.length; i++) {
+      const t0 = o.trail[i - 1];
+      const t1 = o.trail[i];
+      const alpha = (t1.life * (i / o.trail.length)) * (o.orbiting ? 0.4 : 0.2);
+      ctx.beginPath();
+      ctx.moveTo(t0.x, t0.y);
+      ctx.lineTo(t1.x, t1.y);
+      ctx.strokeStyle = o.color;
+      ctx.lineWidth = o.orbiting ? 3.5 : 2;
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = o.color;
+      ctx.shadowBlur = o.orbiting ? 15 : 6;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+
+  // Planet
+  const pScale = 1 + Math.max(planetPulse, 0) * 0.2;
+  const pR = planetRadius * pScale;
+
+  // Planet outer glow
+  const pGlow = ctx.createRadialGradient(cx, cy, pR * 0.5, cx, cy, pR * 4);
+  const gActive = gravityFieldAnim > 0.01;
+  pGlow.addColorStop(0, `rgba(100,140,255,${gActive ? 0.25 : 0.12})`);
+  pGlow.addColorStop(1, 'rgba(100,140,255,0)');
+  ctx.beginPath();
+  ctx.arc(cx, cy, pR * 4, 0, Math.PI * 2);
+  ctx.fillStyle = pGlow;
+  ctx.fill();
+
+  // Planet body
+  const pGrad = ctx.createRadialGradient(cx - pR * 0.3, cy - pR * 0.3, 0, cx, cy, pR);
+  pGrad.addColorStop(0, '#ccddff');
+  pGrad.addColorStop(0.4, '#5577dd');
+  pGrad.addColorStop(1, '#1a2255');
+  ctx.beginPath();
+  ctx.arc(cx, cy, pR, 0, Math.PI * 2);
+  ctx.fillStyle = pGrad;
+  ctx.shadowColor = gActive ? '#00ccff' : '#4488ff';
+  ctx.shadowBlur = 25 + (gActive ? 20 : 0) + Math.max(planetPulse, 0) * 30;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Planet ring
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, pR * 1.9, pR * 0.35, -0.3, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(150,180,255,${gActive ? 0.35 : 0.18})`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Orbs
+  for (const o of orbs) {
+    if (o.life <= 0) continue;
+
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, o.radius * 3.5, 0, Math.PI * 2);
+    const glow = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.radius * 3.5);
+    glow.addColorStop(0, o.color + '55');
+    glow.addColorStop(1, o.color + '00');
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, o.radius, 0, Math.PI * 2);
+    const oGrad = ctx.createRadialGradient(o.x - 2, o.y - 2, 0, o.x, o.y, o.radius);
+    oGrad.addColorStop(0, '#ffffff');
+    oGrad.addColorStop(0.35, o.color);
+    oGrad.addColorStop(1, o.color + '99');
+    ctx.fillStyle = oGrad;
+    ctx.shadowColor = o.color;
+    ctx.shadowBlur = 18;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Being pulled indicator
+    if (gActive && !o.orbiting && !o.caught && o.inFieldTime > 0) {
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, o.radius + 4 + Math.sin(performance.now() / 100) * 2, 0, Math.PI * 2);
+      ctx.strokeStyle = o.color;
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Particles
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    if (p.ring) {
+      const ringR = (1 - p.life / p.maxLife) * 70;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
+      ctx.strokeStyle = p.color;
+      ctx.globalAlpha = alpha * 0.5;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Floating score texts
+  for (const ft of floatingTexts) {
+    const alpha = Math.min(ft.life / ft.maxLife * 2, 1);
+    ctx.globalAlpha = alpha;
+    ctx.font = "bold 18px 'SF Pro Display','Segoe UI',system-ui,sans-serif";
+    ctx.textAlign = 'center';
+    ctx.fillStyle = ft.color;
+    ctx.shadowColor = ft.color;
+    ctx.shadowBlur = 10;
+    ctx.fillText(ft.text, ft.x, ft.y);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+
+  // Combo text
+  if (combo > 2 && comboTimer > 0) {
+    const ca = Math.min(1, comboTimer);
+    ctx.globalAlpha = ca;
+    ctx.font = `bold ${Math.min(24 + combo * 3, 48)}px 'SF Pro Display','Segoe UI',system-ui,sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffcc00';
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 25;
+    ctx.fillText(`${combo}x COMBO!`, cx, cy - planetRadius * 4);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+
+  // Flash overlay
+  if (flashAlpha > 0) {
+    ctx.fillStyle = flashColor;
+    ctx.globalAlpha = Math.min(flashAlpha, 1) * 0.15;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  // Energy bar (bottom center)
+  if (state === 'playing') {
+    const barW = Math.min(200, W * 0.35);
+    const barH = 6;
+    const barX = cx - barW / 2;
+    const barY = H - 32;
+
+    // Background
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, barH / 2);
+    ctx.fill();
+
+    // Fill
+    const energyW = barW * gravityEnergy;
+    if (energyW > 1) {
+      const depleted = gravityEnergy < ENERGY_MIN_ACTIVATE;
+      const barColor = depleted ? '#ff4466' : (gravityHeld ? '#00f0ff' : '#4488aa');
+      ctx.fillStyle = barColor;
+      ctx.shadowColor = barColor;
+      ctx.shadowBlur = depleted ? 4 : 8;
+      ctx.beginPath();
+      ctx.roundRect(barX, barY, energyW, barH, barH / 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Label
+    ctx.font = "11px 'SF Pro Display','Segoe UI',system-ui,sans-serif";
+    ctx.textAlign = 'center';
+    const pulling = gravityHeld && gravityEnergy > 0;
+    ctx.fillStyle = pulling ? 'rgba(0,240,255,0.6)' : 'rgba(255,255,255,0.2)';
+    ctx.fillText(pulling ? 'PULLING' : (gravityEnergy < ENERGY_MIN_ACTIVATE ? 'RECHARGING...' : 'Hold to pull'), cx, barY - 6);
+  }
+}
+
+// Stars background (static)
+const starCanvas = document.createElement('canvas');
+function drawStars() {
+  starCanvas.width = W * dpr;
+  starCanvas.height = H * dpr;
+  const sctx = starCanvas.getContext('2d');
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (let i = 0; i < 200; i++) {
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    const r = Math.random() * 1.3;
+    const a = Math.random() * 0.4 + 0.05;
+    sctx.beginPath();
+    sctx.arc(x, y, r, 0, Math.PI * 2);
+    sctx.fillStyle = `rgba(255,255,255,${a})`;
+    sctx.fill();
+  }
+}
+drawStars();
+window.addEventListener('resize', () => { resize(); recalcSizes(); drawStars(); });
+
+// Main loop
+function loop(time) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((time - lastTime) / 1000, 0.05);
+  lastTime = time;
+  update(dt);
+  ctx.drawImage(starCanvas, 0, 0, W, H);
+  draw();
+}
+
+// Init UI
+recalcSizes();
+bestDisplay.textContent = highScore;
+livesDisplay.innerHTML = '';
+for (let i = 0; i < MAX_LIVES; i++) {
+  livesDisplay.innerHTML += '<div class="life"></div>';
+}
+
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
