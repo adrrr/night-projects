@@ -195,3 +195,8 @@ Jeu de gravité one-touch — maintiens pour activer un champ gravitationnel qui
 Jeu de réaction en chaîne — des bulles néon flottent depuis le bas de l'écran. Tape une bulle pour la faire éclater, et les bulles adjacentes de même couleur explosent en cascade ! Plus la chaîne est longue, plus le multiplicateur de points est élevé. Le rythme accélère, et si les bulles atteignent le haut → game over. Effets particules satisfaisants, sons Web Audio API, esthétique néon dark.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/bubble-pop-chain/)
+
+### 🏗️ [Stack Tower](./stack-tower/)
+Jeu de timing addictif — empile les blocs en les alignant parfaitement. Les débordements sont tranchés et tombent avec gravité et rotation. Combos PERFECT avec screen shake et particules néon, couleurs HSL progressives, high score localStorage. Tap mobile + espace/clic desktop.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/stack-tower/)
