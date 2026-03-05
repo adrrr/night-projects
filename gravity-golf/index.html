@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<title>Gravity Golf</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:none;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a12;font-family:'Courier New',monospace;color:#e0e0ff}
+canvas{display:block;width:100%;height:100%}
+#ui-overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10}
+#hud{position:absolute;top:0;left:0;width:100%;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;font-size:14px;pointer-events:none}
+#hud>div{pointer-events:auto}
+.hud-left,.hud-right{display:flex;align-items:center;gap:12px}
+.hud-label{color:#6a6a8a;font-size:11px;text-transform:uppercase;letter-spacing:1px}
+.hud-value{color:#e0e0ff;font-size:18px;font-weight:bold}
+.stars-display{color:#ffd700;font-size:18px;letter-spacing:2px}
+#btn-menu,#btn-retry{pointer-events:auto;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#e0e0ff;padding:8px 14px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
+#btn-menu:active,#btn-retry:active{background:rgba(255,255,255,0.2)}
+#menu-screen,#level-select-screen,#level-complete-screen,#game-over-screen{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:auto;background:rgba(6,6,12,0.95);z-index:20;transition:opacity 0.3s}
+.screen-hidden{opacity:0!important;pointer-events:none!important}
+.title{font-size:clamp(28px,7vw,52px);font-weight:bold;letter-spacing:3px;margin-bottom:8px;background:linear-gradient(135deg,#00f0ff,#a855f7,#ff6bcb);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{color:#6a6a8a;font-size:clamp(12px,3vw,16px);margin-bottom:40px;letter-spacing:2px}
+.menu-btn{pointer-events:auto;background:linear-gradient(135deg,rgba(0,240,255,0.15),rgba(168,85,247,0.15));border:1px solid rgba(0,240,255,0.3);color:#e0e0ff;padding:16px 40px;border-radius:12px;font-family:inherit;font-size:clamp(14px,3.5vw,18px);cursor:pointer;margin:8px;min-width:200px;min-height:52px;letter-spacing:1px;transition:all 0.2s}
+.menu-btn:active{transform:scale(0.96);background:linear-gradient(135deg,rgba(0,240,255,0.3),rgba(168,85,247,0.3))}
+.menu-btn.secondary{background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.1)}
+#level-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:20px;max-width:400px;width:90%;max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.level-btn{pointer-events:auto;width:100%;aspect-ratio:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#e0e0ff;font-family:inherit;font-size:16px;font-weight:bold;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:44px}
+.level-btn.completed{border-color:rgba(0,240,255,0.4);background:rgba(0,240,255,0.08)}
+.level-btn.locked{opacity:0.3;pointer-events:none}
+.level-btn:active{transform:scale(0.93)}
+.level-stars{font-size:10px;color:#ffd700}
+.complete-stars{font-size:clamp(36px,10vw,60px);letter-spacing:8px;margin:16px 0}
+.complete-msg{font-size:clamp(20px,5vw,32px);font-weight:bold;margin-bottom:8px}
+.complete-sub{color:#6a6a8a;font-size:14px;margin-bottom:24px}
+.score-display{color:#00f0ff;font-size:16px;margin-bottom:24px}
+.btn-row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+#aim-hint{position:absolute;bottom:15%;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.4);font-size:clamp(13px,3vw,16px);pointer-events:none;text-align:center;transition:opacity 0.5s}
+.hint-hidden{opacity:0!important}
+</style>
+</head>
+<body>
+<canvas id="gc"></canvas>
+<div id="ui-overlay">
+  <div id="hud">
+    <div class="hud-left">
+      <button id="btn-menu">|||</button>
+      <div><span class="hud-label">Level</span><br><span class="hud-value" id="hud-level">1</span></div>
+    </div>
+    <div class="hud-right">
+      <div><span class="hud-label">Shots</span><br><span class="hud-value" id="hud-shots">0</span></div>
+      <div><span class="hud-label">Par</span><br><span class="hud-value" id="hud-par">2</span></div>
+      <button id="btn-retry">↺</button>
+    </div>
+  </div>
+  <div id="aim-hint">Drag from ball to aim &amp; launch</div>
+</div>
+
+<div id="menu-screen">
+  <div class="title">GRAVITY GOLF</div>
+  <div class="subtitle">Bend space. Sink the shot.</div>
+  <button class="menu-btn" id="btn-play">PLAY</button>
+  <button class="menu-btn secondary" id="btn-endless">ENDLESS MODE</button>
+  <button class="menu-btn secondary" id="btn-levels">LEVEL SELECT</button>
+</div>
+
+<div id="level-select-screen" class="screen-hidden">
+  <div class="title" style="font-size:clamp(20px,5vw,32px);margin-bottom:24px">SELECT LEVEL</div>
+  <div id="level-grid"></div>
+  <button class="menu-btn secondary" id="btn-back-menu" style="margin-top:20px">BACK</button>
+</div>
+
+<div id="level-complete-screen" class="screen-hidden">
+  <div class="complete-msg" id="complete-msg">NICE!</div>
+  <div class="complete-stars" id="complete-stars"></div>
+  <div class="complete-sub" id="complete-sub"></div>
+  <div class="score-display" id="complete-score"></div>
+  <div class="btn-row">
+    <button class="menu-btn secondary" id="btn-complete-retry">RETRY</button>
+    <button class="menu-btn" id="btn-next-level">NEXT</button>
+  </div>
+</div>
+
+<div id="game-over-screen" class="screen-hidden">
+  <div class="complete-msg">OUT OF BOUNDS</div>
+  <div class="complete-sub">The ball escaped into deep space</div>
+  <div class="btn-row">
+    <button class="menu-btn" id="btn-go-retry">RETRY</button>
+    <button class="menu-btn secondary" id="btn-go-menu">MENU</button>
+  </div>
+</div>
+
+<script>
+const C=document.getElementById('gc');
+const ctx=C.getContext('2d');
+let W,H,DPR;
+
+// ─── Audio Engine ────────────────────────────────────────
+let audioCtx=null;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume()}
+function playTone(freq,dur,vol=0.15,type='sine',slide=0){
+  if(!audioCtx)return;
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type=type;o.frequency.setValueAtTime(freq,audioCtx.currentTime);
+  if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(slide,20),audioCtx.currentTime+dur);
+  g.gain.setValueAtTime(vol,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start();o.stop(audioCtx.currentTime+dur);
+}
+function sfxLaunch(){playTone(220,0.15,0.2,'triangle',440);playTone(330,0.1,0.1,'sine')}
+function sfxHole(){
+  setTimeout(()=>playTone(523,0.12,0.2,'sine'),0);
+  setTimeout(()=>playTone(659,0.12,0.2,'sine'),80);
+  setTimeout(()=>playTone(784,0.12,0.2,'sine'),160);
+  setTimeout(()=>playTone(1047,0.3,0.25,'sine'),240);
+}
+function sfxStar(){playTone(880,0.08,0.1,'sine');playTone(1100,0.15,0.12,'sine')}
+function sfxBounce(){playTone(150,0.08,0.12,'square',80)}
+function sfxFail(){playTone(200,0.3,0.15,'sawtooth',60)}
+function sfxGravPulse(){playTone(80,0.2,0.04,'sine',40)}
+
+// ─── State ───────────────────────────────────────────────
+const TOTAL_LEVELS=30;
+const STATE={
+  screen:'menu', // menu, playing, complete, gameover, levelselect
+  mode:'campaign', // campaign, endless
+  level:1,
+  shots:0,
+  totalScore:0,
+  endlessSeed:1,
+};
+let save=JSON.parse(localStorage.getItem('gg_save')||'{}');
+if(!save.levels)save.levels={};
+if(!save.bestEndless)save.bestEndless=0;
+if(!save.unlocked)save.unlocked=1;
+function saveProg(){localStorage.setItem('gg_save',JSON.stringify(save))}
+
+// ─── Seeded Random ───────────────────────────────────────
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+// ─── Level Generation ────────────────────────────────────
+let currentLevel=null;
+function generateLevel(n,seed){
+  const rng=mulberry32(seed||n*7919+31);
+  const margin=0.12;
+  const difficulty=Math.min(n/TOTAL_LEVELS,1);
+  // Ball start - bottom left area
+  const bx=margin+rng()*0.15;
+  const by=0.7+rng()*0.15;
+  // Hole - varies more with difficulty
+  let hx,hy;
+  if(n<=3){
+    hx=0.6+rng()*0.25;
+    hy=0.25+rng()*0.2;
+  } else {
+    hx=0.35+rng()*0.5;
+    hy=margin+rng()*(0.7);
+    // Ensure some distance from ball
+    const dx=hx-bx,dy=hy-by;
+    if(Math.sqrt(dx*dx+dy*dy)<0.35){hy=by-0.35;if(hy<margin)hy=margin+0.05}
+  }
+  // Planets
+  const numPlanets=Math.min(1+Math.floor(difficulty*3.5+rng()*0.8),4);
+  const planets=[];
+  for(let i=0;i<numPlanets;i++){
+    let px,py,tries=0;
+    do{
+      px=0.15+rng()*0.7;
+      py=0.15+rng()*0.6;
+      tries++;
+    }while(tries<30&&(dist(px,py,bx,by)<0.12||dist(px,py,hx,hy)<0.1||planets.some(p=>dist(px,py,p.x,p.y)<0.15)));
+    const mass=0.6+rng()*1.2+difficulty*0.5;
+    const radius=0.018+mass*0.012;
+    planets.push({x:px,y:py,mass,radius,phase:rng()*Math.PI*2});
+  }
+  // Par calculation
+  const par=Math.max(1,Math.min(numPlanets+1,4));
+  return{ball:{x:bx,y:by},hole:{x:hx,y:hy,radius:0.02},planets,par,number:n};
+}
+function dist(x1,y1,x2,y2){return Math.sqrt((x1-x2)**2+(y1-y2)**2)}
+
+// ─── Game Objects ────────────────────────────────────────
+let ball={x:0,y:0,vx:0,vy:0,r:8,active:false,sunk:false};
+let trail=[];
+let particles=[];
+let screenShake={x:0,y:0,intensity:0};
+let aimState={dragging:false,sx:0,sy:0,ex:0,ey:0};
+let predictionDots=[];
+let hintTimer=0;
+let animTime=0;
+let levelTransition=0;
+let celebrationTimer=0;
+
+// ─── Resize ──────────────────────────────────────────────
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  C.width=W*DPR;C.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);
+resize();
+
+// ─── Coordinate Utils ────────────────────────────────────
+function toScreen(nx,ny){return{x:nx*W,y:ny*H}}
+function toNorm(sx,sy){return{x:sx/W,y:sy/H}}
+
+// ─── Level Loading ───────────────────────────────────────
+function loadLevel(n,seed){
+  currentLevel=generateLevel(n,seed);
+  const s=toScreen(currentLevel.ball.x,currentLevel.ball.y);
+  ball={x:s.x,y:s.y,vx:0,vy:0,r:Math.max(8,W*0.015),active:false,sunk:false};
+  trail=[];particles=[];
+  STATE.shots=0;
+  aimState.dragging=false;
+  predictionDots=[];
+  hintTimer=3;
+  celebrationTimer=0;
+  screenShake={x:0,y:0,intensity:0};
+  updateHUD();
+}
+
+function updateHUD(){
+  document.getElementById('hud-level').textContent=STATE.mode==='endless'?'∞'+STATE.level:STATE.level;
+  document.getElementById('hud-shots').textContent=STATE.shots;
+  document.getElementById('hud-par').textContent=currentLevel?currentLevel.par:'—';
+}
+
+// ─── Physics ─────────────────────────────────────────────
+const GRAVITY_CONSTANT=0.00008;
+const DAMPING=0.9997;
+const MAX_SPEED=15;
+
+function physicsStep(){
+  if(!ball.active||ball.sunk)return;
+  const dt=1;
+  // Apply gravity from each planet
+  for(const p of currentLevel.planets){
+    const ps=toScreen(p.x,p.y);
+    const dx=ps.x-ball.x,dy=ps.y-ball.y;
+    const distSq=dx*dx+dy*dy;
+    const d=Math.sqrt(distSq);
+    const minDist=p.radius*Math.min(W,H);
+    if(d<minDist){
+      // Hit planet - bounce off
+      const nx=dx/d,ny=dy/d;
+      ball.x=ps.x-nx*(minDist+2);
+      ball.y=ps.y-ny*(minDist+2);
+      const dot=ball.vx*nx+ball.vy*ny;
+      ball.vx-=1.6*dot*nx;
+      ball.vy-=1.6*dot*ny;
+      ball.vx*=0.7;ball.vy*=0.7;
+      sfxBounce();
+      screenShake.intensity=3;
+      spawnParticles(ball.x,ball.y,6,getPlanetColor(p),1.5);
+      continue;
+    }
+    const force=GRAVITY_CONSTANT*p.mass*W/(distSq/1000+1);
+    const fx=force*dx/d,fy=force*dy/d;
+    ball.vx+=fx*dt;ball.vy+=fy*dt;
+  }
+  // Damping
+  ball.vx*=DAMPING;ball.vy*=DAMPING;
+  // Speed cap
+  const spd=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy);
+  if(spd>MAX_SPEED){ball.vx=ball.vx/spd*MAX_SPEED;ball.vy=ball.vy/spd*MAX_SPEED}
+  ball.x+=ball.vx*dt;
+  ball.y+=ball.vy*dt;
+  // Trail
+  trail.push({x:ball.x,y:ball.y,life:1});
+  if(trail.length>120)trail.shift();
+  // Check hole
+  const hs=toScreen(currentLevel.hole.x,currentLevel.hole.y);
+  const holeR=currentLevel.hole.radius*Math.min(W,H);
+  const dh=dist(ball.x,ball.y,hs.x,hs.y);
+  if(dh<holeR+ball.r*0.4){
+    // Sunk!
+    const spdNow=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy);
+    if(spdNow<12){
+      ball.sunk=true;ball.active=false;
+      ball.x=hs.x;ball.y=hs.y;
+      sfxHole();
+      celebrationTimer=2;
+      spawnParticles(hs.x,hs.y,40,'#ffd700',4);
+      spawnParticles(hs.x,hs.y,25,'#00f0ff',3);
+      spawnParticles(hs.x,hs.y,20,'#ff6bcb',3);
+      screenShake.intensity=8;
+      setTimeout(()=>showComplete(),800);
+      return;
+    }
+  }
+  // Out of bounds
+  const m=100;
+  if(ball.x<-m||ball.x>W+m||ball.y<-m||ball.y>H+m){
+    ball.active=false;
+    sfxFail();
+    setTimeout(()=>{
+      if(STATE.screen==='playing')showGameOver();
+    },300);
+    return;
+  }
+  // Stopped check
+  if(spd<0.08&&ball.active){
+    ball.vx=0;ball.vy=0;
+    if(!ball.sunk){
+      ball.active=false;
+      sfxFail();
+      setTimeout(()=>{
+        if(STATE.screen==='playing')showGameOver();
+      },500);
+    }
+  }
+}
+
+// ─── Prediction ──────────────────────────────────────────
+function computePrediction(sx,sy,vx,vy,steps){
+  const dots=[];
+  let bx=sx,by=sy,bvx=vx,bvy=vy;
+  for(let i=0;i<steps;i++){
+    for(const p of currentLevel.planets){
+      const ps=toScreen(p.x,p.y);
+      const dx=ps.x-bx,dy=ps.y-by;
+      const distSq=dx*dx+dy*dy;
+      const d=Math.sqrt(distSq);
+      const minDist=p.radius*Math.min(W,H);
+      if(d<minDist)break;
+      const force=GRAVITY_CONSTANT*p.mass*W/(distSq/1000+1);
+      bvx+=force*dx/d;bvy+=force*dy/d;
+    }
+    bvx*=DAMPING;bvy*=DAMPING;
+    bx+=bvx;by+=bvy;
+    if(i%3===0)dots.push({x:bx,y:by,i});
+    if(bx<-50||bx>W+50||by<-50||by>H+50)break;
+  }
+  return dots;
+}
+
+// ─── Particles ───────────────────────────────────────────
+function spawnParticles(x,y,count,color,speed){
+  for(let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2;
+    const s=Math.random()*speed+0.5;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,decay:0.01+Math.random()*0.025,color,r:2+Math.random()*3});
+  }
+}
+function updateParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx;p.y+=p.vy;
+    p.vx*=0.97;p.vy*=0.97;
+    p.life-=p.decay;
+    if(p.life<=0)particles.splice(i,1);
+  }
+  for(let i=trail.length-1;i>=0;i--){
+    trail[i].life-=0.008;
+    if(trail[i].life<=0)trail.splice(i,1);
+  }
+}
+
+// ─── Planet Colors ───────────────────────────────────────
+function getPlanetColor(p){
+  const colors=['#a855f7','#00f0ff','#ff6bcb','#22d3ee'];
+  const idx=currentLevel.planets.indexOf(p);
+  return colors[idx%colors.length];
+}
+
+// ─── Rendering ───────────────────────────────────────────
+function render(){
+  ctx.save();
+  // Screen shake
+  if(screenShake.intensity>0){
+    screenShake.x=(Math.random()-0.5)*screenShake.intensity;
+    screenShake.y=(Math.random()-0.5)*screenShake.intensity;
+    screenShake.intensity*=0.88;
+    if(screenShake.intensity<0.2)screenShake.intensity=0;
+    ctx.translate(screenShake.x,screenShake.y);
+  }
+  // Background
+  ctx.fillStyle='#0a0a12';
+  ctx.fillRect(-10,-10,W+20,H+20);
+  // Subtle grid
+  ctx.strokeStyle='rgba(255,255,255,0.02)';
+  ctx.lineWidth=1;
+  const gs=Math.max(40,W/20);
+  for(let x=0;x<W;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+  for(let y=0;y<H;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+
+  if(!currentLevel){ctx.restore();return}
+
+  // Gravity field visualization
+  for(const p of currentLevel.planets){
+    const ps=toScreen(p.x,p.y);
+    const col=getPlanetColor(p);
+    const fieldR=p.mass*Math.min(W,H)*0.18;
+    // Pulsing rings
+    for(let r=1;r<=3;r++){
+      const rr=fieldR*r*0.45;
+      const pulse=Math.sin(animTime*2+p.phase+r*0.8)*0.15+0.85;
+      ctx.beginPath();ctx.arc(ps.x,ps.y,rr*pulse,0,Math.PI*2);
+      ctx.strokeStyle=col.replace(')',`,${0.08/r})`).replace('rgb','rgba').replace('#','');
+      // Hex to rgba
+      const alpha=0.12/r;
+      ctx.strokeStyle=hexAlpha(col,alpha);
+      ctx.lineWidth=1.5;ctx.stroke();
+    }
+    // Planet body glow
+    const grd=ctx.createRadialGradient(ps.x,ps.y,0,ps.x,ps.y,p.radius*Math.min(W,H)*2);
+    grd.addColorStop(0,hexAlpha(col,0.3));
+    grd.addColorStop(0.5,hexAlpha(col,0.08));
+    grd.addColorStop(1,'transparent');
+    ctx.fillStyle=grd;
+    ctx.beginPath();ctx.arc(ps.x,ps.y,p.radius*Math.min(W,H)*2,0,Math.PI*2);ctx.fill();
+    // Planet core
+    ctx.beginPath();ctx.arc(ps.x,ps.y,p.radius*Math.min(W,H),0,Math.PI*2);
+    const coreGrd=ctx.createRadialGradient(ps.x-2,ps.y-2,0,ps.x,ps.y,p.radius*Math.min(W,H));
+    coreGrd.addColorStop(0,'#fff');coreGrd.addColorStop(0.3,col);coreGrd.addColorStop(1,hexAlpha(col,0.6));
+    ctx.fillStyle=coreGrd;ctx.fill();
+  }
+
+  // Hole
+  const hs=toScreen(currentLevel.hole.x,currentLevel.hole.y);
+  const holeR=currentLevel.hole.radius*Math.min(W,H);
+  // Hole glow
+  const hGrd=ctx.createRadialGradient(hs.x,hs.y,holeR*0.3,hs.x,hs.y,holeR*3);
+  hGrd.addColorStop(0,'rgba(255,215,0,0.25)');hGrd.addColorStop(0.5,'rgba(255,215,0,0.06)');hGrd.addColorStop(1,'transparent');
+  ctx.fillStyle=hGrd;ctx.beginPath();ctx.arc(hs.x,hs.y,holeR*3,0,Math.PI*2);ctx.fill();
+  // Hole ring
+  const holePulse=Math.sin(animTime*3)*0.15+1;
+  ctx.beginPath();ctx.arc(hs.x,hs.y,holeR*holePulse,0,Math.PI*2);
+  ctx.strokeStyle='rgba(255,215,0,0.5)';ctx.lineWidth=2;ctx.stroke();
+  // Hole inner
+  ctx.beginPath();ctx.arc(hs.x,hs.y,holeR*0.6,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,215,0,0.15)';ctx.fill();
+  // Flag
+  ctx.beginPath();ctx.moveTo(hs.x,hs.y-holeR*1.2);ctx.lineTo(hs.x,hs.y-holeR*3);ctx.strokeStyle='rgba(255,215,0,0.6)';ctx.lineWidth=2;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(hs.x,hs.y-holeR*3);ctx.lineTo(hs.x+holeR*1.2,hs.y-holeR*2.5);ctx.lineTo(hs.x,hs.y-holeR*2);ctx.fillStyle='rgba(255,215,0,0.4)';ctx.fill();
+
+  // Trail
+  if(trail.length>1){
+    ctx.lineWidth=3;ctx.lineCap='round';ctx.lineJoin='round';
+    for(let i=1;i<trail.length;i++){
+      const a=trail[i-1],b=trail[i];
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle=`rgba(0,240,255,${b.life*0.5})`;
+      ctx.lineWidth=2+b.life*2;ctx.stroke();
+    }
+    // Glow layer
+    ctx.globalCompositeOperation='lighter';
+    for(let i=1;i<trail.length;i++){
+      const a=trail[i-1],b=trail[i];
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle=`rgba(0,240,255,${b.life*0.15})`;
+      ctx.lineWidth=6+b.life*4;ctx.stroke();
+    }
+    ctx.globalCompositeOperation='source-over';
+  }
+
+  // Prediction dots
+  if(aimState.dragging&&predictionDots.length>0){
+    for(let i=0;i<predictionDots.length;i++){
+      const d=predictionDots[i];
+      const alpha=Math.max(0,0.5-i/predictionDots.length*0.5);
+      ctx.beginPath();ctx.arc(d.x,d.y,2,0,Math.PI*2);
+      ctx.fillStyle=`rgba(255,255,255,${alpha})`;ctx.fill();
+    }
+  }
+
+  // Aim line
+  if(aimState.dragging){
+    const dx=aimState.sx-aimState.ex,dy=aimState.sy-aimState.ey;
+    const len=Math.sqrt(dx*dx+dy*dy);
+    const maxLen=W*0.3;
+    const power=Math.min(len/maxLen,1);
+    // Arrow from ball in launch direction
+    const nx=dx/len,ny=dy/len;
+    const arrowLen=Math.min(len,maxLen)*0.6;
+    ctx.beginPath();
+    ctx.moveTo(ball.x,ball.y);
+    ctx.lineTo(ball.x+nx*arrowLen,ball.y+ny*arrowLen);
+    const r=Math.floor(power*255);
+    const g=Math.floor((1-power)*255);
+    ctx.strokeStyle=`rgba(${r},${g},100,0.7)`;
+    ctx.lineWidth=3;ctx.stroke();
+    // Power indicator
+    ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r+6+power*14,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(${r},${g},100,0.3)`;ctx.lineWidth=2;ctx.stroke();
+  }
+
+  // Ball
+  if(!ball.sunk){
+    // Ball glow
+    ctx.globalCompositeOperation='lighter';
+    const bGrd=ctx.createRadialGradient(ball.x,ball.y,0,ball.x,ball.y,ball.r*3);
+    bGrd.addColorStop(0,'rgba(255,255,255,0.15)');bGrd.addColorStop(1,'transparent');
+    ctx.fillStyle=bGrd;ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r*3,0,Math.PI*2);ctx.fill();
+    ctx.globalCompositeOperation='source-over';
+    // Ball body
+    const ballGrd=ctx.createRadialGradient(ball.x-ball.r*0.3,ball.y-ball.r*0.3,0,ball.x,ball.y,ball.r);
+    ballGrd.addColorStop(0,'#ffffff');ballGrd.addColorStop(0.7,'#b0b0d0');ballGrd.addColorStop(1,'#6a6a8a');
+    ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
+    ctx.fillStyle=ballGrd;ctx.fill();
+  }
+
+  // Particles
+  ctx.globalCompositeOperation='lighter';
+  for(const p of particles){
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);
+    ctx.fillStyle=hexAlpha(p.color,p.life*0.8);ctx.fill();
+  }
+  ctx.globalCompositeOperation='source-over';
+
+  // Celebration
+  if(celebrationTimer>0){
+    ctx.globalCompositeOperation='lighter';
+    const cAlpha=Math.min(celebrationTimer,1)*0.15;
+    ctx.fillStyle=`rgba(255,215,0,${cAlpha})`;
+    ctx.fillRect(-10,-10,W+20,H+20);
+    ctx.globalCompositeOperation='source-over';
+  }
+
+  ctx.restore();
+}
+
+function hexAlpha(hex,alpha){
+  if(hex.startsWith('rgba'))return hex;
+  const r=parseInt(hex.slice(1,3),16)||0;
+  const g=parseInt(hex.slice(3,5),16)||0;
+  const b=parseInt(hex.slice(5,7),16)||0;
+  return`rgba(${r},${g},${b},${alpha})`;
+}
+
+// ─── Game Loop ───────────────────────────────────────────
+let lastTime=0;
+function gameLoop(ts){
+  const dt=Math.min((ts-lastTime)/1000,0.05);
+  lastTime=ts;
+  animTime+=dt;
+  if(STATE.screen==='playing'){
+    // Multiple physics steps per frame for stability
+    if(ball.active){
+      for(let i=0;i<3;i++)physicsStep();
+      // Occasional gravity pulse sound
+      if(Math.random()<0.005*currentLevel.planets.length)sfxGravPulse();
+    }
+    updateParticles();
+    if(hintTimer>0)hintTimer-=dt;
+    if(celebrationTimer>0)celebrationTimer-=dt;
+    if(levelTransition>0)levelTransition-=dt;
+  }
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// ─── Input ───────────────────────────────────────────────
+function getPos(e){
+  if(e.touches)return{x:e.touches[0].clientX,y:e.touches[0].clientY};
+  return{x:e.clientX,y:e.clientY};
+}
+
+function onStart(e){
+  if(STATE.screen!=='playing'||ball.active||ball.sunk)return;
+  initAudio();
+  const pos=getPos(e);
+  const dx=pos.x-ball.x,dy=pos.y-ball.y;
+  const d=Math.sqrt(dx*dx+dy*dy);
+  // Must start drag near ball (generous touch area)
+  if(d>ball.r*6+30)return;
+  aimState.dragging=true;
+  aimState.sx=pos.x;aimState.sy=pos.y;
+  aimState.ex=pos.x;aimState.ey=pos.y;
+  hintTimer=0;
+  document.getElementById('aim-hint').classList.add('hint-hidden');
+}
+
+function onMove(e){
+  if(!aimState.dragging)return;
+  e.preventDefault();
+  const pos=getPos(e);
+  aimState.ex=pos.x;aimState.ey=pos.y;
+  // Compute prediction
+  const dx=aimState.sx-aimState.ex,dy=aimState.sy-aimState.ey;
+  const len=Math.sqrt(dx*dx+dy*dy);
+  if(len<5){predictionDots=[];return}
+  const maxLen=W*0.3;
+  const power=Math.min(len/maxLen,1)*10;
+  const vx=dx/len*power,vy=dy/len*power;
+  predictionDots=computePrediction(ball.x,ball.y,vx,vy,150);
+}
+
+function onEnd(e){
+  if(!aimState.dragging)return;
+  aimState.dragging=false;
+  predictionDots=[];
+  const dx=aimState.sx-aimState.ex,dy=aimState.sy-aimState.ey;
+  const len=Math.sqrt(dx*dx+dy*dy);
+  if(len<10)return; // too short, cancel
+  const maxLen=W*0.3;
+  const power=Math.min(len/maxLen,1)*10;
+  ball.vx=dx/len*power;
+  ball.vy=dy/len*power;
+  ball.active=true;
+  STATE.shots++;
+  updateHUD();
+  sfxLaunch();
+  spawnParticles(ball.x,ball.y,8,'#00f0ff',2);
+}
+
+C.addEventListener('touchstart',onStart,{passive:false});
+C.addEventListener('touchmove',onMove,{passive:false});
+C.addEventListener('touchend',onEnd,{passive:false});
+C.addEventListener('mousedown',onStart);
+C.addEventListener('mousemove',onMove);
+C.addEventListener('mouseup',onEnd);
+
+// Keyboard: R to retry, Escape for menu
+document.addEventListener('keydown',e=>{
+  if(e.key==='r'||e.key==='R'){
+    if(STATE.screen==='playing'||STATE.screen==='gameover'){retryLevel();return}
+  }
+  if(e.key==='Escape'){
+    showMenu();return;
+  }
+});
+
+// ─── Screens ─────────────────────────────────────────────
+function hideAllScreens(){
+  ['menu-screen','level-select-screen','level-complete-screen','game-over-screen'].forEach(id=>{
+    document.getElementById(id).classList.add('screen-hidden');
+  });
+}
+
+function showMenu(){
+  STATE.screen='menu';
+  hideAllScreens();
+  document.getElementById('menu-screen').classList.remove('screen-hidden');
+}
+
+function startGame(level,mode){
+  initAudio();
+  STATE.mode=mode||'campaign';
+  STATE.level=level;
+  STATE.totalScore=0;
+  STATE.screen='playing';
+  hideAllScreens();
+  if(STATE.mode==='endless'){
+    STATE.endlessSeed=Date.now();
+    loadLevel(level,STATE.endlessSeed+level);
+  } else {
+    loadLevel(level);
+  }
+  document.getElementById('aim-hint').classList.remove('hint-hidden');
+}
+
+function showComplete(){
+  STATE.screen='complete';
+  const shots=STATE.shots;
+  const par=currentLevel.par;
+  let stars=1;
+  if(shots<=par)stars=3;
+  else if(shots<=par+1)stars=2;
+
+  // Save progress
+  const ln=STATE.level;
+  if(STATE.mode==='campaign'){
+    const prev=save.levels[ln];
+    if(!prev||prev<stars){save.levels[ln]=stars}
+    if(ln>=save.unlocked)save.unlocked=Math.min(ln+1,TOTAL_LEVELS);
+    saveProg();
+  } else {
+    if(ln>save.bestEndless){save.bestEndless=ln;saveProg()}
+  }
+
+  const msgs=['NICE!','GREAT SHOT!','STELLAR!','INCREDIBLE!'];
+  if(stars===3)sfxStar();
+
+  document.getElementById('complete-msg').textContent=stars===3?'PERFECT!':stars===2?'GREAT!':'COMPLETE!';
+  document.getElementById('complete-stars').textContent='★'.repeat(stars)+'☆'.repeat(3-stars);
+  document.getElementById('complete-sub').textContent=`${shots} shot${shots!==1?'s':''} (par ${par})`;
+  if(STATE.mode==='endless'){
+    document.getElementById('complete-score').textContent=`Endless Level ${STATE.level} | Best: ${save.bestEndless}`;
+  } else {
+    document.getElementById('complete-score').textContent='';
+  }
+  hideAllScreens();
+  document.getElementById('level-complete-screen').classList.remove('screen-hidden');
+}
+
+function showGameOver(){
+  STATE.screen='gameover';
+  hideAllScreens();
+  document.getElementById('game-over-screen').classList.remove('screen-hidden');
+}
+
+function retryLevel(){
+  STATE.screen='playing';
+  hideAllScreens();
+  if(STATE.mode==='endless'){
+    loadLevel(STATE.level,STATE.endlessSeed+STATE.level);
+  } else {
+    loadLevel(STATE.level);
+  }
+  document.getElementById('aim-hint').classList.remove('hint-hidden');
+}
+
+function nextLevel(){
+  STATE.level++;
+  if(STATE.mode==='campaign'&&STATE.level>TOTAL_LEVELS){
+    showMenu();return;
+  }
+  STATE.screen='playing';
+  hideAllScreens();
+  if(STATE.mode==='endless'){
+    loadLevel(STATE.level,STATE.endlessSeed+STATE.level);
+  } else {
+    loadLevel(STATE.level);
+  }
+}
+
+function showLevelSelect(){
+  STATE.screen='levelselect';
+  hideAllScreens();
+  const grid=document.getElementById('level-grid');
+  grid.innerHTML='';
+  for(let i=1;i<=TOTAL_LEVELS;i++){
+    const btn=document.createElement('button');
+    btn.className='level-btn';
+    if(i>save.unlocked)btn.classList.add('locked');
+    if(save.levels[i])btn.classList.add('completed');
+    const stars=save.levels[i]||0;
+    btn.innerHTML=`${i}<span class="level-stars">${'★'.repeat(stars)}${'☆'.repeat(Math.max(0,3-stars))}</span>`;
+    btn.addEventListener('click',()=>{if(i<=save.unlocked)startGame(i,'campaign')});
+    grid.appendChild(btn);
+  }
+  document.getElementById('level-select-screen').classList.remove('screen-hidden');
+}
+
+// ─── Button Handlers ─────────────────────────────────────
+document.getElementById('btn-play').addEventListener('click',()=>{
+  const firstIncomplete=Object.keys(save.levels).length+1;
+  startGame(Math.min(firstIncomplete,save.unlocked),'campaign');
+});
+document.getElementById('btn-endless').addEventListener('click',()=>startGame(1,'endless'));
+document.getElementById('btn-levels').addEventListener('click',showLevelSelect);
+document.getElementById('btn-back-menu').addEventListener('click',showMenu);
+document.getElementById('btn-menu').addEventListener('click',showMenu);
+document.getElementById('btn-retry').addEventListener('click',retryLevel);
+document.getElementById('btn-next-level').addEventListener('click',nextLevel);
+document.getElementById('btn-complete-retry').addEventListener('click',retryLevel);
+document.getElementById('btn-go-retry').addEventListener('click',retryLevel);
+document.getElementById('btn-go-menu').addEventListener('click',showMenu);
+
+// Prevent double-tap zoom on buttons
+document.querySelectorAll('button').forEach(b=>{
+  b.addEventListener('touchend',e=>{e.preventDefault();b.click()},{passive:false});
+});
+
+// ─── Init ────────────────────────────────────────────────
+// Pre-generate level 1 so bg renders something
+loadLevel(1);
+showMenu();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

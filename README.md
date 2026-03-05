@@ -184,6 +184,13 @@ Simulateur de réfraction lumineuse — un faisceau de lumière blanche traverse
 
 ---
 
+### ⛳ [Gravity Golf](./gravity-golf/)
+Golf spatial one-touch — lance ta balle à travers des champs gravitationnels de planètes néon. Drag slingshot pour viser, relâche pour lancer, regarde la trajectoire se courber autour des astres. 30 niveaux procéduraux + mode endless, scoring étoiles, prediction dots, trail néon, Web Audio API. Addictif.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/gravity-golf/)
+
+---
+
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
 
 ### 🪐 **[Orbit Catch](https://adrrr.github.io/night-projects/orbit-catch/)**
