@@ -207,3 +207,8 @@ Jeu de réaction en chaîne — des bulles néon flottent depuis le bas de l'éc
 Jeu de timing addictif — empile les blocs en les alignant parfaitement. Les débordements sont tranchés et tombent avec gravité et rotation. Combos PERFECT avec screen shake et particules néon, couleurs HSL progressives, high score localStorage. Tap mobile + espace/clic desktop.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/stack-tower/)
+
+### 🔮 **[Bounce Fusion](https://adrrr.github.io/night-projects/bounce-fusion/)**
+Jeu de fusion addictif inspiré de Suika Game — des balles néon tombent du haut de l'écran. Contrôle un paddle pour les renvoyer, et quand deux balles de même couleur et même niveau se touchent, elles fusionnent en une plus grosse ! 4 couleurs néon (cyan, magenta, lime, gold), 5 niveaux de fusion, powerup gravity flip, combos multiplicateurs, particules explosives, screen shake, sons Web Audio API. Mobile-first (touch drag) + desktop (souris/clavier).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/bounce-fusion/)
