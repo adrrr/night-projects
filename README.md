@@ -208,6 +208,11 @@ Jeu de timing addictif — empile les blocs en les alignant parfaitement. Les d�
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/stack-tower/)
 
+### 🛸 **[Orbit Duel](https://adrrr.github.io/night-projects/orbit-duel/)**
+Jeu de combat spatial gravitationnel — ton vaisseau orbite autour d'une étoile centrale, tire des projectiles qui courbent avec la gravité. Les ennemis orbitent aussi et te tirent dessus. Vagues progressives avec astéroïdes (wave 3+) et trous noirs (wave 5+) qui déforment les trajectoires. Drag pour viser avec preview de trajectoire, one-hit kills, restart instantané. Screen shake, trails néon, particules explosives, sons Web Audio API. Mobile-first (tap/drag) + desktop (WASD/souris).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/orbit-duel/)
+
 ### 🔮 **[Bounce Fusion](https://adrrr.github.io/night-projects/bounce-fusion/)**
 Jeu de fusion addictif inspiré de Suika Game — des balles néon tombent du haut de l'écran. Contrôle un paddle pour les renvoyer, et quand deux balles de même couleur et même niveau se touchent, elles fusionnent en une plus grosse ! 4 couleurs néon (cyan, magenta, lime, gold), 5 niveaux de fusion, powerup gravity flip, combos multiplicateurs, particules explosives, screen shake, sons Web Audio API. Mobile-first (touch drag) + desktop (souris/clavier).
 
