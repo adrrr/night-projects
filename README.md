@@ -217,3 +217,8 @@ Jeu de combat spatial gravitationnel — ton vaisseau orbite autour d'une étoil
 Jeu de fusion addictif inspiré de Suika Game — des balles néon tombent du haut de l'écran. Contrôle un paddle pour les renvoyer, et quand deux balles de même couleur et même niveau se touchent, elles fusionnent en une plus grosse ! 4 couleurs néon (cyan, magenta, lime, gold), 5 niveaux de fusion, powerup gravity flip, combos multiplicateurs, particules explosives, screen shake, sons Web Audio API. Mobile-first (touch drag) + desktop (souris/clavier).
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/bounce-fusion/)
+
+### 🚀 **[Pixel Gravity](https://adrrr.github.io/night-projects/pixel-gravity/)**
+Jeu de gravity-flip addictif style Flappy Bird — ton vaisseau avance automatiquement et tu tapes pour inverser la gravité. Esquive les obstacles néon rouges et collecte les gemmes dorées pour des combos. Difficulté progressive (vitesse + espacement), particules de trail cyan/magenta selon la direction de la gravité, explosion satisfaisante à la mort, high score localStorage, Web Audio API. Un seul geste : tap/space pour tout contrôler. Dark neon aesthetic, 60fps.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/pixel-gravity/)
