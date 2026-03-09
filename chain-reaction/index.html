@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Chain Reaction</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a12;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#e0e0ff}
+canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0;touch-action:none}
+#ui{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10}
+#hud{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 16px;font-size:16px;letter-spacing:1px}
+#hud>div{background:rgba(10,10,18,0.7);border:1px solid rgba(120,80,255,0.3);border-radius:8px;padding:8px 14px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.label{font-size:11px;text-transform:uppercase;color:rgba(180,160,255,0.6);letter-spacing:2px;margin-bottom:2px}
+.value{font-size:22px;font-weight:700;color:#c8b0ff}
+#overlay{position:fixed;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:auto;z-index:20;background:rgba(6,6,14,0.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:opacity 0.4s}
+#overlay.hidden{opacity:0;pointer-events:none}
+#overlay h1{font-size:clamp(32px,8vw,56px);font-weight:900;background:linear-gradient(135deg,#ff6ec7,#7c4dff,#00e5ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px;letter-spacing:-1px}
+#overlay .sub{font-size:clamp(14px,3.5vw,18px);color:rgba(180,160,255,0.7);margin-bottom:32px}
+.btn{pointer-events:auto;background:linear-gradient(135deg,#7c4dff,#536dfe);border:none;color:#fff;font-size:clamp(16px,4vw,20px);font-weight:700;padding:16px 48px;border-radius:50px;cursor:pointer;letter-spacing:1px;min-width:200px;min-height:52px;transition:transform 0.15s,box-shadow 0.15s;box-shadow:0 4px 24px rgba(124,77,255,0.4)}
+.btn:active{transform:scale(0.95);box-shadow:0 2px 12px rgba(124,77,255,0.3)}
+#result{font-size:clamp(20px,5vw,32px);font-weight:800;margin-bottom:6px}
+#result-detail{font-size:clamp(13px,3vw,16px);color:rgba(180,160,255,0.7);margin-bottom:24px}
+#stats{display:flex;gap:24px;margin-bottom:28px}
+#stats>div{text-align:center}
+#stats .label{font-size:10px}
+#stats .value{font-size:20px}
+#level-indicator{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:clamp(48px,14vw,96px);font-weight:900;color:rgba(124,77,255,0.15);pointer-events:none;z-index:5;transition:opacity 0.6s}
+#level-indicator.hidden{opacity:0}
+#hint{position:fixed;bottom:max(20px,env(safe-area-inset-bottom,20px));left:50%;transform:translateX(-50%);font-size:clamp(12px,3vw,15px);color:rgba(180,160,255,0.45);pointer-events:none;z-index:10;white-space:nowrap;transition:opacity 0.6s}
+#hint.hidden{opacity:0}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="hud">
+    <div><div class="label">Level</div><div class="value" id="hud-level">1</div></div>
+    <div><div class="label">Best</div><div class="value" id="hud-best">-</div></div>
+    <div><div class="label">Score</div><div class="value" id="hud-score">0</div></div>
+  </div>
+</div>
+<div id="overlay">
+  <h1>CHAIN REACTION</h1>
+  <div class="sub">Tap to detonate. Destroy all orbs.</div>
+  <button class="btn" id="start-btn">TAP TO PLAY</button>
+</div>
+<div id="level-indicator" class="hidden"></div>
+<div id="hint" class="hidden">Tap anywhere to detonate</div>
+<script>
+(()=>{
+'use strict';
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+const overlay=document.getElementById('overlay');
+const startBtn=document.getElementById('start-btn');
+const hudLevel=document.getElementById('hud-level');
+const hudBest=document.getElementById('hud-best');
+const hudScore=document.getElementById('hud-score');
+const levelInd=document.getElementById('level-indicator');
+const hintEl=document.getElementById('hint');
+const resultEl=document.getElementById('result');
+const resultDetailEl=document.getElementById('result-detail');
+
+let W,H,dpr;
+let state='menu'; // menu, playing, detonating, result
+let orbs=[];
+let explosions=[];
+let particles=[];
+let shockwaves=[];
+let level=1;
+let score=0;
+let bestLevel=parseInt(localStorage.getItem('cr-best'))||0;
+let combo=0;
+let maxCombo=0;
+let shakeX=0,shakeY=0,shakeDecay=0;
+let bgStars=[];
+let hintTimer=0;
+let levelFlashTimer=0;
+let clickAllowed=true;
+
+// Audio
+const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+function resumeAudio(){if(audioCtx.state==='suspended')audioCtx.resume()}
+
+function playTone(freq,dur,vol=0.15,type='sine'){
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.type=type;
+  o.frequency.setValueAtTime(freq,audioCtx.currentTime);
+  g.gain.setValueAtTime(vol,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start();o.stop(audioCtx.currentTime+dur);
+}
+
+function playExplosion(pitch=1){
+  const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.3,audioCtx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++){
+    d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2+pitch*0.5);
+  }
+  const s=audioCtx.createBufferSource();
+  s.buffer=buf;
+  s.playbackRate.value=0.6+pitch*0.4;
+  const g=audioCtx.createGain();
+  g.gain.value=0.2;
+  s.connect(g);g.connect(audioCtx.destination);
+  s.start();
+}
+
+function playChainSound(n){
+  const base=220;
+  const freq=base*Math.pow(1.12,Math.min(n,20));
+  playTone(freq,0.25,0.12,'triangle');
+  playExplosion(Math.min(n/10,2));
+}
+
+function playWin(){
+  [0,4,7,12].forEach((n,i)=>{
+    setTimeout(()=>playTone(330*Math.pow(2,n/12),0.4,0.15,'triangle'),i*120);
+  });
+}
+
+function playFail(){
+  [0,-1,-3].forEach((n,i)=>{
+    setTimeout(()=>playTone(220*Math.pow(2,n/12),0.5,0.12,'sawtooth'),i*150);
+  });
+}
+
+// Colors
+const orbColors=[
+  '#ff6ec7','#7c4dff','#00e5ff','#76ff03','#ffea00','#ff5252','#18ffff','#ea80fc','#ff9100','#69f0ae'
+];
+function randColor(){return orbColors[Math.floor(Math.random()*orbColors.length)]}
+
+// Resize
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=W*dpr;canvas.height=H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(bgStars.length===0)initStars();
+}
+window.addEventListener('resize',resize);
+resize();
+
+function initStars(){
+  bgStars=[];
+  for(let i=0;i<80;i++){
+    bgStars.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.2+0.3,a:Math.random()*0.4+0.1,sp:Math.random()*0.3+0.1});
+  }
+}
+
+// Orb class
+function createOrb(x,y,r,color){
+  const angle=Math.random()*Math.PI*2;
+  const speed=0.3+Math.random()*0.6;
+  return{
+    x,y,r,color,
+    vx:Math.cos(angle)*speed,
+    vy:Math.sin(angle)*speed,
+    alive:true,
+    exploding:false,
+    explodeTimer:0,
+    explodeMax:0,
+    pulsePhase:Math.random()*Math.PI*2,
+    glowIntensity:0
+  };
+}
+
+// Explosion (expanding circle that triggers chain)
+function createExplosion(x,y,maxR,color,delay=0){
+  return{x,y,r:0,maxR,color,delay,timer:0,alpha:1,triggered:false};
+}
+
+// Particle
+function createParticle(x,y,color){
+  const angle=Math.random()*Math.PI*2;
+  const speed=2+Math.random()*6;
+  return{
+    x,y,
+    vx:Math.cos(angle)*speed,
+    vy:Math.sin(angle)*speed,
+    r:1.5+Math.random()*3,
+    color,
+    life:1,
+    decay:0.015+Math.random()*0.025
+  };
+}
+
+function createShockwave(x,y,color){
+  return{x,y,r:0,maxR:Math.min(W,H)*0.3,alpha:0.6,color};
+}
+
+// Level generation
+function generateLevel(lvl){
+  orbs=[];
+  explosions=[];
+  particles=[];
+  shockwaves=[];
+  combo=0;maxCombo=0;
+  clickAllowed=true;
+
+  const margin=50;
+  const count=Math.min(5+lvl*2,60);
+  const baseR=Math.max(14-lvl*0.3,8);
+  const rVar=4;
+
+  for(let i=0;i<count;i++){
+    const r=baseR+Math.random()*rVar;
+    const x=margin+r+Math.random()*(W-2*margin-2*r);
+    const y=margin+r+60+Math.random()*(H-2*margin-2*r-60);
+    orbs.push(createOrb(x,y,r,randColor()));
+  }
+}
+
+// Chain radius scales with level for more satisfying chains
+function getChainRadius(lvl){
+  return Math.max(70-lvl*1.5,35);
+}
+
+// Input
+function handleInput(px,py){
+  if(state==='playing'&&clickAllowed){
+    resumeAudio();
+    state='detonating';
+    clickAllowed=false;
+    hintEl.classList.add('hidden');
+
+    // Player's initial explosion
+    const chainR=getChainRadius(level);
+    explosions.push(createExplosion(px,py,chainR,'#ffffff',0));
+    playExplosion(0.5);
+    addShake(8);
+
+    // Spawn particles at click
+    for(let i=0;i<15;i++) particles.push(createParticle(px,py,'#ffffff'));
+    shockwaves.push(createShockwave(px,py,'rgba(255,255,255,0.3)'));
+  }
+}
+
+canvas.addEventListener('pointerdown',(e)=>{
+  e.preventDefault();
+  resumeAudio();
+  const rect=canvas.getBoundingClientRect();
+  handleInput(e.clientX-rect.left,e.clientY-rect.top);
+});
+
+startBtn.addEventListener('click',()=>{
+  resumeAudio();
+  startGame();
+});
+startBtn.addEventListener('touchend',(e)=>{
+  e.preventDefault();
+  resumeAudio();
+  startGame();
+});
+
+function startGame(){
+  level=1;score=0;
+  hudScore.textContent='0';
+  overlay.classList.add('hidden');
+  startLevel();
+}
+
+function startLevel(){
+  hudLevel.textContent=level;
+  if(bestLevel>0)hudBest.textContent=bestLevel;
+  generateLevel(level);
+  state='playing';
+  levelInd.textContent='LEVEL '+level;
+  levelInd.classList.remove('hidden');
+  levelFlashTimer=90;
+  hintEl.classList.remove('hidden');
+  hintTimer=180;
+}
+
+function addShake(amt){
+  shakeDecay=Math.max(shakeDecay,amt);
+}
+
+// Update
+function update(){
+  // Stars drift
+  for(const s of bgStars){
+    s.y+=s.sp;
+    if(s.y>H+5){s.y=-5;s.x=Math.random()*W;}
+  }
+
+  if(state==='menu')return;
+
+  // Level indicator fade
+  if(levelFlashTimer>0){
+    levelFlashTimer--;
+    if(levelFlashTimer<=0)levelInd.classList.add('hidden');
+  }
+
+  // Hint fade
+  if(hintTimer>0){
+    hintTimer--;
+    if(hintTimer<=0)hintEl.classList.add('hidden');
+  }
+
+  // Update orbs
+  const padding=10;
+  for(const o of orbs){
+    if(!o.alive)continue;
+    o.x+=o.vx;
+    o.y+=o.vy;
+    o.pulsePhase+=0.04;
+
+    // Bounce off walls
+    if(o.x-o.r<padding){o.x=padding+o.r;o.vx=Math.abs(o.vx);}
+    if(o.x+o.r>W-padding){o.x=W-padding-o.r;o.vx=-Math.abs(o.vx);}
+    if(o.y-o.r<70){o.y=70+o.r;o.vy=Math.abs(o.vy);}
+    if(o.y+o.r>H-padding){o.y=H-padding-o.r;o.vy=-Math.abs(o.vy);}
+
+    // Glow near explosions
+    o.glowIntensity*=0.9;
+    for(const e of explosions){
+      if(e.delay>0)continue;
+      const dx=o.x-e.x,dy=o.y-e.y;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<e.r+80){
+        o.glowIntensity=Math.min(1,(e.r+80-dist)/80);
+      }
+    }
+  }
+
+  // Update explosions
+  for(const e of explosions){
+    if(e.delay>0){e.delay--;continue;}
+    e.timer++;
+    const progress=e.timer/30;
+    e.r=e.maxR*Math.min(progress,1);
+    e.alpha=Math.max(0,1-e.timer/45);
+
+    // Check chain reactions
+    if(!e.triggered&&e.timer<35){
+      for(const o of orbs){
+        if(!o.alive||o.exploding)continue;
+        const dx=o.x-e.x,dy=o.y-e.y;
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        if(dist<e.r+o.r){
+          // Orb caught in explosion
+          o.exploding=true;
+          o.explodeTimer=0;
+          o.explodeMax=8+Math.random()*6;
+        }
+      }
+    }
+    if(e.timer>=35)e.triggered=true;
+  }
+
+  // Process exploding orbs
+  for(const o of orbs){
+    if(!o.exploding||!o.alive)continue;
+    o.explodeTimer++;
+    if(o.explodeTimer>=o.explodeMax){
+      o.alive=false;
+      combo++;
+      maxCombo=Math.max(maxCombo,combo);
+
+      playChainSound(combo);
+      addShake(3+Math.min(combo*0.5,12));
+
+      // Spawn chain explosion from this orb
+      const chainR=getChainRadius(level);
+      explosions.push(createExplosion(o.x,o.y,chainR+o.r,o.color,0));
+
+      // Particles
+      const pCount=10+Math.min(combo*2,20);
+      for(let i=0;i<pCount;i++) particles.push(createParticle(o.x,o.y,o.color));
+      shockwaves.push(createShockwave(o.x,o.y,o.color));
+
+      // Score
+      const points=combo*10;
+      score+=points;
+      hudScore.textContent=score;
+    }
+  }
+
+  // Remove dead explosions
+  explosions=explosions.filter(e=>e.alpha>0.01);
+
+  // Update particles
+  for(const p of particles){
+    p.x+=p.vx;p.y+=p.vy;
+    p.vx*=0.97;p.vy*=0.97;
+    p.vy+=0.05;
+    p.life-=p.decay;
+    p.r*=0.995;
+  }
+  particles=particles.filter(p=>p.life>0);
+
+  // Shockwaves
+  for(const s of shockwaves){
+    s.r+=8;
+    s.alpha*=0.92;
+  }
+  shockwaves=shockwaves.filter(s=>s.alpha>0.02);
+
+  // Screen shake
+  if(shakeDecay>0.1){
+    shakeX=(Math.random()-0.5)*shakeDecay;
+    shakeY=(Math.random()-0.5)*shakeDecay;
+    shakeDecay*=0.88;
+  }else{
+    shakeX=shakeY=0;shakeDecay=0;
+  }
+
+  // Check win/lose after all explosions done
+  if(state==='detonating'){
+    const anyExploding=orbs.some(o=>o.alive&&o.exploding);
+    const anyExplosion=explosions.length>0;
+    if(!anyExploding&&!anyExplosion){
+      const alive=orbs.filter(o=>o.alive).length;
+      const total=orbs.length;
+      if(alive===0){
+        // WIN
+        state='result';
+        if(level>bestLevel){
+          bestLevel=level;
+          localStorage.setItem('cr-best',bestLevel);
+          hudBest.textContent=bestLevel;
+        }
+        playWin();
+        setTimeout(()=>showResult(true,total),600);
+      }else{
+        // LOSE
+        state='result';
+        playFail();
+        setTimeout(()=>showResult(false,total-alive,total),600);
+      }
+    }
+  }
+}
+
+function showResult(won,destroyed,total){
+  overlay.classList.remove('hidden');
+  overlay.querySelector('h1').textContent=won?'PERFECT!':'CHAIN ENDED';
+  overlay.querySelector('.sub').textContent=won
+    ?'All orbs destroyed! Chain x'+maxCombo
+    :(destroyed||0)+'/'+total+' destroyed - Chain x'+maxCombo;
+
+  // Rebuild overlay content
+  let statsHTML='';
+  if(won){
+    startBtn.textContent='NEXT LEVEL';
+    startBtn.onclick=()=>{
+      resumeAudio();
+      level++;
+      overlay.classList.add('hidden');
+      startLevel();
+    };
+  }else{
+    startBtn.textContent='RETRY LEVEL '+level;
+    startBtn.onclick=()=>{
+      resumeAudio();
+      overlay.classList.add('hidden');
+      startLevel();
+    };
+  }
+}
+
+// Draw
+function draw(){
+  ctx.save();
+  ctx.clearRect(0,0,W,H);
+
+  // BG gradient
+  const bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.7);
+  bg.addColorStop(0,'#12102a');
+  bg.addColorStop(1,'#0a0a12');
+  ctx.fillStyle=bg;
+  ctx.fillRect(0,0,W,H);
+
+  // Stars
+  for(const s of bgStars){
+    ctx.globalAlpha=s.a;
+    ctx.fillStyle='#c8b0ff';
+    ctx.beginPath();
+    ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // Apply shake
+  ctx.translate(shakeX,shakeY);
+
+  // Shockwaves
+  for(const s of shockwaves){
+    ctx.globalAlpha=s.alpha;
+    ctx.strokeStyle=s.color;
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  // Explosions (glow circles)
+  for(const e of explosions){
+    if(e.delay>0)continue;
+    ctx.globalAlpha=e.alpha*0.4;
+    const g=ctx.createRadialGradient(e.x,e.y,0,e.x,e.y,e.r);
+    g.addColorStop(0,e.color);
+    g.addColorStop(0.5,e.color+'88');
+    g.addColorStop(1,'transparent');
+    ctx.fillStyle=g;
+    ctx.beginPath();
+    ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // Orbs
+  for(const o of orbs){
+    if(!o.alive)continue;
+    const pulse=1+Math.sin(o.pulsePhase)*0.08;
+    const r=o.r*pulse;
+
+    // Glow
+    if(o.glowIntensity>0.05||o.exploding){
+      const gi=o.exploding?1:o.glowIntensity;
+      ctx.globalAlpha=gi*0.5;
+      const glow=ctx.createRadialGradient(o.x,o.y,r,o.x,o.y,r*3);
+      glow.addColorStop(0,o.color);
+      glow.addColorStop(1,'transparent');
+      ctx.fillStyle=glow;
+      ctx.beginPath();
+      ctx.arc(o.x,o.y,r*3,0,Math.PI*2);
+      ctx.fill();
+    }
+
+    // Exploding flash
+    if(o.exploding){
+      const t=o.explodeTimer/o.explodeMax;
+      const flashR=r*(1+t*1.5);
+      ctx.globalAlpha=(1-t)*0.8;
+      ctx.fillStyle='#fff';
+      ctx.beginPath();
+      ctx.arc(o.x,o.y,flashR,0,Math.PI*2);
+      ctx.fill();
+    }
+
+    // Main orb body
+    ctx.globalAlpha=1;
+    const grad=ctx.createRadialGradient(o.x-r*0.3,o.y-r*0.3,r*0.1,o.x,o.y,r);
+    grad.addColorStop(0,'#ffffff');
+    grad.addColorStop(0.3,o.color);
+    grad.addColorStop(1,darken(o.color,0.4));
+    ctx.fillStyle=grad;
+    ctx.beginPath();
+    ctx.arc(o.x,o.y,r,0,Math.PI*2);
+    ctx.fill();
+
+    // Subtle outline
+    ctx.strokeStyle=o.color;
+    ctx.lineWidth=1.5;
+    ctx.globalAlpha=0.5;
+    ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+
+  // Particles
+  for(const p of particles){
+    ctx.globalAlpha=p.life;
+    ctx.fillStyle=p.color;
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // Combo display
+  if(state==='detonating'&&combo>1){
+    ctx.save();
+    ctx.globalAlpha=Math.min(1,combo/3)*0.8;
+    ctx.fillStyle='#ffffff';
+    ctx.font=`900 ${Math.min(40+combo*2,80)}px system-ui`;
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.shadowColor='#7c4dff';
+    ctx.shadowBlur=20;
+    ctx.fillText('x'+combo,W/2,H/2);
+    ctx.shadowBlur=0;
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function darken(hex,amt){
+  let c=hex.replace('#','');
+  if(c.length===3)c=c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
+  const r=Math.max(0,parseInt(c.substr(0,2),16)*(1-amt))|0;
+  const g=Math.max(0,parseInt(c.substr(2,2),16)*(1-amt))|0;
+  const b=Math.max(0,parseInt(c.substr(4,2),16)*(1-amt))|0;
+  return`rgb(${r},${g},${b})`;
+}
+
+// Game loop
+function loop(){
+  resize();
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Init
+if(bestLevel>0)hudBest.textContent=bestLevel;
+loop();
+})();
+</script>
+</body>
+</html>
