@@ -191,6 +191,13 @@ Golf spatial one-touch — lance ta balle à travers des champs gravitationnels 
 
 ---
 
+### 💥 **[Chain Reaction](https://adrrr.github.io/night-projects/chain-reaction/)**
+Puzzle explosif — tap pour déclencher une détonation parmi des orbes flottantes. Les explosions se propagent en chaîne et détruisent les orbes voisines. Timing parfait requis pour tout détruire en un seul clic. Niveaux progressifs (orbes croissantes, rayon d'explosion réduit), combos x10+, screen shake intensif, sons qui montent en pitch avec la chaîne, particules et shockwaves. Dark neon aesthetic, zéro dépendance.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/chain-reaction/)
+
+---
+
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
 
 ### 🪐 **[Orbit Catch](https://adrrr.github.io/night-projects/orbit-catch/)**
