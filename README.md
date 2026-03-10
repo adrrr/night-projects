@@ -198,6 +198,11 @@ Puzzle explosif — tap pour déclencher une détonation parmi des orbes flottan
 
 ---
 
+### 🏃 **[Gravity Dash](https://adrrr.github.io/night-projects/gravity-dash/)**
+Endless runner gravity-flip — tap/space pour inverser la gravité de ton orbe néon cyan. Esquive les obstacles roses, collecte les gemmes dorées, et frôle les murs pour un multiplicateur near-miss jusqu'à x5 (flash vert + son). Vitesse progressive, explosion de particules à la mort, high score localStorage, restart instantané. Web Audio API, dark neon aesthetic, 60fps. Un seul geste : tap pour tout contrôler.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/gravity-dash/)
+
 *Un nouveau projet chaque nuit à 1h du matin 🦊*
 
 ### 🪐 **[Orbit Catch](https://adrrr.github.io/night-projects/orbit-catch/)**
