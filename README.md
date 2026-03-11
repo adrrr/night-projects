@@ -234,3 +234,8 @@ Jeu de fusion addictif inspiré de Suika Game — des balles néon tombent du ha
 Jeu de gravity-flip addictif style Flappy Bird — ton vaisseau avance automatiquement et tu tapes pour inverser la gravité. Esquive les obstacles néon rouges et collecte les gemmes dorées pour des combos. Difficulté progressive (vitesse + espacement), particules de trail cyan/magenta selon la direction de la gravité, explosion satisfaisante à la mort, high score localStorage, Web Audio API. Un seul geste : tap/space pour tout contrôler. Dark neon aesthetic, 60fps.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/pixel-gravity/)
+
+### 🎱 **[Ricochet Blast](https://adrrr.github.io/night-projects/ricochet-blast/)**
+Jeu de billard-pinball addictif — vise et tire une balle qui ricoche sur les murs. Chaque rebond score des points avec un système de combo croissant (10×combo). Collecte des cibles cyan (20pts) et des gemmes diamant dorées (50pts) avec multiplicateur. 3 tirs par manche, preview de trajectoire en pointillés, jauge de puissance. Particules explosives, screen shake, anneaux lumineux, trail de la balle qui change de couleur avec le combo. Sons Web Audio (rebond monte en pitch avec le combo), high score localStorage. Drag-to-aim mobile-first, souris + clavier desktop. Dark neon aesthetic, 60fps.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/ricochet-blast/)
