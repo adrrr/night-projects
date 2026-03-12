@@ -239,3 +239,8 @@ Jeu de gravity-flip addictif style Flappy Bird — ton vaisseau avance automatiq
 Jeu de billard-pinball addictif — vise et tire une balle qui ricoche sur les murs. Chaque rebond score des points avec un système de combo croissant (10×combo). Collecte des cibles cyan (20pts) et des gemmes diamant dorées (50pts) avec multiplicateur. 3 tirs par manche, preview de trajectoire en pointillés, jauge de puissance. Particules explosives, screen shake, anneaux lumineux, trail de la balle qui change de couleur avec le combo. Sons Web Audio (rebond monte en pitch avec le combo), high score localStorage. Drag-to-aim mobile-first, souris + clavier desktop. Dark neon aesthetic, 60fps.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/ricochet-blast/)
+
+### 🔴 **[Dodge Matrix](https://adrrr.github.io/night-projects/dodge-matrix/)**
+Bullet-hell survival — contrôle un orbe néon cyan et esquive des vagues de projectiles aux patterns géométriques (pluie, spirales, anneaux, crossfire, grid storm, helix, chaos, supernova). Système de graze : frôler les bullets sans les toucher donne des points bonus avec combo multiplicateur et des étincelles satisfaisantes. Power-up slow-mo occasionnel. 9 vagues nommées avec difficulté croissante, trail/afterimage du joueur, screen shake, particle explosions, Web Audio API (graze chime, death explosion, wave fanfare). High score localStorage. Drag/touch mobile-first, WASD/arrows desktop. Dark neon aesthetic, 60fps.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/dodge-matrix/)
