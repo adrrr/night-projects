@@ -244,3 +244,8 @@ Jeu de billard-pinball addictif — vise et tire une balle qui ricoche sur les m
 Bullet-hell survival — contrôle un orbe néon cyan et esquive des vagues de projectiles aux patterns géométriques (pluie, spirales, anneaux, crossfire, grid storm, helix, chaos, supernova). Système de graze : frôler les bullets sans les toucher donne des points bonus avec combo multiplicateur et des étincelles satisfaisantes. Power-up slow-mo occasionnel. 9 vagues nommées avec difficulté croissante, trail/afterimage du joueur, screen shake, particle explosions, Web Audio API (graze chime, death explosion, wave fanfare). High score localStorage. Drag/touch mobile-first, WASD/arrows desktop. Dark neon aesthetic, 60fps.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/dodge-matrix/)
+
+### ⬇️ **[Gap Fall](https://adrrr.github.io/night-projects/gap-fall/)**
+Balle en chute libre à travers une tour infinie de plateformes — glisse dans les gaps pour survivre. Système de combo : enchaîne les passages sans toucher de plateforme pour des multiplicateurs de score croissants (x2, x3... avec labels UNSTOPPABLE, LEGENDARY, GODLIKE, MYTHICAL). Particules néon proportionnelles au combo, screen shake, color flash, balle qui change de couleur à chaque gap. Vitesse et gravité croissantes, gaps qui rétrécissent. Web Audio API (tons ascendants sur combo, impact, game over dramatique). High score localStorage, restart instantané. Drag/touch mobile-first, arrows/WASD desktop. Dark neon aesthetic, 60fps.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/gap-fall/)
