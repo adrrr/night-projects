@@ -254,3 +254,8 @@ Balle en chute libre à travers une tour infinie de plateformes — glisse dans 
 Arcade de cell-splitting — commence avec un seul orbe lumineux, tap/click pour le diviser en deux. Chaque fragment se déplace et rebondit, et tu dois guider TOUS tes morceaux à travers les gaps des murs rouges qui arrivent. Plus tu split, plus c'est intense à gérer. Score = pièces vivantes × vagues passées. Trails néon colorés, particle bursts au split et à la destruction, screen shake, Web Audio SFX (split chime, explosion, wave fanfare, game over dramatique). Swipe/drag pour influencer la dérive, WASD desktop. Difficulté progressive (murs plus rapides, gaps plus étroits). High score localStorage. Dark neon aesthetic, 60fps.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/split-surge/)
+
+### 🐟 **[Deep Feed](https://adrrr.github.io/night-projects/deep-feed/)**
+Jeu aquatique eat-to-grow — tu contrôles un petit poisson bioluminescent dans l'océan profond. Mange les poissons plus petits pour grossir, évite les prédateurs qui te chassent. 10 espèces distinctes dessinées en canvas (poisson-clown à rayures, poisson-globe avec piquants, baudroie avec lanterne, etc.). Fond océanique avec gradient profond, algues animées, bulles montantes, rayons de lumière. Web Audio immersif (ambiance sous-marine, pop de bulles, alertes prédateur). Touch drag pour nager, tap pour booster. Barre de taille, barre de boost, high score localStorage. Difficulté progressive.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/deep-feed/)
