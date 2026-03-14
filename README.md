@@ -249,3 +249,8 @@ Bullet-hell survival — contrôle un orbe néon cyan et esquive des vagues de p
 Balle en chute libre à travers une tour infinie de plateformes — glisse dans les gaps pour survivre. Système de combo : enchaîne les passages sans toucher de plateforme pour des multiplicateurs de score croissants (x2, x3... avec labels UNSTOPPABLE, LEGENDARY, GODLIKE, MYTHICAL). Particules néon proportionnelles au combo, screen shake, color flash, balle qui change de couleur à chaque gap. Vitesse et gravité croissantes, gaps qui rétrécissent. Web Audio API (tons ascendants sur combo, impact, game over dramatique). High score localStorage, restart instantané. Drag/touch mobile-first, arrows/WASD desktop. Dark neon aesthetic, 60fps.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/gap-fall/)
+
+### 🔮 **[Split Surge](https://adrrr.github.io/night-projects/split-surge/)**
+Arcade de cell-splitting — commence avec un seul orbe lumineux, tap/click pour le diviser en deux. Chaque fragment se déplace et rebondit, et tu dois guider TOUS tes morceaux à travers les gaps des murs rouges qui arrivent. Plus tu split, plus c'est intense à gérer. Score = pièces vivantes × vagues passées. Trails néon colorés, particle bursts au split et à la destruction, screen shake, Web Audio SFX (split chime, explosion, wave fanfare, game over dramatique). Swipe/drag pour influencer la dérive, WASD desktop. Difficulté progressive (murs plus rapides, gaps plus étroits). High score localStorage. Dark neon aesthetic, 60fps.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/split-surge/)
