@@ -489,7 +489,7 @@ function update(dt) {
   const t = performance.now() / 1000;
 
   // Difficulty ramp
-  difficulty = 1 + score / 500;
+  difficulty = 1 + score / 800;
 
   // Player movement
   const worldMouseX = mouseX + cam.x;
@@ -506,12 +506,12 @@ function update(dt) {
   player.angle += angleDiff * Math.min(1, 8 * dt);
 
   // Speed based on size (bigger = slightly slower but boost compensates)
-  const baseSpeed = 200 - player.size * 1.2;
-  let speed = Math.max(80, baseSpeed);
+  const baseSpeed = 120 - player.size * 0.8;
+  let speed = Math.max(50, baseSpeed);
 
   // Boost
   if (boosting && boostFuel > 0) {
-    speed *= 1.8;
+    speed *= 1.5;
     boostFuel = Math.max(0, boostFuel - dt * .5);
   } else if (!boosting) {
     boostFuel = Math.min(1, boostFuel + dt * .25);
@@ -523,8 +523,8 @@ function update(dt) {
     player.vx += (Math.cos(player.angle) * moveSpeed - player.vx * .1);
     player.vy += (Math.sin(player.angle) * moveSpeed - player.vy * .1);
   }
-  player.x += player.vx * dt * 60;
-  player.y += player.vy * dt * 60;
+  player.x += player.vx * dt * 35;
+  player.y += player.vy * dt * 35;
   player.vx *= .92;
   player.vy *= .92;
 
@@ -568,7 +568,7 @@ function update(dt) {
       while (ad > Math.PI) ad -= Math.PI * 2;
       while (ad < -Math.PI) ad += Math.PI * 2;
       f.angle += ad * 5 * dt;
-      const spd = (60 + f.size * .8) * f.species.speed * (1 + difficulty * .08);
+      const spd = (35 + f.size * .5) * f.species.speed * (1 + difficulty * .05);
       f.vx += Math.cos(f.angle) * spd * dt;
       f.vy += Math.sin(f.angle) * spd * dt;
       f.mouthOpen = .5 + Math.sin(t * 8) * .3;
@@ -581,7 +581,7 @@ function update(dt) {
       while (ad > Math.PI) ad -= Math.PI * 2;
       while (ad < -Math.PI) ad += Math.PI * 2;
       f.angle += ad * 4 * dt;
-      const spd = (70 + f.size * .5) * f.species.speed;
+      const spd = (40 + f.size * .3) * f.species.speed;
       f.vx += Math.cos(f.angle) * spd * dt;
       f.vy += Math.sin(f.angle) * spd * dt;
     } else {
@@ -599,15 +599,15 @@ function update(dt) {
       while (ad > Math.PI) ad -= Math.PI * 2;
       while (ad < -Math.PI) ad += Math.PI * 2;
       f.angle += ad * 2 * dt;
-      const spd = 30 * f.species.speed;
+      const spd = 18 * f.species.speed;
       f.vx += Math.cos(f.angle) * spd * dt;
       f.vy += Math.sin(f.angle) * spd * dt;
     }
 
     f.vx *= .94;
     f.vy *= .94;
-    f.x += f.vx * dt * 60;
-    f.y += f.vy * dt * 60;
+    f.x += f.vx * dt * 35;
+    f.y += f.vy * dt * 35;
 
     // Soft world bounds
     if (f.x < -100) f.vx += 2;
