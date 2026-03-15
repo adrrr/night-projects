@@ -199,6 +199,23 @@ function playGameOver() {
 }
 
 // ============================================================
+//  HAPTIC FEEDBACK
+// ============================================================
+
+function haptic(pattern) {
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(e) {}
+}
+
+// ============================================================
+//  FLOATING SCORE TEXT
+// ============================================================
+
+function spawnFloatingText(x, y, text, color) {
+  if (floatingTexts.length >= MAX_FLOATING_TEXTS) return;
+  floatingTexts.push({ x, y, text, color: color || '#fff', life: 1, decay: 0.015 });
+}
+
+// ============================================================
 //  GAME STATE
 // ============================================================
 
@@ -261,6 +278,16 @@ function resize() {
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Scale radius based on screen size (smaller screens → smaller fish)
+  radiusScale = Math.max(0.45, Math.min(1, Math.min(W, H) / REF_SCREEN));
+
+  // Orientation hint (landscape on small screen = probably mobile)
+  if (orientHintEl) {
+    const isMobileSize = Math.min(W, H) < 500;
+    const isLandscape = W > H * 1.2;
+    orientHintEl.classList.toggle('visible', isMobileSize && isLandscape);
+  }
 }
 window.addEventListener('resize', resize);
 resize();
@@ -435,7 +462,7 @@ function spawnBubble(x, y) {
 // ============================================================
 
 function createFish(tier, forceEdge, scatterOnScreen) {
-  const r = TIER_RADIUS[tier] * (0.85 + Math.random() * 0.3);
+  const r = TIER_RADIUS[tier] * radiusScale * (0.85 + Math.random() * 0.3);
   let x, y, angle;
 
   if (scatterOnScreen) {
@@ -523,7 +550,7 @@ function createPlayer() {
     y: H / 2,
     angle: 0,
     tier: 1,              // start as Fry (tier 1)
-    radius: TIER_RADIUS[1],
+    radius: TIER_RADIUS[1] * radiusScale,
     tailPhase: 0,
     mouthOpen: 0,
     eaten: 0,          // fish eaten in current tier
@@ -577,8 +604,14 @@ function initGame() {
 function getPointerPos(e) {
   const touch = e.touches ? e.touches[0] : e;
   if (!touch) return;
+  // Detect touch input
+  if (e.type && (e.type.startsWith('touch') || (e.pointerType && e.pointerType === 'touch'))) {
+    isTouch = true;
+  } else if (e.type && (e.type.startsWith('mouse') || (e.pointerType && e.pointerType === 'mouse'))) {
+    isTouch = false;
+  }
   pointer.x = touch.clientX;
-  pointer.y = touch.clientY;
+  pointer.y = touch.clientY - (isTouch ? TOUCH_OFFSET_Y : 0);
   pointer.active = true;
 }
 
@@ -610,9 +643,9 @@ canvas.addEventListener('touchend', onPointerUp, { passive: false });
 canvas.addEventListener('touchcancel', onPointerUp, { passive: false });
 
 // Mouse fallback
-canvas.addEventListener('mousedown', (e) => { ensureAudio(); pointer.active = true; boosting = true; });
+canvas.addEventListener('mousedown', (e) => { isTouch = false; ensureAudio(); pointer.active = true; boosting = true; });
 canvas.addEventListener('mouseup', () => { boosting = false; });
-canvas.addEventListener('mousemove', (e) => { pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true; });
+canvas.addEventListener('mousemove', (e) => { isTouch = false; pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true; });
 
 // ============================================================
 //  HUD UPDATE
@@ -809,7 +842,7 @@ function update(dt) {
         if (player.tier < TIER_COUNT - 1 && player.eaten >= TIER_THRESHOLDS[player.tier]) {
           player.tier++;
           player.eaten = 0;
-          player.radius = TIER_RADIUS[player.tier];
+          player.radius = TIER_RADIUS[player.tier] * radiusScale;
           shakeIntensity = 8;
           spawnEatParticles(player.x, player.y, TIER_COLORS[player.tier].body, 20);
         }
@@ -819,6 +852,13 @@ function update(dt) {
         spawnEatParticles(f.x, f.y, TIER_COLORS[f.tier].body, pCount);
         if (f.tier > 0) spawnBubble(f.x, f.y);
         shakeIntensity = Math.max(shakeIntensity, f.tier === 0 ? 1 : 3);
+
+        // Score popup
+        spawnFloatingText(f.x, f.y, '+1', TIER_COLORS[f.tier].body);
+        // Scale bump
+        playerScaleBump = 0.15;
+        // Haptic
+        haptic(10);
 
         playEat();
       } else if (f.tier > player.tier && player.invincible <= 0) {
@@ -830,13 +870,14 @@ function update(dt) {
           // Game over (tier 1 is the lowest playable tier)
           player.alive = false;
           running = false;
+          haptic([30, 20, 60]);
           playGameOver();
           gameOver();
           return;
         }
 
         player.tier--;
-        player.radius = TIER_RADIUS[player.tier];
+        player.radius = TIER_RADIUS[player.tier] * radiusScale;
         shakeIntensity = 12;
         spawnEatParticles(player.x, player.y, '#ff4444', 15);
 
@@ -844,6 +885,7 @@ function update(dt) {
         player.x += Math.cos(kAngle) * 40;
         player.y += Math.sin(kAngle) * 40;
 
+        haptic(50);
         playHurt();
         vignetteEl.style.opacity = '1';
         setTimeout(() => vignetteEl.style.opacity = '0', 200);
