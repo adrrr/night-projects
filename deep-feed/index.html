@@ -19,6 +19,8 @@ canvas{display:block;width:100%;height:100%}
 #size-bar{height:100%;width:0%;border-radius:4px;transition:width .3s ease}
 #boost-wrap{margin-top:5px;width:130px;height:5px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
 #boost-bar{height:100%;width:100%;background:linear-gradient(90deg,#ffcc00,#ff8800);border-radius:3px;transition:width .1s}
+#oxygen-wrap{margin-top:5px;width:130px;height:5px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
+#oxygen-bar{height:100%;width:100%;background:linear-gradient(90deg,#44bbff,#0088ff);border-radius:3px;transition:width .15s}
 
 /* Overlay screens */
 #overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,8,24,.88);z-index:10;font-family:'Segoe UI',system-ui,sans-serif;color:#fff;text-align:center;transition:opacity .4s}
@@ -59,6 +61,7 @@ canvas{display:block;width:100%;height:100%}
   <div id="size-info">Size: Tiny</div>
   <div id="size-bar-wrap"><div id="size-bar"></div></div>
   <div id="boost-wrap"><div id="boost-bar"></div></div>
+  <div id="oxygen-wrap"><div id="oxygen-bar"></div></div>
 </div>
 
 <div id="vignette"></div>
@@ -142,8 +145,25 @@ const TIER_RADIUS = [7, 14, 22, 34, 50, 72];
 // V3: faster progression — target 60-90s runs
 const TIER_THRESHOLDS = [5, 3, 6, 10, 15];
 
+// Tier-based scoring: points per tier eaten
+const TIER_POINTS = [1, 3, 8, 15, 25, 40];
+
 // Enemy speed multiplier per tier
 const ENEMY_SPEED = [0.5, 0.7, 0.65, 0.55, 0.5, 0.4];
+
+// Predator chase config
+const PREDATOR_DETECT_RANGE = 200;   // base detection range in px
+const PREDATOR_CHASE_SPEED_RATIO = 0.70; // 70% of player base speed (without boost)
+const PREDATOR_DEPTH_DETECT_BONUS = 30;  // extra detect range per depth level
+
+// Desktop balance: predator speed bonus on non-touch
+const DESKTOP_PREDATOR_BUFF = 1.15;
+
+// Oxygen config
+const OXYGEN_MAX = 100;
+const OXYGEN_DRAIN_RATE = 1.2;        // per second — very slow base drain
+const OXYGEN_DEPTH_DRAIN_MULT = 0.15; // extra drain per depth level
+const OXYGEN_REFILL_PER_TIER = [8, 15, 20, 25, 30, 35]; // refill on eat by tier
 
 // Prestige config
 const PRESTIGE_EXTRA_EATS = 8; // eat 8 more after reaching Huge to prestige
@@ -216,6 +236,7 @@ const sizeBarEl = document.getElementById('size-bar');
 const boostBarEl = document.getElementById('boost-bar');
 const vignetteEl = document.getElementById('vignette');
 const endStatsEl = document.getElementById('end-stats');
+const oxygenBarEl = document.getElementById('oxygen-bar');
 const orientHintEl = document.getElementById('orient-hint');
 const prestigeFlashEl = document.getElementById('prestige-flash');
 
@@ -418,6 +439,15 @@ let frenzyCount = 0;
 let bestFrenzy = 0;
 let slowmoScale = 1; // time scale for bullet time
 let saturationFlash = 0; // 0-1 for saturation overlay
+
+// Oxygen
+let oxygen = OXYGEN_MAX;
+
+// Reef currents
+let reefCurrents = [];
+
+// Abyss ambush predators
+let ambushFish = [];
 
 // Current zone (computed from player tier)
 let currentZone = 'surface';
@@ -794,9 +824,10 @@ function createFish(tier, forceEdge, scatterOnScreen) {
     angle = Math.random() * Math.PI * 2;
   }
 
-  // Speed increases with depth (prestige)
+  // Speed increases with depth (prestige) + desktop buff
   const depthSpeedMult = 1 + (depthLevel - 1) * PRESTIGE_SPEED_BUFF;
-  const baseSpeed = (1.2 + Math.random() * 0.8) * ENEMY_SPEED[tier] * depthSpeedMult;
+  const desktopBuff = (!isTouch && tier > 0) ? DESKTOP_PREDATOR_BUFF : 1;
+  const baseSpeed = (1.2 + Math.random() * 0.8) * ENEMY_SPEED[tier] * depthSpeedMult * desktopBuff;
 
   return {
     x, y, angle,
@@ -880,6 +911,9 @@ function initGame() {
   lastHUDTime = 0;
   playerScaleBump = 0;
   pendingRespawns = [];
+  oxygen = OXYGEN_MAX;
+  reefCurrents = [];
+  ambushFish = [];
 
   // Prestige reset
   depthLevel = 1;
@@ -972,8 +1006,7 @@ canvas.addEventListener('mousemove', (e) => { isTouch = false; pointer.x = e.cli
 // ============================================================
 
 function updateHUD() {
-  const displayScore = score * scoreMultiplier;
-  scoreEl.textContent = `Score: ${displayScore}`;
+  scoreEl.textContent = `Score: ${score}`;
   if (highScore > 0) highScoreEl.textContent = `Best: ${highScore}`;
 
   if (depthLevel > 1) {
@@ -1035,6 +1068,7 @@ function completePrestige() {
   prestigeEats = 0;
 
   // Reset player to Fry but keep score
+  oxygen = OXYGEN_MAX; // refill oxygen on prestige
   player.tier = 1;
   player.eaten = 0;
   player.radius = TIER_RADIUS[1] * radiusScale;
@@ -1043,6 +1077,8 @@ function completePrestige() {
   // Clear fish and respawn fresh (faster ones)
   fishes = [];
   jellyfish = [];
+  ambushFish = [];
+  reefCurrents = [];
   const planctonCount = 12 + Math.floor(Math.random() * 6);
   for (let i = 0; i < planctonCount; i++) {
     fishes.push(createFish(0, false, true));
@@ -1272,17 +1308,26 @@ function update(dt) {
       }
     } else {
       // Normal fish AI
-      f.turnTimer -= effectiveDt;
-      if (f.turnTimer <= 0) {
-        f.turnTimer = 2 + Math.random() * 4;
-        if (player.tier > f.tier && distBetween(player, f) < 250) {
-          f.fleeing = true;
-          f.fleeTimer = 1.5 + Math.random();
-          f.targetAngle = Math.atan2(f.y - player.y, f.x - player.x);
-        } else if (player.tier < f.tier && distBetween(player, f) < 300) {
-          f.targetAngle = Math.atan2(player.y - f.y, player.x - f.x);
-        } else {
-          f.targetAngle = f.angle + (Math.random() - 0.5) * 1.5;
+      const distToPlayer = distBetween(player, f);
+      const detectRange = PREDATOR_DETECT_RANGE + (depthLevel - 1) * PREDATOR_DEPTH_DETECT_BONUS;
+      const isPredator = f.tier > player.tier;
+      const isChasing = isPredator && distToPlayer < detectRange;
+
+      // Active predator chase — continuous, bypasses turnTimer
+      if (isChasing) {
+        f.targetAngle = Math.atan2(player.y - f.y, player.x - f.x);
+        f.fleeing = false;
+      } else {
+        f.turnTimer -= effectiveDt;
+        if (f.turnTimer <= 0) {
+          f.turnTimer = 2 + Math.random() * 4;
+          if (player.tier > f.tier && distToPlayer < 250) {
+            f.fleeing = true;
+            f.fleeTimer = 1.5 + Math.random();
+            f.targetAngle = Math.atan2(f.y - player.y, f.x - player.x);
+          } else {
+            f.targetAngle = f.angle + (Math.random() - 0.5) * 1.5;
+          }
         }
       }
 
@@ -1295,9 +1340,16 @@ function update(dt) {
       let aDiff = f.targetAngle - f.angle;
       while (aDiff > Math.PI) aDiff -= Math.PI * 2;
       while (aDiff < -Math.PI) aDiff += Math.PI * 2;
-      f.angle += aDiff * Math.min(1, effectiveDt * 3);
+      f.angle += aDiff * Math.min(1, effectiveDt * (isChasing ? 5 : 3));
 
-      const spd = f.speed * (f.fleeing ? 1.5 : 1) * 60 * effectiveDt;
+      // Predators chase at 70% player speed, overriding their base speed
+      let spdMult = f.fleeing ? 1.5 : 1;
+      let spd;
+      if (isChasing) {
+        spd = PREDATOR_CHASE_SPEED_RATIO * PLAYER_BASE_SPEED * 60 * effectiveDt;
+      } else {
+        spd = f.speed * spdMult * 60 * effectiveDt;
+      }
       f.x += Math.cos(f.angle) * spd;
       f.y += Math.sin(f.angle) * spd;
 
@@ -1322,13 +1374,18 @@ function update(dt) {
         // EAT!
         f.alive = false;
 
-        // Frenzy scoring: double if frenzy is active
-        const pointValue = frenzyActive ? 2 : 1;
+        // Tier-based scoring with frenzy doubler and depth multiplier
+        let pointValue = TIER_POINTS[f.tier] || 1;
+        if (frenzyActive) pointValue *= 2;
+        pointValue *= scoreMultiplier;
         score += pointValue;
         totalFishEaten++;
         player.totalEaten++;
         player.eaten++;
         player.mouthOpen = 1;
+
+        // Oxygen refill proportional to tier
+        oxygen = Math.min(OXYGEN_MAX, oxygen + (OXYGEN_REFILL_PER_TIER[f.tier] || 5));
 
         // Track eat time for frenzy
         recentEats.push(gameTime);
@@ -1362,7 +1419,8 @@ function update(dt) {
         shakeIntensity = Math.max(shakeIntensity, f.tier === 0 ? 1 : 3);
 
         const scoreText = frenzyActive ? `+${pointValue}!` : `+${pointValue}`;
-        spawnFloatingText(f.x, f.y, scoreText, frenzyActive ? '#ffcc00' : getFishColors(f.tier, currentZone).body);
+        const bigText = pointValue >= 10;
+        spawnFloatingText(f.x, f.y, scoreText, frenzyActive ? '#ffcc00' : getFishColors(f.tier, currentZone).body, bigText);
         playerScaleBump = 0.15;
         haptic(10);
         playEat();
@@ -1494,6 +1552,142 @@ function update(dt) {
     playerScaleBump = Math.max(0, playerScaleBump - effectiveDt * 0.75);
   }
 
+  // --- Oxygen drain ---
+  const oxygenDrain = OXYGEN_DRAIN_RATE * (1 + (depthLevel - 1) * OXYGEN_DEPTH_DRAIN_MULT);
+  oxygen = Math.max(0, oxygen - oxygenDrain * effectiveDt);
+  oxygenBarEl.style.width = (oxygen / OXYGEN_MAX * 100) + '%';
+  if (oxygen <= 0) {
+    player.alive = false;
+    running = false;
+    haptic([30, 20, 60]);
+    playGameOver();
+    gameOver();
+    return;
+  }
+
+  // --- Reef currents ---
+  if (currentZone === 'reef') {
+    // Spawn new currents
+    if (reefCurrents.length < 3 && Math.random() < effectiveDt * 0.5) {
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      reefCurrents.push({
+        x: dir > 0 ? -50 : W + 50,
+        y: H * (0.2 + Math.random() * 0.6),
+        dir,
+        speed: 1.5 + Math.random() * 1.5,
+        width: 150 + Math.random() * 200,
+        life: 1,
+      });
+    }
+    for (let i = reefCurrents.length - 1; i >= 0; i--) {
+      const c = reefCurrents[i];
+      c.x += c.dir * c.speed * 60 * effectiveDt;
+      // Push player if within current band
+      const inBandY = Math.abs(player.y - c.y) < 40;
+      const inBandX = player.x > c.x - c.width / 2 && player.x < c.x + c.width / 2;
+      if (inBandY && inBandX) {
+        player.x += c.dir * c.speed * 0.4 * 60 * effectiveDt;
+      }
+      // Push fish too
+      for (const f of fishes) {
+        if (f.tier === 0) continue;
+        const fInY = Math.abs(f.y - c.y) < 40;
+        const fInX = f.x > c.x - c.width / 2 && f.x < c.x + c.width / 2;
+        if (fInY && fInX) {
+          f.x += c.dir * c.speed * 0.3 * 60 * effectiveDt;
+        }
+      }
+      // Remove when off screen
+      if ((c.dir > 0 && c.x > W + c.width) || (c.dir < 0 && c.x < -c.width)) {
+        reefCurrents.splice(i, 1);
+      }
+    }
+  } else {
+    reefCurrents = [];
+  }
+
+  // --- Abyss ambush predators ---
+  if (currentZone === 'abyss') {
+    // Spawn ambush fish (quasi-invisible, activate when player is close)
+    if (ambushFish.length < 4 && Math.random() < effectiveDt * 0.25) {
+      // Place away from player
+      let ax, ay;
+      do {
+        ax = 60 + Math.random() * (W - 120);
+        ay = 60 + Math.random() * (H - 120);
+      } while (Math.sqrt((ax - player.x) ** 2 + (ay - player.y) ** 2) < 250);
+      ambushFish.push({
+        x: ax, y: ay,
+        tier: Math.min(TIER_COUNT - 1, player.tier + 1),
+        radius: TIER_RADIUS[Math.min(TIER_COUNT - 1, player.tier + 1)] * radiusScale,
+        angle: Math.random() * Math.PI * 2,
+        tailPhase: Math.random() * Math.PI * 2,
+        mouthOpen: 0,
+        activated: false,
+        opacity: 0.06, // nearly invisible
+        life: 15 + Math.random() * 10, // despawn timer
+      });
+    }
+    for (let i = ambushFish.length - 1; i >= 0; i--) {
+      const a = ambushFish[i];
+      a.tailPhase += effectiveDt * 4;
+      a.life -= effectiveDt;
+      if (a.life <= 0) { ambushFish.splice(i, 1); continue; }
+
+      const dToPlayer = Math.sqrt((a.x - player.x) ** 2 + (a.y - player.y) ** 2);
+      if (!a.activated && dToPlayer < 100) {
+        a.activated = true;
+        shakeIntensity = Math.max(shakeIntensity, 5);
+      }
+      if (a.activated) {
+        a.opacity = Math.min(1, a.opacity + effectiveDt * 3);
+        // Chase player
+        const chaseAngle = Math.atan2(player.y - a.y, player.x - a.x);
+        let ad = chaseAngle - a.angle;
+        while (ad > Math.PI) ad -= Math.PI * 2;
+        while (ad < -Math.PI) ad += Math.PI * 2;
+        a.angle += ad * Math.min(1, effectiveDt * 5);
+        const aSpd = PREDATOR_CHASE_SPEED_RATIO * PLAYER_BASE_SPEED * 0.9 * 60 * effectiveDt;
+        a.x += Math.cos(a.angle) * aSpd;
+        a.y += Math.sin(a.angle) * aSpd;
+
+        // Collision with player — same as predator hit
+        if (player.invincible <= 0 && dToPlayer < (player.radius + a.radius) * 0.7) {
+          player.invincible = 1.5;
+          player.eaten = 0;
+          if (player.tier <= 1) {
+            player.alive = false;
+            running = false;
+            haptic([30, 20, 60]);
+            playGameOver();
+            gameOver();
+            return;
+          }
+          player.tier--;
+          player.radius = TIER_RADIUS[player.tier] * radiusScale;
+          shakeIntensity = 12;
+          spawnEatParticles(player.x, player.y, '#ff4444', 15);
+          const kAngle = Math.atan2(player.y - a.y, player.x - a.x);
+          player.x += Math.cos(kAngle) * 40;
+          player.y += Math.sin(kAngle) * 40;
+          haptic(50);
+          playHurt();
+          vignetteEl.style.opacity = '1';
+          setTimeout(() => vignetteEl.style.opacity = '0', 200);
+          ambushFish.splice(i, 1);
+          continue;
+        }
+
+        // Despawn if off screen
+        if (a.x < -80 || a.x > W + 80 || a.y < -80 || a.y > H + 80) {
+          ambushFish.splice(i, 1);
+        }
+      }
+    }
+  } else {
+    ambushFish = [];
+  }
+
   // --- Camera shake ---
   if (shakeIntensity > 0.5) {
     shakeX = (Math.random() - 0.5) * shakeIntensity;
@@ -1555,6 +1749,25 @@ function render() {
     ctx.fill();
   }
   ctx.restore();
+
+  // Reef zone: visible currents (water streaks)
+  if (currentZone === 'reef') {
+    ctx.save();
+    for (const c of reefCurrents) {
+      ctx.globalAlpha = 0.08;
+      ctx.strokeStyle = '#66ccbb';
+      ctx.lineWidth = 2;
+      const halfW = c.width / 2;
+      for (let s = -2; s <= 2; s++) {
+        const sy = c.y + s * 12;
+        ctx.beginPath();
+        ctx.moveTo(c.x - halfW, sy);
+        ctx.bezierCurveTo(c.x - halfW * 0.3, sy - 5, c.x + halfW * 0.3, sy + 5, c.x + halfW, sy);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
 
   // Reef zone: coral silhouettes at bottom
   if (currentZone === 'reef') {
@@ -1620,6 +1833,13 @@ function render() {
       drawFish(f.x, f.y, r, f.angle, f.tier, f.mouthOpen, f.tailPhase, false, currentZone);
     }
   }
+
+  // Abyss ambush predators (drawn with variable opacity)
+  for (const a of ambushFish) {
+    ctx.globalAlpha = a.opacity;
+    drawFish(a.x, a.y, a.radius, a.angle, a.tier, a.mouthOpen, a.tailPhase, false, 'abyss');
+  }
+  ctx.globalAlpha = 1;
 
   // Player
   if (player && player.alive) {
@@ -1735,7 +1955,7 @@ function render() {
 // ============================================================
 
 function gameOver() {
-  const finalScore = score * scoreMultiplier;
+  const finalScore = score;
   const isNewRecord = finalScore > highScore;
 
   if (isNewRecord) {
