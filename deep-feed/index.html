@@ -31,6 +31,10 @@ canvas{display:block;width:100%;height:100%}
 
 /* Damage vignette */
 #vignette{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(255,0,0,.35) 100%);transition:opacity .15s;z-index:4}
+
+/* Orientation hint */
+#orient-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:rgba(255,255,255,.6);background:rgba(0,30,60,.7);padding:8px 16px;border-radius:20px;pointer-events:none;opacity:0;transition:opacity .4s;z-index:6;white-space:nowrap}
+#orient-hint.visible{opacity:1}
 </style>
 </head>
 <body>
@@ -45,6 +49,7 @@ canvas{display:block;width:100%;height:100%}
 </div>
 
 <div id="vignette"></div>
+<div id="orient-hint">Rotate to portrait for a better experience</div>
 
 <div id="overlay">
   <h1>Deep Feed</h1>
@@ -100,6 +105,9 @@ const BOOST_REGEN = 0.35;
 
 const SHAKE_DECAY = 0.88;
 
+// Reference screen size for radius scaling (desktop baseline)
+const REF_SCREEN = 900;
+
 // ============================================================
 //  DOM REFS
 // ============================================================
@@ -115,6 +123,7 @@ const sizeBarEl = document.getElementById('size-bar');
 const boostBarEl = document.getElementById('boost-bar');
 const vignetteEl = document.getElementById('vignette');
 const endStatsEl = document.getElementById('end-stats');
+const orientHintEl = document.getElementById('orient-hint');
 
 // ============================================================
 //  AUDIO (Web Audio API — lazy init)
@@ -219,6 +228,27 @@ let shakeX = 0, shakeY = 0, shakeIntensity = 0;
 let frameCount = 0;
 let lastFishEatTime = 0; // gameTime of last fish-fish eat
 let pendingRespawns = []; // {tier, delay} entries
+
+// Touch detection & finger offset
+let isTouch = false;
+const TOUCH_OFFSET_Y = 80;
+
+// Radius scale factor (computed on resize)
+let radiusScale = 1;
+
+// HUD throttle
+let lastHUDTime = 0;
+
+// Floating score texts
+let floatingTexts = [];
+const MAX_FLOATING_TEXTS = 20;
+
+// Player eat scale bump
+let playerScaleBump = 0;
+
+// Title screen ambient state
+let titleBubbles = [];
+let titlePlancton = [];
 
 // ============================================================
 //  RESIZE
