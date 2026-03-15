@@ -675,6 +675,10 @@ function startGame() {
   state = 'playing';
   startScreen.style.display = 'none';
   gameOverEl.classList.remove('visible');
+  // Force-restart the game loop (rAF may have stopped)
+  lastTime = performance.now();
+  if (rafId !== null) cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(loop);
 }
 
 // Input
@@ -722,19 +726,46 @@ restartBtn.addEventListener('touchend', (e) => {
   startGame();
 });
 
-// Game loop
-let lastTime = 0;
-function loop(t) {
-  const dt = Math.min((t - lastTime) / 1000, 0.05);
-  lastTime = t;
+// Game loop — robust: uses performance.now() for timing,
+// restarts rAF on visibility change, and has setInterval safety net
+let lastTime = performance.now();
+let rafId = null;
+
+function loop() {
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
   update(dt);
   draw();
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 }
+
+// Restart loop when tab becomes visible again
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    lastTime = performance.now(); // reset to avoid huge dt jump
+    if (rafId === null) {
+      rafId = requestAnimationFrame(loop);
+    }
+  }
+});
+
+// Safety net: if rAF stops (e.g. some mobile browsers), setInterval kicks in
+setInterval(() => {
+  if (state === 'playing' || state === 'start') {
+    const now = performance.now();
+    // If lastTime hasn't been updated in 200ms, rAF is dead — restart it
+    if (now - lastTime > 200) {
+      lastTime = now;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(loop);
+    }
+  }
+}, 250);
 
 // Init stars for start screen
 initBgStars();
-requestAnimationFrame(loop);
+rafId = requestAnimationFrame(loop);
 </script>
 </body>
 </html>
