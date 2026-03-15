@@ -11,6 +11,7 @@ canvas{display:block;width:100%;height:100%}
 #ui{position:absolute;top:0;left:0;width:100%;pointer-events:none;padding:12px;font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
 #score{font-size:18px;text-shadow:0 0 8px rgba(0,180,255,.6)}
 #highscore{font-size:13px;opacity:.7;margin-top:2px;text-shadow:0 0 6px rgba(0,180,255,.4)}
+#combo{font-size:14px;color:#ff0;opacity:0;margin-top:4px;text-shadow:0 0 8px rgba(255,200,0,.6);transition:opacity .2s}
 #size-bar-wrap{margin-top:8px;width:140px;height:8px;background:rgba(255,255,255,.15);border-radius:4px;overflow:hidden}
 #size-bar{height:100%;width:0%;background:linear-gradient(90deg,#0ff,#0f0);border-radius:4px;transition:width .3s}
 #boost-wrap{margin-top:6px;width:140px;height:6px;background:rgba(255,255,255,.15);border-radius:3px;overflow:hidden}
@@ -30,6 +31,7 @@ canvas{display:block;width:100%;height:100%}
 <div id="ui">
   <div id="score">Score: 0</div>
   <div id="highscore">Best: 0</div>
+  <div id="combo"></div>
   <div id="size-bar-wrap"><div id="size-bar"></div></div>
   <div id="boost-wrap"><div id="boost-bar"></div></div>
 </div>
@@ -48,6 +50,7 @@ const C = $('c'), ctx = C.getContext('2d');
 const overlay = $('overlay'), playBtn = $('play-btn'), scoreEl = $('score');
 const highEl = $('highscore'), sizeBar = $('size-bar'), boostBar = $('boost-bar');
 const warningEl = $('warning'), endStats = $('end-stats'), hintEl = $('hint');
+const comboEl = $('combo');
 
 let W, H, dpr;
 function resize() {
@@ -60,13 +63,19 @@ resize();
 window.addEventListener('resize', resize);
 
 const isMobile = 'ontouchstart' in window;
-hintEl.textContent = isMobile ? 'Drag to swim \u2022 Tap to boost' : 'Mouse to swim \u2022 Click to boost';
+hintEl.textContent = isMobile ? 'Drag to swim \u2022 Double-tap to dash' : 'Mouse to swim \u2022 Click/hold to boost';
 
-// Audio
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-function resumeAudio() { if (audioCtx.state === 'suspended') audioCtx.resume(); }
+// Audio — lazy init on first user gesture
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
 
 function playTone(freq, dur, type, vol, detune) {
+  if (!audioCtx) return;
   const g = audioCtx.createGain();
   const o = audioCtx.createOscillator();
   o.type = type || 'sine';
@@ -86,10 +95,13 @@ function eatSound(big) {
 }
 function warnSound() { playTone(120, .3, 'sawtooth', .08); playTone(100, .35, 'square', .06); }
 function deathSound() { playTone(60, .5, 'sawtooth', .15); playTone(40, .6, 'square', .1); }
+function powerupSound() { playTone(400, .15, 'sine', .12); playTone(600, .15, 'sine', .1); playTone(800, .2, 'sine', .08); }
+function dashSound() { playTone(200, .1, 'sawtooth', .08); playTone(300, .08, 'sine', .06); }
+function comboSound() { playTone(500, .1, 'sine', .1); playTone(700, .12, 'sine', .08); }
 
 let ambientNode = null, ambientGain = null;
 function startAmbient() {
-  if (ambientNode) return;
+  if (ambientNode || !audioCtx) return;
   ambientGain = audioCtx.createGain();
   ambientGain.gain.value = .04;
   ambientNode = audioCtx.createOscillator();
@@ -99,7 +111,6 @@ function startAmbient() {
   f.type = 'lowpass'; f.frequency.value = 120;
   ambientNode.connect(f); f.connect(ambientGain); ambientGain.connect(audioCtx.destination);
   ambientNode.start();
-  // Add noise-like bubbling
   const n = audioCtx.createOscillator();
   n.type = 'triangle'; n.frequency.value = 38;
   const ng = audioCtx.createGain(); ng.gain.value = .02;
@@ -113,13 +124,17 @@ function startAmbient() {
 // Game state
 let running = false, gameOver = false;
 let score = 0, highScore = parseInt(localStorage.getItem('deepfeed_hi') || '0');
-let player, fishes, bubbles, seaweeds, particles, cam;
+let player, fishes, bubbles, seaweeds, particles, powerups, floatingTexts, cam;
 let mouseX, mouseY, boosting = false, boostFuel = 1;
 let difficulty = 1, warnTimer = 0, lastWarn = 0;
 let fishEaten = 0, maxSize = 0;
+let comboCount = 0, comboTimer = 0;
+let dashCooldown = 0, isDashing = false, dashTimer = 0;
+let gracePeriod = 0; // invincibility at start
+let lastTapTime = 0;
 highEl.textContent = 'Best: ' + highScore;
 
-// Species definitions
+// Species definitions — speed now inversely correlates with typical size
 const SPECIES = [
   { name: 'minnow', color: '#7ec8e3', accent: '#aee1f5', bodyRatio: 2.8, finSize: .5, speed: 1.2, glow: false },
   { name: 'goldfish', color: '#f4a926', accent: '#ffe066', bodyRatio: 2.2, finSize: .6, speed: .9, glow: false },
@@ -127,10 +142,17 @@ const SPECIES = [
   { name: 'angel', color: '#c084fc', accent: '#e9d5ff', bodyRatio: 1.8, finSize: .8, speed: .7, glow: true },
   { name: 'neon', color: '#00ffcc', accent: '#66ffdd', bodyRatio: 3, finSize: .4, speed: 1.4, glow: true },
   { name: 'puffer', color: '#fbbf24', accent: '#fde68a', bodyRatio: 1.5, finSize: .35, speed: .5, glow: false },
-  { name: 'barracuda', color: '#94a3b8', accent: '#cbd5e1', bodyRatio: 3.5, finSize: .45, speed: 1.6, glow: false },
+  { name: 'barracuda', color: '#94a3b8', accent: '#cbd5e1', bodyRatio: 3.5, finSize: .45, speed: 1.3, glow: false },
   { name: 'lantern', color: '#1e3a5f', accent: '#0ea5e9', bodyRatio: 2.2, finSize: .5, speed: .8, glow: true, lantern: true },
   { name: 'red', color: '#ef4444', accent: '#fca5a5', bodyRatio: 2.5, finSize: .55, speed: 1.1, glow: false },
   { name: 'teal', color: '#14b8a6', accent: '#5eead4', bodyRatio: 2.6, finSize: .5, speed: 1, glow: true },
+];
+
+// Power-up types
+const POWERUP_TYPES = [
+  { name: 'speed', color: '#ffff00', accent: '#fff', icon: '\u26a1', duration: 5, desc: 'Speed Boost!' },
+  { name: 'magnet', color: '#ff00ff', accent: '#faf', icon: '\ud83e\uddf2', duration: 6, desc: 'Fish Magnet!' },
+  { name: 'shield', color: '#00ffff', accent: '#aff', icon: '\ud83d\udee1\ufe0f', duration: 4, desc: 'Shield!' },
 ];
 
 function makeFish(x, y, size, sp, isPlayer) {
@@ -155,18 +177,23 @@ const WORLD_W = 3000, WORLD_H = 2200;
 
 function init() {
   score = 0; fishEaten = 0; difficulty = 1; boostFuel = 1; warnTimer = 0;
+  comboCount = 0; comboTimer = 0; dashCooldown = 0; isDashing = false; dashTimer = 0;
+  gracePeriod = 2.5; // 2.5s invincibility at start
   cam = { x: 0, y: 0 };
   player = makeFish(WORLD_W / 2, WORLD_H / 2, 14, SPECIES[4], true);
   player.angle = 0;
+  player.activeEffects = {}; // { speed: timeLeft, magnet: timeLeft, shield: timeLeft }
   mouseX = W / 2; mouseY = H / 2;
   fishes = [];
   bubbles = [];
   particles = [];
+  powerups = [];
+  floatingTexts = [];
   seaweeds = [];
   maxSize = player.size;
 
-  // Spawn initial fish
-  for (let i = 0; i < 50; i++) spawnFish();
+  // Spawn initial fish — heavily favor small/edible fish at start
+  for (let i = 0; i < 55; i++) spawnFish(true);
   // Seaweed
   for (let i = 0; i < 30; i++) {
     seaweeds.push({
@@ -183,29 +210,66 @@ function init() {
   }
 }
 
-function spawnFish() {
-  // Size distribution: mostly smaller, some bigger
+function spawnFish(initialSpawn) {
   let size;
   const r = Math.random();
-  if (r < .4) size = 6 + Math.random() * 10;
-  else if (r < .7) size = 12 + Math.random() * 15;
-  else if (r < .88) size = 20 + Math.random() * 25;
-  else size = 30 + Math.random() * 40 * difficulty;
 
-  // Spawn outside camera view
-  let x, y;
-  const margin = 200;
-  if (Math.random() < .5) {
-    x = Math.random() * WORLD_W;
-    y = Math.random() < .5 ? -margin : WORLD_H + margin;
+  if (initialSpawn) {
+    // At game start: 70% tiny fish the player can eat right away
+    if (r < .70) size = 4 + Math.random() * 8;
+    else if (r < .90) size = 8 + Math.random() * 10;
+    else size = 14 + Math.random() * 12;
   } else {
-    x = Math.random() < .5 ? -margin : WORLD_W + margin;
-    y = Math.random() * WORLD_H;
+    // During game: scale with player size so there's always something to eat
+    const ps = player ? player.size : 14;
+    if (r < .45) size = ps * (.2 + Math.random() * .6); // clearly edible
+    else if (r < .70) size = ps * (.5 + Math.random() * .5); // slightly smaller
+    else if (r < .85) size = ps * (.8 + Math.random() * .4); // similar size
+    else if (r < .95) size = ps * (1.3 + Math.random() * .7); // somewhat bigger
+    else size = ps * (1.8 + Math.random() * 1.2 * Math.min(difficulty, 3)); // dangerous
   }
-  x = Math.max(0, Math.min(WORLD_W, x + (Math.random() - .5) * 400));
-  y = Math.max(0, Math.min(WORLD_H, y + (Math.random() - .5) * 400));
+
+  // Spawn outside camera view + safety zone from player
+  let x, y, attempts = 0;
+  const safeZone = 350; // min distance from player
+  do {
+    const margin = 200;
+    if (Math.random() < .5) {
+      x = Math.random() * WORLD_W;
+      y = Math.random() < .5 ? -margin : WORLD_H + margin;
+    } else {
+      x = Math.random() < .5 ? -margin : WORLD_W + margin;
+      y = Math.random() * WORLD_H;
+    }
+    x = Math.max(0, Math.min(WORLD_W, x + (Math.random() - .5) * 400));
+    y = Math.max(0, Math.min(WORLD_H, y + (Math.random() - .5) * 400));
+    attempts++;
+  } while (player && attempts < 10 &&
+    Math.sqrt((x - player.x) ** 2 + (y - player.y) ** 2) < safeZone);
 
   fishes.push(makeFish(x, y, size));
+}
+
+function spawnPowerup() {
+  const type = POWERUP_TYPES[Math.random() * POWERUP_TYPES.length | 0];
+  // Spawn near-ish to player but not on top
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 300 + Math.random() * 400;
+  let x = player.x + Math.cos(angle) * dist;
+  let y = player.y + Math.sin(angle) * dist;
+  x = Math.max(50, Math.min(WORLD_W - 50, x));
+  y = Math.max(50, Math.min(WORLD_H - 50, y));
+  powerups.push({
+    x, y, type,
+    bobPhase: Math.random() * Math.PI * 2,
+    life: 12, // disappears after 12s
+    size: 12,
+    collected: false,
+  });
+}
+
+function addFloatingText(x, y, text, color) {
+  floatingTexts.push({ x, y, text, color, life: 1, vy: -1.5 });
 }
 
 function makeBubble(startY) {
@@ -223,12 +287,30 @@ function makeBubble(startY) {
 // Input
 let touchId = null;
 function onPointerDown(px, py) {
-  resumeAudio(); startAmbient();
+  ensureAudio(); startAmbient();
   mouseX = px; mouseY = py;
+
+  // Double-tap dash detection
+  const now = performance.now();
+  if (now - lastTapTime < 350 && dashCooldown <= 0 && running && !gameOver) {
+    triggerDash();
+  }
+  lastTapTime = now;
+
   boosting = true;
 }
 function onPointerMove(px, py) { mouseX = px; mouseY = py; }
 function onPointerUp() { boosting = false; }
+
+function triggerDash() {
+  if (dashCooldown > 0 || !player) return;
+  isDashing = true;
+  dashTimer = 0.2; // 200ms dash
+  dashCooldown = 1.5; // 1.5s cooldown
+  dashSound();
+  // Burst of speed particles
+  spawnParticles(player.x, player.y, player.species.accent, 8);
+}
 
 C.addEventListener('mousedown', e => { e.preventDefault(); onPointerDown(e.clientX, e.clientY); });
 C.addEventListener('mousemove', e => { onPointerMove(e.clientX, e.clientY); });
@@ -246,12 +328,15 @@ C.addEventListener('touchend', e => {
   for (const t of e.changedTouches) if (t.identifier === touchId) { onPointerUp(); touchId = null; }
 });
 
+// Also listen on play button for touch
+playBtn.addEventListener('touchstart', e => { ensureAudio(); }, { passive: true });
+
 // Drawing
 function drawFish(f, t) {
   const sp = f.species;
   const s = f.size;
-  const bw = s * sp.bodyRatio; // body width (length)
-  const bh = s; // body height (half)
+  const bw = s * sp.bodyRatio;
+  const bh = s;
 
   ctx.save();
   ctx.translate(f.x - cam.x, f.y - cam.y);
@@ -262,10 +347,30 @@ function drawFish(f, t) {
     ctx.globalAlpha = .5 + f.flash * .5;
   }
 
+  // Shield effect (player only)
+  if (f.isPlayer && player.activeEffects.shield > 0) {
+    const shieldGrd = ctx.createRadialGradient(0, 0, s * .8, 0, 0, s * 2.5);
+    shieldGrd.addColorStop(0, 'rgba(0,255,255,0)');
+    shieldGrd.addColorStop(.7, 'rgba(0,255,255,.08)');
+    shieldGrd.addColorStop(1, 'rgba(0,255,255,.15)');
+    ctx.fillStyle = shieldGrd;
+    ctx.beginPath(); ctx.arc(0, 0, s * 2.5, 0, Math.PI * 2); ctx.fill();
+    // Pulsing ring
+    ctx.strokeStyle = `rgba(0,255,255,${.2 + Math.sin(t * 6) * .1})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, s * 2, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Grace period glow (start invincibility)
+  if (f.isPlayer && gracePeriod > 0) {
+    ctx.globalAlpha = .5 + Math.sin(t * 10) * .3;
+  }
+
   // Glow
-  if (sp.glow) {
+  if (sp.glow || (f.isPlayer && player.activeEffects.speed > 0)) {
+    const glowColor = (f.isPlayer && player.activeEffects.speed > 0) ? '#ffff00' : sp.accent;
     const grd = ctx.createRadialGradient(0, 0, s * .5, 0, 0, s * 3);
-    grd.addColorStop(0, sp.accent + '30');
+    grd.addColorStop(0, glowColor + '30');
     grd.addColorStop(1, 'transparent');
     ctx.fillStyle = grd;
     ctx.beginPath();
@@ -275,7 +380,7 @@ function drawFish(f, t) {
 
   // Player trail
   if (f.isPlayer) {
-    const trailLen = boosting ? 8 : 4;
+    const trailLen = (boosting || isDashing) ? 10 : 4;
     for (let i = trailLen; i > 0; i--) {
       const a = .06 * (1 - i / trailLen);
       ctx.fillStyle = sp.accent + Math.floor(a * 255).toString(16).padStart(2, '0');
@@ -283,6 +388,10 @@ function drawFish(f, t) {
       ctx.ellipse(-bw * .3 - i * s * .3, 0, s * .5 * (1 - i / trailLen * .5), s * .3 * (1 - i / trailLen * .5), 0, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  if (f.isPlayer && gracePeriod > 0) {
+    ctx.globalAlpha = .6 + Math.sin(t * 10) * .3;
   }
 
   const tailSwing = Math.sin(f.tailPhase) * .35;
@@ -306,7 +415,7 @@ function drawFish(f, t) {
   ctx.ellipse(0, 0, bw * .5, bh, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Belly (lighter underside)
+  // Belly
   ctx.fillStyle = sp.accent + '40';
   ctx.beginPath();
   ctx.ellipse(0, bh * .2, bw * .4, bh * .6, 0, 0, Math.PI);
@@ -324,7 +433,7 @@ function drawFish(f, t) {
     }
   }
 
-  // Dorsal fin (top)
+  // Dorsal fin
   ctx.fillStyle = sp.accent;
   ctx.beginPath();
   ctx.moveTo(bw * .1, -bh * .7);
@@ -332,23 +441,21 @@ function drawFish(f, t) {
   ctx.closePath();
   ctx.fill();
 
-  // Pectoral fins (sides)
+  // Pectoral fins
   const pFinSize = sp.finSize;
   ctx.fillStyle = sp.accent + 'aa';
-  // Top fin
   ctx.beginPath();
   ctx.moveTo(bw * .05, -bh * .3);
   ctx.quadraticCurveTo(bw * .05 - s * pFinSize * .5, -bh * .3 - s * pFinSize * (1 + finBob * .4), -bw * .1, -bh * .4);
   ctx.closePath();
   ctx.fill();
-  // Bottom fin
   ctx.beginPath();
   ctx.moveTo(bw * .05, bh * .3);
   ctx.quadraticCurveTo(bw * .05 - s * pFinSize * .5, bh * .3 + s * pFinSize * (1 - finBob * .4), -bw * .1, bh * .4);
   ctx.closePath();
   ctx.fill();
 
-  // Lantern (anglerfish lure)
+  // Lantern
   if (sp.lantern) {
     const lx = bw * .5 + s * .3;
     const ly = -bh * .8;
@@ -372,13 +479,10 @@ function drawFish(f, t) {
   const eyeX = bw * .25;
   const eyeY = -bh * .2;
   const eyeR = s * .18;
-  // Eye white
   ctx.fillStyle = '#fff';
   ctx.beginPath(); ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
-  // Pupil
   ctx.fillStyle = '#111';
   ctx.beginPath(); ctx.arc(eyeX + eyeR * .25, eyeY, eyeR * .55, 0, Math.PI * 2); ctx.fill();
-  // Eye shine
   ctx.fillStyle = '#fff';
   ctx.beginPath(); ctx.arc(eyeX + eyeR * .1, eyeY - eyeR * .2, eyeR * .2, 0, Math.PI * 2); ctx.fill();
 
@@ -417,7 +521,6 @@ function drawBubble(b) {
   ctx.beginPath();
   ctx.arc(sx, sy, b.r, 0, Math.PI * 2);
   ctx.stroke();
-  // Shine
   ctx.fillStyle = `rgba(200,240,255,${b.opacity * .5})`;
   ctx.beginPath();
   ctx.arc(sx - b.r * .3, sy - b.r * .3, b.r * .25, 0, Math.PI * 2);
@@ -442,7 +545,6 @@ function drawSeaweed(sw, t) {
     ctx.lineTo(cx, cy);
   }
   ctx.stroke();
-  // Leaf blobs
   ctx.fillStyle = sw.color;
   let lx = baseX, ly = baseY;
   for (let i = 0; i < sw.segments; i++) {
@@ -467,6 +569,62 @@ function drawParticle(p) {
   ctx.globalAlpha = 1;
 }
 
+function drawPowerup(p, t) {
+  const sx = p.x - cam.x, sy = p.y - cam.y + Math.sin(t * 3 + p.bobPhase) * 6;
+  if (sx < -30 || sx > W + 30 || sy < -30 || sy > H + 30) return;
+
+  // Glow
+  const grd = ctx.createRadialGradient(sx, sy, 2, sx, sy, 25);
+  grd.addColorStop(0, p.type.color + '60');
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.arc(sx, sy, 25, 0, Math.PI * 2); ctx.fill();
+
+  // Circle
+  ctx.strokeStyle = p.type.color;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(sx, sy, 12, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = p.type.color + '40';
+  ctx.beginPath(); ctx.arc(sx, sy, 12, 0, Math.PI * 2); ctx.fill();
+
+  // Icon
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(p.type.icon, sx, sy);
+}
+
+function drawDangerArrows(t) {
+  // Show arrows pointing toward off-screen dangerous fish
+  for (const f of fishes) {
+    if (!f.alive || !f.chasing) continue;
+    const sx = f.x - cam.x, sy = f.y - cam.y;
+    // Only show for off-screen or edge fish
+    const margin = 60;
+    if (sx > margin && sx < W - margin && sy > margin && sy < H - margin) continue;
+
+    // Arrow on screen edge pointing toward danger
+    const px = player.x - cam.x, py = player.y - cam.y;
+    const angle = Math.atan2(sy - py, sx - px);
+    const edgeX = Math.max(30, Math.min(W - 30, px + Math.cos(angle) * Math.min(W, H) * .4));
+    const edgeY = Math.max(30, Math.min(H - 30, py + Math.sin(angle) * Math.min(W, H) * .4));
+
+    const pulse = .5 + Math.sin(t * 8) * .3;
+    ctx.save();
+    ctx.translate(edgeX, edgeY);
+    ctx.rotate(angle);
+    ctx.fillStyle = `rgba(255,60,60,${pulse})`;
+    ctx.beginPath();
+    ctx.moveTo(12, 0);
+    ctx.lineTo(-6, -7);
+    ctx.lineTo(-6, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 function spawnParticles(x, y, color, count) {
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -483,13 +641,48 @@ function spawnParticles(x, y, color, count) {
   }
 }
 
+// Size-based speed: bigger fish are SLOWER (key game design fix)
+function fishSpeedForSize(size, speciesSpeed) {
+  // Inverse relationship: small fish are fast, big fish are lumbering
+  // Base speed decreases as size increases
+  const sizeSpeedFactor = Math.max(0.35, 1.2 - size * 0.015);
+  return 20 * speciesSpeed * sizeSpeedFactor;
+}
+
 // Update
 function update(dt) {
   if (!running || gameOver) return;
   const t = performance.now() / 1000;
 
-  // Difficulty ramp
-  difficulty = 1 + score / 800;
+  // Difficulty ramp — much gentler
+  difficulty = 1 + score / 2000;
+
+  // Grace period countdown
+  if (gracePeriod > 0) gracePeriod -= dt;
+
+  // Combo timer
+  if (comboTimer > 0) {
+    comboTimer -= dt;
+    if (comboTimer <= 0) {
+      comboCount = 0;
+      comboEl.style.opacity = 0;
+    }
+  }
+
+  // Dash cooldown
+  if (dashCooldown > 0) dashCooldown -= dt;
+  if (dashTimer > 0) {
+    dashTimer -= dt;
+    if (dashTimer <= 0) isDashing = false;
+  }
+
+  // Active effects countdown
+  for (const key in player.activeEffects) {
+    if (player.activeEffects[key] > 0) {
+      player.activeEffects[key] -= dt;
+      if (player.activeEffects[key] <= 0) delete player.activeEffects[key];
+    }
+  }
 
   // Player movement
   const worldMouseX = mouseX + cam.x;
@@ -499,23 +692,31 @@ function update(dt) {
   const dist = Math.sqrt(dx * dx + dy * dy);
   const targetAngle = Math.atan2(dy, dx);
 
-  // Smooth angle rotation
   let angleDiff = targetAngle - player.angle;
   while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
   while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
   player.angle += angleDiff * Math.min(1, 8 * dt);
 
-  // Speed based on size (bigger = slightly slower but boost compensates)
-  const baseSpeed = 120 - player.size * 0.8;
-  let speed = Math.max(50, baseSpeed);
+  // Player speed: starts fast, slows gently with growth, but always feels responsive
+  let baseSpeed = 140 - player.size * 0.4;
+  let speed = Math.max(70, baseSpeed);
 
-  // Boost
+  // Speed power-up
+  if (player.activeEffects.speed > 0) speed *= 1.4;
+
+  // Boost (hold)
   if (boosting && boostFuel > 0) {
-    speed *= 1.5;
-    boostFuel = Math.max(0, boostFuel - dt * .5);
+    speed *= 1.6;
+    boostFuel = Math.max(0, boostFuel - dt * .35);
   } else if (!boosting) {
-    boostFuel = Math.min(1, boostFuel + dt * .25);
+    boostFuel = Math.min(1, boostFuel + dt * .4); // recharges faster
   }
+
+  // Dash (burst)
+  if (isDashing) {
+    speed *= 2.5;
+  }
+
   boostBar.style.width = (boostFuel * 100) + '%';
 
   if (dist > 5) {
@@ -546,6 +747,9 @@ function update(dt) {
   // Warning tracking
   let closestDanger = Infinity;
 
+  // Magnet effect: pull small fish toward player
+  const magnetActive = player.activeEffects.magnet > 0;
+
   // Fish AI
   for (let i = fishes.length - 1; i >= 0; i--) {
     const f = fishes[i];
@@ -558,30 +762,43 @@ function update(dt) {
     const canEatPlayer = f.size > player.size * 1.15;
     const playerCanEat = player.size > f.size * 1.15;
 
-    f.chasing = canEatPlayer && fdist < 350 + f.size * 3;
-    f.fleeing = playerCanEat && fdist < 200 + player.size * 3;
+    // Enemies detect player at shorter range, giving more reaction time
+    f.chasing = canEatPlayer && fdist < 280 + f.size * 2;
+    f.fleeing = playerCanEat && fdist < 180 + player.size * 2;
+
+    // Magnet pulls edible fish
+    if (magnetActive && playerCanEat && fdist < 300) {
+      const pullAngle = Math.atan2(fdx, fdy);
+      f.vx += Math.cos(pullAngle) * 40 * dt;
+      f.vy += Math.sin(pullAngle) * 40 * dt;
+      f.fleeing = false; // override flee
+    }
 
     if (f.chasing) {
-      // Chase player
+      // Chase player — BIG fish are SLOW chasers (key fix!)
       const chaseAngle = Math.atan2(fdy, fdx);
       let ad = chaseAngle - f.angle;
       while (ad > Math.PI) ad -= Math.PI * 2;
       while (ad < -Math.PI) ad += Math.PI * 2;
-      f.angle += ad * 5 * dt;
-      const spd = (35 + f.size * .5) * f.species.speed * (1 + difficulty * .05);
+      // Slower turning for big fish
+      const turnRate = Math.max(2, 5 - f.size * 0.04);
+      f.angle += ad * turnRate * dt;
+      // Speed inversely proportional to size
+      const sizeSlowdown = Math.max(0.3, 1.1 - f.size * 0.012);
+      const spd = (25 + f.size * .2) * f.species.speed * sizeSlowdown * (1 + Math.min(difficulty, 2) * .03);
       f.vx += Math.cos(f.angle) * spd * dt;
       f.vy += Math.sin(f.angle) * spd * dt;
       f.mouthOpen = .5 + Math.sin(t * 8) * .3;
 
       if (canEatPlayer) closestDanger = Math.min(closestDanger, fdist);
     } else if (f.fleeing) {
-      // Flee from player
       const fleeAngle = Math.atan2(-fdy, -fdx);
       let ad = fleeAngle - f.angle;
       while (ad > Math.PI) ad -= Math.PI * 2;
       while (ad < -Math.PI) ad += Math.PI * 2;
       f.angle += ad * 4 * dt;
-      const spd = (40 + f.size * .3) * f.species.speed;
+      // Fleeing fish are a bit slower so player can catch them
+      const spd = fishSpeedForSize(f.size, f.species.speed) * 1.2;
       f.vx += Math.cos(f.angle) * spd * dt;
       f.vy += Math.sin(f.angle) * spd * dt;
     } else {
@@ -599,7 +816,7 @@ function update(dt) {
       while (ad > Math.PI) ad -= Math.PI * 2;
       while (ad < -Math.PI) ad += Math.PI * 2;
       f.angle += ad * 2 * dt;
-      const spd = 18 * f.species.speed;
+      const spd = fishSpeedForSize(f.size, f.species.speed);
       f.vx += Math.cos(f.angle) * spd * dt;
       f.vy += Math.sin(f.angle) * spd * dt;
     }
@@ -626,39 +843,88 @@ function update(dt) {
       if (playerCanEat) {
         // Player eats fish
         f.alive = false;
-        const sizeGain = f.size * .08;
+        // More generous size gain, with diminishing returns on very small fish
+        const relativeSize = f.size / player.size;
+        const sizeGain = f.size * (.12 + relativeSize * .06);
         player.size += sizeGain;
         maxSize = Math.max(maxSize, player.size);
-        const pts = Math.ceil(f.size * (1 + player.size / 20));
+
+        // Combo system
+        comboCount++;
+        comboTimer = 2.5; // reset combo window
+        const comboMultiplier = Math.min(5, 1 + (comboCount - 1) * 0.5);
+        const pts = Math.ceil(f.size * (1 + player.size / 20) * comboMultiplier);
         score += pts;
         fishEaten++;
+
+        // Floating score text
+        const comboText = comboCount > 1 ? ` x${comboCount}` : '';
+        addFloatingText(f.x, f.y, `+${pts}${comboText}`, comboCount > 2 ? '#ff0' : '#fff');
+
+        if (comboCount > 1) {
+          comboEl.textContent = `Combo x${comboCount}!`;
+          comboEl.style.opacity = 1;
+          if (comboCount > 2) comboSound();
+        }
+
         spawnParticles(f.x, f.y, f.species.accent, 10 + f.size / 2);
         player.mouthOpen = 1;
         eatSound(f.size > 15);
         bubblePop();
         setTimeout(() => { if (player) player.mouthOpen = 0; }, 200);
-      } else if (canEatPlayer) {
-        // Player dies
-        die();
-        return;
+      } else if (canEatPlayer && gracePeriod <= 0) {
+        // Shield blocks death
+        if (player.activeEffects.shield > 0) {
+          delete player.activeEffects.shield;
+          spawnParticles(player.x, player.y, '#0ff', 20);
+          addFloatingText(player.x, player.y - 30, 'Shield blocked!', '#0ff');
+          // Push the attacker away
+          f.vx -= fdx * .05;
+          f.vy -= fdy * .05;
+        } else {
+          die();
+          return;
+        }
       }
     }
   }
 
   // Warning effect
-  if (closestDanger < 250) {
-    const intensity = 1 - closestDanger / 250;
-    warningEl.style.opacity = intensity * .6;
+  if (closestDanger < 300) {
+    const intensity = 1 - closestDanger / 300;
+    warningEl.style.opacity = intensity * .5;
     if (t - lastWarn > 1.5) { warnSound(); lastWarn = t; }
   } else {
     warningEl.style.opacity = 0;
   }
 
-  // Maintain fish count
-  const targetCount = Math.min(60, 35 + difficulty * 5 | 0);
-  while (fishes.length < targetCount) spawnFish();
+  // Maintain fish count — always plenty of fish to eat
+  const targetCount = Math.min(65, 40 + difficulty * 4 | 0);
+  while (fishes.length < targetCount) spawnFish(false);
 
-  // Remove far-away fish to keep performance
+  // Spawn power-ups periodically
+  if (Math.random() < dt * 0.08 && powerups.length < 3) {
+    spawnPowerup();
+  }
+
+  // Power-up collection
+  for (let i = powerups.length - 1; i >= 0; i--) {
+    const p = powerups[i];
+    p.life -= dt;
+    if (p.life <= 0 || p.collected) { powerups.splice(i, 1); continue; }
+    const pdx = player.x - p.x;
+    const pdy = player.y - p.y;
+    const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
+    if (pdist < player.size + 15) {
+      p.collected = true;
+      player.activeEffects[p.type.name] = p.type.duration;
+      addFloatingText(p.x, p.y - 20, p.type.desc, p.type.color);
+      powerupSound();
+      spawnParticles(p.x, p.y, p.type.color, 15);
+    }
+  }
+
+  // Remove far-away fish
   for (let i = fishes.length - 1; i >= 0; i--) {
     const f = fishes[i];
     const d = Math.abs(f.x - player.x) + Math.abs(f.y - player.y);
@@ -683,6 +949,14 @@ function update(dt) {
     p.vy *= .96;
     p.life -= p.decay;
     if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Floating texts
+  for (let i = floatingTexts.length - 1; i >= 0; i--) {
+    const ft = floatingTexts[i];
+    ft.y += ft.vy;
+    ft.life -= dt * .8;
+    if (ft.life <= 0) floatingTexts.splice(i, 1);
   }
 
   // UI
@@ -723,7 +997,7 @@ function render() {
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Subtle light rays from top
+  // Light rays
   ctx.save();
   ctx.globalAlpha = .03;
   for (let i = 0; i < 5; i++) {
@@ -737,7 +1011,7 @@ function render() {
   }
   ctx.restore();
 
-  // Sand/ocean floor
+  // Ocean floor
   const floorY = WORLD_H - cam.y;
   if (floorY < H + 20) {
     const floorGrad = ctx.createLinearGradient(0, floorY - 30, 0, floorY + 20);
@@ -745,7 +1019,6 @@ function render() {
     floorGrad.addColorStop(1, '#1a1510');
     ctx.fillStyle = floorGrad;
     ctx.fillRect(0, floorY - 30, W, H - floorY + 50);
-    // Sand dots
     ctx.fillStyle = '#2a2418';
     for (let x = (cam.x * .7 % 40); x < W; x += 35 + Math.sin(x) * 10) {
       ctx.beginPath();
@@ -754,30 +1027,44 @@ function render() {
     }
   }
 
-  // Seaweed (behind fish)
+  // Seaweed
   for (const sw of seaweeds) drawSeaweed(sw, t);
-
-  // Bubbles behind fish
+  // Bubbles
   for (const b of bubbles) drawBubble(b);
+  // Power-ups
+  for (const p of powerups) drawPowerup(p, t);
 
   if (running || gameOver) {
     // Sort fish by size for depth
     const allFish = gameOver ? [...fishes] : [player, ...fishes];
     allFish.sort((a, b) => a.size - b.size);
     for (const f of allFish) {
-      // Frustum cull
       const sx = f.x - cam.x, sy = f.y - cam.y;
       const r = f.size * 4;
       if (sx > -r && sx < W + r && sy > -r && sy < H + r) {
         drawFish(f, t);
       }
     }
+
+    // Danger arrows for off-screen threats
+    if (running) drawDangerArrows(t);
+  }
+
+  // Floating texts
+  for (const ft of floatingTexts) {
+    const sx = ft.x - cam.x, sy = ft.y - cam.y;
+    ctx.globalAlpha = ft.life;
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = ft.color;
+    ctx.fillText(ft.text, sx, sy);
+    ctx.globalAlpha = 1;
   }
 
   // Particles on top
   for (const p of particles) drawParticle(p);
 
-  // Depth fog at edges
+  // Depth fog
   ctx.fillStyle = 'rgba(2,8,16,.3)';
   ctx.fillRect(0, 0, W, 30);
   const edgeFog = ctx.createLinearGradient(0, H - 40, 0, H);
@@ -785,28 +1072,73 @@ function render() {
   edgeFog.addColorStop(1, 'rgba(2,8,16,.5)');
   ctx.fillStyle = edgeFog;
   ctx.fillRect(0, H - 40, W, 40);
+
+  // Dash cooldown indicator (small arc near player)
+  if (running && !gameOver && dashCooldown > 0) {
+    const px = player.x - cam.x, py = player.y - cam.y;
+    const progress = 1 - dashCooldown / 1.5;
+    ctx.strokeStyle = `rgba(255,255,0,${.3})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(px, py, player.size * 2.5, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    ctx.stroke();
+  }
 }
 
-// Game loop
+// Game loop with robustness
 let lastTime = 0;
+let loopId = 0;
+let safetyInterval = null;
+
 function loop(now) {
+  loopId = requestAnimationFrame(loop);
   const dt = Math.min(.05, (now - lastTime) / 1000);
   lastTime = now;
   update(dt);
   render();
-  requestAnimationFrame(loop);
 }
 
+// Visibility change: pause/resume gracefully
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    cancelAnimationFrame(loopId);
+    loopId = 0;
+  } else {
+    if (!loopId) {
+      lastTime = performance.now();
+      loopId = requestAnimationFrame(loop);
+    }
+  }
+});
+
+// Safety net: restart loop if it stops
+function ensureLoop() {
+  if (!loopId && !document.hidden) {
+    lastTime = performance.now();
+    loopId = requestAnimationFrame(loop);
+  }
+}
+safetyInterval = setInterval(ensureLoop, 1000);
+
+let playBtnDebounce = false;
 playBtn.addEventListener('click', () => {
-  resumeAudio(); startAmbient();
+  if (playBtnDebounce) return;
+  playBtnDebounce = true;
+  setTimeout(() => { playBtnDebounce = false; }, 500);
+  ensureAudio(); startAmbient();
   overlay.style.display = 'none';
   gameOver = false;
   running = true;
   init();
 });
+playBtn.addEventListener('touchstart', (e) => {
+  ensureAudio();
+}, { passive: true });
 
 // Start rendering even on menu
-requestAnimationFrame(now => { lastTime = now; init(); loop(now); });
+init();
+lastTime = performance.now();
+loopId = requestAnimationFrame(loop);
 </script>
 </body>
 </html>
