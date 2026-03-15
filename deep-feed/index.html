@@ -13,6 +13,7 @@ canvas{display:block;width:100%;height:100%}
 #hud{position:absolute;top:0;left:0;width:100%;pointer-events:none;padding:14px 16px;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#fff;z-index:5}
 #score{font-size:22px;font-weight:700;text-shadow:0 2px 8px rgba(0,160,255,.5)}
 #highscore{font-size:12px;opacity:.6;margin-top:2px}
+#depth-info{font-size:13px;opacity:.7;margin-top:2px;color:#80e0ff}
 #size-info{margin-top:8px;font-size:13px;opacity:.8}
 #size-bar-wrap{margin-top:4px;width:130px;height:7px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden}
 #size-bar{height:100%;width:0%;border-radius:4px;transition:width .3s ease}
@@ -29,8 +30,19 @@ canvas{display:block;width:100%;height:100%}
 .play-btn:hover,.play-btn:active{background:rgba(0,120,180,.5);border-color:#0ff;box-shadow:0 0 30px rgba(0,200,255,.3)}
 .hint{font-size:11px;opacity:.4;margin-top:12px}
 
+/* End stats card */
+#end-stats{max-width:320px;width:90%;margin:0 auto 16px}
+.stat-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px}
+.stat-row:last-child{border-bottom:none}
+.stat-label{opacity:.5}
+.stat-value{font-weight:600}
+.stat-value.record{color:#ffcc00;text-shadow:0 0 10px rgba(255,200,0,.4)}
+
 /* Damage vignette */
 #vignette{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(255,0,0,.35) 100%);transition:opacity .15s;z-index:4}
+
+/* Prestige flash overlay */
+#prestige-flash{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;background:#fff;z-index:8;transition:opacity .3s}
 
 /* Orientation hint */
 #orient-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:rgba(255,255,255,.6);background:rgba(0,30,60,.7);padding:8px 16px;border-radius:20px;pointer-events:none;opacity:0;transition:opacity .4s;z-index:6;white-space:nowrap}
@@ -43,12 +55,14 @@ canvas{display:block;width:100%;height:100%}
 <div id="hud">
   <div id="score">Score: 0</div>
   <div id="highscore"></div>
+  <div id="depth-info"></div>
   <div id="size-info">Size: Tiny</div>
   <div id="size-bar-wrap"><div id="size-bar"></div></div>
   <div id="boost-wrap"><div id="boost-bar"></div></div>
 </div>
 
 <div id="vignette"></div>
+<div id="prestige-flash"></div>
 <div id="orient-hint">Rotate to portrait for a better experience</div>
 
 <div id="overlay">
@@ -68,34 +82,92 @@ canvas{display:block;width:100%;height:100%}
 
 const TIER_COUNT = 6;
 const TIER_NAMES = ['Plancton', 'Fry', 'Small', 'Medium', 'Large', 'Huge'];
+
+// Zone names for depth display
+const ZONE_NAMES = ['Surface', 'Surface', 'Récif', 'Crépusculaire', 'Abysses', 'Abysses'];
+
+// Base tier colors (Surface defaults — overridden per zone)
 const TIER_COLORS = [
-  { body: '#88ffff', fin: '#88ffff', eye: '#fff' },  // 0 plancton (cyan glow)
-  { body: '#66ee66', fin: '#44cc44', eye: '#fff' },  // 1 fry green
+  { body: '#88ffff', fin: '#88ffff', eye: '#fff' },  // 0 plancton
+  { body: '#66ee66', fin: '#44cc44', eye: '#fff' },  // 1 fry
   { body: '#44aaff', fin: '#2288dd', eye: '#fff' },  // 2 blue
   { body: '#ff9933', fin: '#dd7711', eye: '#fff' },  // 3 orange
   { body: '#ff4444', fin: '#cc2222', eye: '#fff' },  // 4 red
   { body: '#bb55ff', fin: '#9933dd', eye: '#ff0' },  // 5 purple boss
 ];
-// Base radius per tier (player radius at that tier)
+
+// Zone-themed fish palettes — each zone defines alternate colors for food fish
+const ZONE_PALETTES = {
+  // Surface (tier 1-2): bright tropical
+  surface: [
+    { body: '#88ffff', fin: '#88ffff', eye: '#fff' },   // plancton - green glow
+    { body: '#77ff77', fin: '#55dd55', eye: '#fff' },    // bright green fry
+    { body: '#55bbff', fin: '#3399dd', eye: '#fff' },    // sky blue
+    { body: '#ff9933', fin: '#dd7711', eye: '#fff' },
+    { body: '#ff4444', fin: '#cc2222', eye: '#fff' },
+    { body: '#bb55ff', fin: '#9933dd', eye: '#ff0' },
+  ],
+  // Reef (tier 3): tropical, coral colors
+  reef: [
+    { body: '#66ffaa', fin: '#44dd88', eye: '#fff' },   // green plancton
+    { body: '#ffaa44', fin: '#dd8822', eye: '#fff' },    // clownfish orange
+    { body: '#ff66aa', fin: '#dd4488', eye: '#fff' },    // pink reef
+    { body: '#44dddd', fin: '#22bbbb', eye: '#fff' },    // teal
+    { body: '#ff5555', fin: '#dd3333', eye: '#fff' },
+    { body: '#cc66ff', fin: '#aa44dd', eye: '#ff0' },
+  ],
+  // Twilight (tier 4): pale, eerie
+  twilight: [
+    { body: '#aaddff', fin: '#88bbdd', eye: '#ddf' },   // pale blue plancton
+    { body: '#8899bb', fin: '#667799', eye: '#ddf' },    // steel
+    { body: '#aa88cc', fin: '#886aaa', eye: '#ddf' },    // muted purple
+    { body: '#77aaaa', fin: '#558888', eye: '#ddf' },    // dull teal
+    { body: '#cc6666', fin: '#aa4444', eye: '#ddf' },
+    { body: '#9966cc', fin: '#7744aa', eye: '#ff0' },
+  ],
+  // Abyss (tier 5): bioluminescent, dark bodies with glowing accents
+  abyss: [
+    { body: '#00ffcc', fin: '#00ddaa', eye: '#0ff' },    // neon plancton
+    { body: '#334455', fin: '#223344', eye: '#0ff' },    // dark w/ glow eyes
+    { body: '#443355', fin: '#332244', eye: '#f0f' },    // dark purple
+    { body: '#224455', fin: '#113344', eye: '#0ff' },    // dark teal
+    { body: '#553333', fin: '#442222', eye: '#f44' },    // dark red
+    { body: '#442255', fin: '#331144', eye: '#ff0' },    // dark violet
+  ],
+};
+
+// Base radius per tier
 const TIER_RADIUS = [7, 14, 22, 34, 50, 72];
-// How many fish eaten to advance from tier i to tier i+1
-const TIER_THRESHOLDS = [8, 5, 10, 18, 30];
-// Enemy speed multiplier per tier (player is always faster)
+
+// V3: faster progression — target 60-90s runs
+const TIER_THRESHOLDS = [5, 3, 6, 10, 15];
+
+// Enemy speed multiplier per tier
 const ENEMY_SPEED = [0.5, 0.7, 0.65, 0.55, 0.5, 0.4];
 
-// Plancton config
-const PLANCTON_TARGET_COUNT = 12; // keep 10-15 on screen
-const MAX_PLANCTON = 20;
+// Prestige config
+const PRESTIGE_EXTRA_EATS = 8; // eat 8 more after reaching Huge to prestige
+const PRESTIGE_SPEED_BUFF = 0.12; // +12% enemy speed per depth
 
-const MAX_FISH = 50;
+// Frenzy config
+const FRENZY_WINDOW = 3.0;    // seconds window
+const FRENZY_THRESHOLD = 5;   // eats needed
+const FRENZY_SLOWMO_DURATION = 0.5;
+const FRENZY_SLOWMO_SCALE = 0.3;
+
+// Plancton config
+const PLANCTON_TARGET_COUNT = 15;
+const MAX_PLANCTON = 25;
+
+const MAX_FISH = 60;
 const MAX_PARTICLES = 120;
 const MAX_BUBBLES = 40;
-const MIN_VISIBLE = 18;
+const MIN_VISIBLE = 24; // more fish on screen = faster games
 
 // Fish-fish eating config
-const FISH_EAT_CHECK_INTERVAL = 10; // check every N frames
-const FISH_EAT_GLOBAL_COOLDOWN = 1.0; // max 1 eat per second globally
-const FISH_EAT_PER_FISH_COOLDOWN = 4; // seconds after eating
+const FISH_EAT_CHECK_INTERVAL = 10;
+const FISH_EAT_GLOBAL_COOLDOWN = 1.0;
+const FISH_EAT_PER_FISH_COOLDOWN = 4;
 
 const PLAYER_BASE_SPEED = 4.5;
 const BOOST_MULT = 1.7;
@@ -105,8 +177,28 @@ const BOOST_REGEN = 0.35;
 
 const SHAKE_DECAY = 0.88;
 
-// Reference screen size for radius scaling (desktop baseline)
+// Reference screen size for radius scaling
 const REF_SCREEN = 900;
+
+// Zone background configs
+const ZONE_BG = {
+  surface: {
+    top: '#1a6090', mid: '#0d4070', bot: '#062848',
+    rayColor: '#aaddff', rayAlpha: 0.07,
+  },
+  reef: {
+    top: '#0d5a6a', mid: '#0a3a50', bot: '#042030',
+    rayColor: '#66ccbb', rayAlpha: 0.05,
+  },
+  twilight: {
+    top: '#0a1a30', mid: '#06102a', bot: '#030818',
+    rayColor: '#5566aa', rayAlpha: 0.025,
+  },
+  abyss: {
+    top: '#020610', mid: '#010408', bot: '#000204',
+    rayColor: '#223355', rayAlpha: 0.01,
+  },
+};
 
 // ============================================================
 //  DOM REFS
@@ -118,12 +210,14 @@ const overlay = document.getElementById('overlay');
 const playBtn = document.getElementById('play-btn');
 const scoreEl = document.getElementById('score');
 const highScoreEl = document.getElementById('highscore');
+const depthInfoEl = document.getElementById('depth-info');
 const sizeInfoEl = document.getElementById('size-info');
 const sizeBarEl = document.getElementById('size-bar');
 const boostBarEl = document.getElementById('boost-bar');
 const vignetteEl = document.getElementById('vignette');
 const endStatsEl = document.getElementById('end-stats');
 const orientHintEl = document.getElementById('orient-hint');
+const prestigeFlashEl = document.getElementById('prestige-flash');
 
 // ============================================================
 //  AUDIO (Web Audio API — lazy init)
@@ -152,7 +246,6 @@ function playEat() {
   o.connect(g).connect(audioCtx.destination);
   o.start(t);
   o.stop(t + 0.15);
-  // Add a short noise burst for crunch
   const bufSize = audioCtx.sampleRate * 0.04;
   const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
   const data = buf.getChannelData(0);
@@ -198,6 +291,40 @@ function playGameOver() {
   });
 }
 
+function playFrenzy() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Ascending triumphant arpeggio
+  [523, 659, 784, 1047].forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq, t + i * 0.06);
+    g.gain.setValueAtTime(0.15, t + i * 0.06);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.2);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t + i * 0.06);
+    o.stop(t + i * 0.06 + 0.25);
+  });
+}
+
+function playPrestige() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Deep descending + rising sweep
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(800, t);
+  o.frequency.exponentialRampToValueAtTime(100, t + 0.4);
+  o.frequency.exponentialRampToValueAtTime(600, t + 0.8);
+  g.gain.setValueAtTime(0.2, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 1.0);
+}
+
 // ============================================================
 //  HAPTIC FEEDBACK
 // ============================================================
@@ -210,18 +337,25 @@ function haptic(pattern) {
 //  FLOATING SCORE TEXT
 // ============================================================
 
-function spawnFloatingText(x, y, text, color) {
+function spawnFloatingText(x, y, text, color, big) {
   if (floatingTexts.length >= MAX_FLOATING_TEXTS) return;
-  floatingTexts.push({ x, y, text, color: color || '#fff', life: 1, decay: 0.015 });
+  floatingTexts.push({
+    x, y, text,
+    color: color || '#fff',
+    life: 1,
+    decay: big ? 0.008 : 0.015,
+    big: big || false,
+    glow: big || false,
+  });
 }
 
 // ============================================================
 //  GAME STATE
 // ============================================================
 
-let W, H;                  // canvas pixel size
+let W, H;
 let running = false;
-let gameTime = 0;          // seconds since game start
+let gameTime = 0;
 let score = 0;
 let highScore = parseInt(localStorage.getItem('deepfeed_hi') || '0', 10);
 
@@ -232,6 +366,7 @@ let player = null;
 let fishes = [];
 let particles = [];
 let bubbles = [];
+let jellyfish = []; // twilight zone obstacles
 
 // Input
 let pointer = { x: 0, y: 0, active: false };
@@ -243,14 +378,14 @@ let shakeX = 0, shakeY = 0, shakeIntensity = 0;
 
 // Fish-fish eating state
 let frameCount = 0;
-let lastFishEatTime = 0; // gameTime of last fish-fish eat
-let pendingRespawns = []; // {tier, delay} entries
+let lastFishEatTime = 0;
+let pendingRespawns = [];
 
 // Touch detection & finger offset
 let isTouch = false;
 const TOUCH_OFFSET_Y = 80;
 
-// Radius scale factor (computed on resize)
+// Radius scale factor
 let radiusScale = 1;
 
 // HUD throttle
@@ -258,7 +393,7 @@ let lastHUDTime = 0;
 
 // Floating score texts
 let floatingTexts = [];
-const MAX_FLOATING_TEXTS = 20;
+const MAX_FLOATING_TEXTS = 30;
 
 // Player eat scale bump
 let playerScaleBump = 0;
@@ -266,6 +401,32 @@ let playerScaleBump = 0;
 // Title screen ambient state
 let titleBubbles = [];
 let titlePlancton = [];
+
+// Prestige / Depth state
+let depthLevel = 1;
+let maxDepthReached = 1;
+let scoreMultiplier = 1;
+let prestigeEats = 0; // eats after reaching tier 5
+let inPrestige = false; // prestige animation active
+let prestigeTimer = 0;
+
+// Frenzy state
+let recentEats = []; // timestamps of recent eats
+let frenzyActive = false;
+let frenzyTimer = 0;
+let frenzyCount = 0;
+let bestFrenzy = 0;
+let slowmoScale = 1; // time scale for bullet time
+let saturationFlash = 0; // 0-1 for saturation overlay
+
+// Current zone (computed from player tier)
+let currentZone = 'surface';
+let zoneTransition = 0; // 0-1 blend to next zone
+
+// Stats tracking
+let maxTierReached = 1;
+let totalFishEaten = 0;
+let startTime = 0;
 
 // ============================================================
 //  RESIZE
@@ -278,11 +439,8 @@ function resize() {
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  // Scale radius based on screen size (smaller screens → smaller fish)
   radiusScale = Math.max(0.45, Math.min(1, Math.min(W, H) / REF_SCREEN));
 
-  // Orientation hint (landscape on small screen = probably mobile)
   if (orientHintEl) {
     const isMobileSize = Math.min(W, H) < 500;
     const isLandscape = W > H * 1.2;
@@ -293,20 +451,50 @@ window.addEventListener('resize', resize);
 resize();
 
 // ============================================================
+//  ZONE HELPERS
+// ============================================================
+
+function getZoneForTier(tier) {
+  if (tier <= 2) return 'surface';
+  if (tier === 3) return 'reef';
+  if (tier === 4) return 'twilight';
+  return 'abyss';
+}
+
+function getZonePalette(zone) {
+  return ZONE_PALETTES[zone] || ZONE_PALETTES.surface;
+}
+
+function getFishColors(tier, zone) {
+  const palette = getZonePalette(zone);
+  return palette[tier] || TIER_COLORS[tier];
+}
+
+// Lerp hex colors for zone transitions
+function lerpColor(a, b, t) {
+  const ah = parseInt(a.slice(1), 16);
+  const bh = parseInt(b.slice(1), 16);
+  const ar = (ah >> 16) & 0xff, ag = (ah >> 8) & 0xff, ab = ah & 0xff;
+  const br = (bh >> 16) & 0xff, bg = (bh >> 8) & 0xff, bb = bh & 0xff;
+  const rr = Math.round(ar + (br - ar) * t);
+  const rg = Math.round(ag + (bg - ag) * t);
+  const rb = Math.round(ab + (bb - ab) * t);
+  return '#' + ((1 << 24) + (rr << 16) + (rg << 8) + rb).toString(16).slice(1);
+}
+
+// ============================================================
 //  FISH DRAWING
 // ============================================================
 
-function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer) {
+function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer, zone) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
 
-  const c = TIER_COLORS[tier];
+  const c = getFishColors(tier, zone || currentZone);
   const r = radius;
   const bodyLen = r * 2.2;
   const bodyH = r * 1.1;
-
-  // Tail wag
   const tailWag = Math.sin(tailPhase) * 0.3;
 
   // Shadow beneath
@@ -359,6 +547,46 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer) {
   ctx.closePath();
   ctx.fill();
 
+  // Abyss zone: bioluminescent glow on fish bodies
+  if ((zone || currentZone) === 'abyss' && !isPlayer) {
+    const bioGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 2);
+    bioGlow.addColorStop(0, `rgba(100,200,255,0.12)`);
+    bioGlow.addColorStop(1, 'rgba(100,200,255,0)');
+    ctx.fillStyle = bioGlow;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Anglerfish lantern for tier 4-5 in abyss
+  if ((zone || currentZone) === 'abyss' && tier >= 4 && !isPlayer) {
+    ctx.save();
+    const lx = bodyLen * 0.5;
+    const ly = -bodyH * 1.2;
+    // Stalk
+    ctx.strokeStyle = c.fin;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(r * 0.1, -bodyH * 0.8);
+    ctx.quadraticCurveTo(lx * 0.8, ly * 0.6, lx, ly);
+    ctx.stroke();
+    // Lantern glow
+    const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, r * 0.8);
+    lg.addColorStop(0, 'rgba(255,255,100,0.6)');
+    lg.addColorStop(0.5, 'rgba(255,200,50,0.15)');
+    lg.addColorStop(1, 'rgba(255,200,50,0)');
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    ctx.arc(lx, ly, r * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+    // Bright dot
+    ctx.fillStyle = '#ffffaa';
+    ctx.beginPath();
+    ctx.arc(lx, ly, r * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // Mouth
   if (mouthOpen > 0) {
     ctx.fillStyle = '#331111';
@@ -377,12 +605,10 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer) {
   ctx.beginPath();
   ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2);
   ctx.fill();
-  // Pupil
   ctx.fillStyle = '#111';
   ctx.beginPath();
   ctx.arc(eyeX + eyeR * 0.25, eyeY, eyeR * 0.55, 0, Math.PI * 2);
   ctx.fill();
-  // Glint
   ctx.fillStyle = '#fff';
   ctx.beginPath();
   ctx.arc(eyeX + eyeR * 0.45, eyeY - eyeR * 0.25, eyeR * 0.2, 0, Math.PI * 2);
@@ -401,28 +627,109 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer) {
 }
 
 // ============================================================
-//  PLANCTON DRAWING — bioluminescent dots, NOT fish
+//  PLANCTON DRAWING
 // ============================================================
 
-function drawPlancton(x, y, radius, phase) {
+function drawPlancton(x, y, radius, phase, zone) {
   const pulse = 0.7 + 0.3 * Math.sin(phase);
   const glowR = radius * 2.5 * pulse;
+  const z = zone || currentZone;
 
-  // Outer glow
+  // Zone-specific plancton colors
+  let inner, mid, outer;
+  if (z === 'abyss') {
+    inner = 'rgba(0,255,200,0.6)';
+    mid = 'rgba(0,200,180,0.25)';
+    outer = 'rgba(0,150,150,0)';
+  } else if (z === 'twilight') {
+    inner = 'rgba(160,180,255,0.5)';
+    mid = 'rgba(120,140,220,0.2)';
+    outer = 'rgba(80,100,180,0)';
+  } else if (z === 'reef') {
+    inner = 'rgba(100,255,180,0.5)';
+    mid = 'rgba(80,220,160,0.2)';
+    outer = 'rgba(50,180,120,0)';
+  } else {
+    inner = 'rgba(140,255,255,0.5)';
+    mid = 'rgba(100,220,255,0.2)';
+    outer = 'rgba(60,180,255,0)';
+  }
+
   const grad = ctx.createRadialGradient(x, y, 0, x, y, glowR);
-  grad.addColorStop(0, 'rgba(140,255,255,0.5)');
-  grad.addColorStop(0.4, 'rgba(100,220,255,0.2)');
-  grad.addColorStop(1, 'rgba(60,180,255,0)');
+  grad.addColorStop(0, inner);
+  grad.addColorStop(0.4, mid);
+  grad.addColorStop(1, outer);
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(x, y, glowR, 0, Math.PI * 2);
   ctx.fill();
 
-  // Bright core
   ctx.fillStyle = `rgba(220,255,255,${0.6 + 0.4 * pulse})`;
   ctx.beginPath();
   ctx.arc(x, y, radius * pulse, 0, Math.PI * 2);
   ctx.fill();
+}
+
+// ============================================================
+//  JELLYFISH DRAWING & MANAGEMENT (twilight zone obstacle)
+// ============================================================
+
+function spawnJellyfish() {
+  if (jellyfish.length >= 6) return;
+  const side = Math.floor(Math.random() * 4);
+  let x, y;
+  switch (side) {
+    case 0: x = -40; y = Math.random() * H; break;
+    case 1: x = W + 40; y = Math.random() * H; break;
+    case 2: x = Math.random() * W; y = -40; break;
+    default: x = Math.random() * W; y = H + 40; break;
+  }
+  jellyfish.push({
+    x, y,
+    vx: (Math.random() - 0.5) * 0.5,
+    vy: -0.3 + Math.random() * 0.2,
+    radius: 18 + Math.random() * 14,
+    phase: Math.random() * Math.PI * 2,
+    tentaclePhase: Math.random() * Math.PI * 2,
+  });
+}
+
+function drawJellyfish(j) {
+  const pulse = 0.85 + 0.15 * Math.sin(j.phase);
+  const r = j.radius * pulse;
+
+  // Glow
+  const glow = ctx.createRadialGradient(j.x, j.y, 0, j.x, j.y, r * 3);
+  glow.addColorStop(0, 'rgba(180,100,255,0.15)');
+  glow.addColorStop(1, 'rgba(180,100,255,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(j.x, j.y, r * 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Bell (dome)
+  ctx.fillStyle = 'rgba(180,130,255,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(j.x, j.y, r * 0.8, r * 0.6, 0, Math.PI, 0);
+  ctx.fill();
+
+  // Inner glow
+  ctx.fillStyle = 'rgba(220,180,255,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(j.x, j.y - r * 0.1, r * 0.4, r * 0.3, 0, Math.PI, 0);
+  ctx.fill();
+
+  // Tentacles
+  ctx.strokeStyle = 'rgba(180,130,255,0.3)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 5; i++) {
+    const tx = j.x + (i - 2) * r * 0.3;
+    const waveOff = Math.sin(j.tentaclePhase + i * 0.8) * 6;
+    ctx.beginPath();
+    ctx.moveTo(tx, j.y);
+    ctx.quadraticCurveTo(tx + waveOff, j.y + r * 0.8, tx - waveOff * 0.5, j.y + r * 1.5);
+    ctx.stroke();
+  }
 }
 
 // ============================================================
@@ -466,32 +773,31 @@ function createFish(tier, forceEdge, scatterOnScreen) {
   let x, y, angle;
 
   if (scatterOnScreen) {
-    // Spawn anywhere on screen (for initial population)
     x = r + Math.random() * (W - r * 2);
     y = r + Math.random() * (H - r * 2);
     angle = Math.random() * Math.PI * 2;
   } else if (forceEdge || !player) {
-    // Spawn from screen edges
     const side = Math.floor(Math.random() * 4);
     const margin = r * 2;
     switch (side) {
-      case 0: x = -margin;          y = Math.random() * H; break; // left
-      case 1: x = W + margin;       y = Math.random() * H; break; // right
-      case 2: x = Math.random() * W; y = -margin; break;          // top
-      case 3: x = Math.random() * W; y = H + margin; break;      // bottom
+      case 0: x = -margin;          y = Math.random() * H; break;
+      case 1: x = W + margin;       y = Math.random() * H; break;
+      case 2: x = Math.random() * W; y = -margin; break;
+      case 3: x = Math.random() * W; y = H + margin; break;
     }
-    // Aim roughly towards center area
     const tx = W * (0.2 + Math.random() * 0.6);
     const ty = H * (0.2 + Math.random() * 0.6);
     angle = Math.atan2(ty - y, tx - x);
   } else {
-    // Shouldn't happen but fallback
     x = Math.random() * W;
     y = Math.random() * H;
     angle = Math.random() * Math.PI * 2;
   }
 
-  const baseSpeed = (1.2 + Math.random() * 0.8) * ENEMY_SPEED[tier];
+  // Speed increases with depth (prestige)
+  const depthSpeedMult = 1 + (depthLevel - 1) * PRESTIGE_SPEED_BUFF;
+  const baseSpeed = (1.2 + Math.random() * 0.8) * ENEMY_SPEED[tier] * depthSpeedMult;
+
   return {
     x, y, angle,
     radius: r,
@@ -502,36 +808,29 @@ function createFish(tier, forceEdge, scatterOnScreen) {
     alive: true,
     turnTimer: 1 + Math.random() * 3,
     targetAngle: angle,
-    // Fleeing state
     fleeing: false,
     fleeTimer: 0,
-    // Fish-fish eating cooldown
     eatCooldown: 0,
-    // Temporary size boost after eating (cosmetic)
     sizeBoost: 0,
   };
 }
 
 function chooseTier(playerTier, elapsed) {
-  // Plancton (tier 0) is spawned separately — chooseTier only picks tier 1+
   const maxSpawnTier = Math.min(TIER_COUNT - 1, playerTier + 1);
   const weights = [];
   for (let t = 0; t < TIER_COUNT; t++) {
     if (t === 0 || t > maxSpawnTier) { weights.push(0); continue; }
     if (t < playerTier) {
-      // Food fish — always plenty
       weights.push(t === playerTier - 1 ? 4 : 2);
     } else if (t === playerTier) {
-      // Same size — some
       weights.push(1.5);
     } else {
-      // Bigger = danger, rarer early, more later
-      const dangerScale = Math.min(1, elapsed / 60);
+      const dangerScale = Math.min(1, elapsed / 30); // faster ramp-up
       weights.push(0.5 + dangerScale * 1.5);
     }
   }
   const total = weights.reduce((a, b) => a + b, 0);
-  if (total <= 0) return 1; // fallback
+  if (total <= 0) return 1;
   let r = Math.random() * total;
   for (let t = 0; t < TIER_COUNT; t++) {
     r -= weights[t];
@@ -549,14 +848,14 @@ function createPlayer() {
     x: W / 2,
     y: H / 2,
     angle: 0,
-    tier: 1,              // start as Fry (tier 1)
+    tier: 1,
     radius: TIER_RADIUS[1] * radiusScale,
     tailPhase: 0,
     mouthOpen: 0,
-    eaten: 0,          // fish eaten in current tier
-    totalEaten: 0,     // total fish eaten (score)
+    eaten: 0,
+    totalEaten: 0,
     alive: true,
-    invincible: 0,     // seconds of invincibility after hit
+    invincible: 0,
     flashTimer: 0,
   };
 }
@@ -570,6 +869,7 @@ function initGame() {
   fishes = [];
   particles = [];
   bubbles = [];
+  jellyfish = [];
   floatingTexts = [];
   score = 0;
   gameTime = 0;
@@ -581,18 +881,40 @@ function initGame() {
   playerScaleBump = 0;
   pendingRespawns = [];
 
-  // Spawn initial plancton (10-15) scattered on screen
-  const planctonCount = 10 + Math.floor(Math.random() * 6);
+  // Prestige reset
+  depthLevel = 1;
+  maxDepthReached = 1;
+  scoreMultiplier = 1;
+  prestigeEats = 0;
+  inPrestige = false;
+  prestigeTimer = 0;
+
+  // Frenzy reset
+  recentEats = [];
+  frenzyActive = false;
+  frenzyTimer = 0;
+  frenzyCount = 0;
+  bestFrenzy = 0;
+  slowmoScale = 1;
+  saturationFlash = 0;
+
+  // Stats
+  maxTierReached = 1;
+  totalFishEaten = 0;
+  startTime = performance.now();
+
+  currentZone = 'surface';
+
+  // Spawn initial population
+  const planctonCount = 12 + Math.floor(Math.random() * 6);
   for (let i = 0; i < planctonCount; i++) {
     fishes.push(createFish(0, false, true));
   }
-  // Spawn tier 1 Fry (5-8) from edges
-  const fryCount = 5 + Math.floor(Math.random() * 4);
+  const fryCount = 6 + Math.floor(Math.random() * 5);
   for (let i = 0; i < fryCount; i++) {
     fishes.push(createFish(1, true));
   }
-  // Spawn tier 2 Small (2-3) from edges
-  const smallCount = 2 + Math.floor(Math.random() * 2);
+  const smallCount = 3 + Math.floor(Math.random() * 3);
   for (let i = 0; i < smallCount; i++) {
     fishes.push(createFish(2, true));
   }
@@ -607,7 +929,6 @@ function initGame() {
 function getPointerPos(e) {
   const touch = e.touches ? e.touches[0] : e;
   if (!touch) return;
-  // Detect touch vs mouse input
   if (e.pointerType) {
     isTouch = e.pointerType === 'touch';
   } else if (e.type) {
@@ -634,19 +955,14 @@ function onPointerUp(e) {
   boosting = false;
 }
 
-// Pointer events (primary)
 canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
 canvas.addEventListener('pointermove', onPointerMove, { passive: false });
 canvas.addEventListener('pointerup', onPointerUp, { passive: false });
 canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
-
-// Touch fallback for in-app browsers
 canvas.addEventListener('touchstart', onPointerDown, { passive: false });
 canvas.addEventListener('touchmove', onPointerMove, { passive: false });
 canvas.addEventListener('touchend', onPointerUp, { passive: false });
 canvas.addEventListener('touchcancel', onPointerUp, { passive: false });
-
-// Mouse fallback
 canvas.addEventListener('mousedown', (e) => { isTouch = false; ensureAudio(); pointer.active = true; boosting = true; });
 canvas.addEventListener('mouseup', () => { boosting = false; });
 canvas.addEventListener('mousemove', (e) => { isTouch = false; pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true; });
@@ -656,19 +972,31 @@ canvas.addEventListener('mousemove', (e) => { isTouch = false; pointer.x = e.cli
 // ============================================================
 
 function updateHUD() {
-  scoreEl.textContent = `Score: ${score}`;
+  const displayScore = score * scoreMultiplier;
+  scoreEl.textContent = `Score: ${displayScore}`;
   if (highScore > 0) highScoreEl.textContent = `Best: ${highScore}`;
 
+  if (depthLevel > 1) {
+    depthInfoEl.textContent = `Profondeur ${depthLevel} — x${scoreMultiplier}`;
+    depthInfoEl.style.display = 'block';
+  } else {
+    depthInfoEl.style.display = 'none';
+  }
+
   if (player) {
-    sizeInfoEl.textContent = `Size: ${TIER_NAMES[player.tier]}`;
-    // Progress bar to next tier
+    const zoneName = ZONE_NAMES[player.tier] || 'Surface';
+    sizeInfoEl.textContent = `${TIER_NAMES[player.tier]} — ${zoneName}`;
     if (player.tier < TIER_COUNT - 1) {
       const progress = (player.eaten / TIER_THRESHOLDS[player.tier]) * 100;
       sizeBarEl.style.width = Math.min(100, progress) + '%';
-      sizeBarEl.style.background = `linear-gradient(90deg, ${TIER_COLORS[player.tier].body}, ${TIER_COLORS[player.tier + 1].body})`;
+      const c1 = getFishColors(player.tier, currentZone);
+      const c2 = getFishColors(player.tier + 1, currentZone);
+      sizeBarEl.style.background = `linear-gradient(90deg, ${c1.body}, ${c2.body})`;
     } else {
-      sizeBarEl.style.width = '100%';
-      sizeBarEl.style.background = TIER_COLORS[player.tier].body;
+      // At max tier — show prestige progress
+      const progress = (prestigeEats / PRESTIGE_EXTRA_EATS) * 100;
+      sizeBarEl.style.width = Math.min(100, progress) + '%';
+      sizeBarEl.style.background = 'linear-gradient(90deg, #bb55ff, #ffcc00)';
     }
   }
   boostBarEl.style.width = (boostFuel / BOOST_MAX * 100) + '%';
@@ -681,7 +1009,85 @@ function updateHUD() {
 function circlesOverlap(ax, ay, ar, bx, by, br) {
   const dx = ax - bx, dy = ay - by;
   const dist = Math.sqrt(dx * dx + dy * dy);
-  return dist < (ar + br) * 0.7; // 0.7 = forgiving overlap
+  return dist < (ar + br) * 0.7;
+}
+
+// ============================================================
+//  PRESTIGE ANIMATION
+// ============================================================
+
+function triggerPrestige() {
+  inPrestige = true;
+  prestigeTimer = 1.5; // 1.5s animation
+  playPrestige();
+  haptic([50, 30, 50, 30, 100]);
+
+  // Flash
+  prestigeFlashEl.style.opacity = '0.8';
+  setTimeout(() => { prestigeFlashEl.style.opacity = '0'; }, 300);
+}
+
+function completePrestige() {
+  inPrestige = false;
+  depthLevel++;
+  maxDepthReached = Math.max(maxDepthReached, depthLevel);
+  scoreMultiplier = depthLevel;
+  prestigeEats = 0;
+
+  // Reset player to Fry but keep score
+  player.tier = 1;
+  player.eaten = 0;
+  player.radius = TIER_RADIUS[1] * radiusScale;
+  player.invincible = 2; // brief immunity after prestige
+
+  // Clear fish and respawn fresh (faster ones)
+  fishes = [];
+  jellyfish = [];
+  const planctonCount = 12 + Math.floor(Math.random() * 6);
+  for (let i = 0; i < planctonCount; i++) {
+    fishes.push(createFish(0, false, true));
+  }
+  const fryCount = 6 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < fryCount; i++) {
+    fishes.push(createFish(1, true));
+  }
+  const smallCount = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < smallCount; i++) {
+    fishes.push(createFish(2, true));
+  }
+
+  currentZone = 'surface';
+  spawnFloatingText(W / 2, H / 2 - 30, `PROFONDEUR ${depthLevel}`, '#ffcc00', true);
+  spawnFloatingText(W / 2, H / 2 + 10, `Score x${scoreMultiplier}`, '#80e0ff', true);
+  shakeIntensity = 15;
+}
+
+// ============================================================
+//  FRENZY CHECK
+// ============================================================
+
+function checkFrenzy() {
+  const now = gameTime;
+  // Prune old eats
+  while (recentEats.length > 0 && now - recentEats[0] > FRENZY_WINDOW) {
+    recentEats.shift();
+  }
+
+  if (recentEats.length >= FRENZY_THRESHOLD && !frenzyActive) {
+    // Trigger frenzy!
+    frenzyActive = true;
+    frenzyTimer = FRENZY_SLOWMO_DURATION;
+    frenzyCount = recentEats.length;
+    bestFrenzy = Math.max(bestFrenzy, frenzyCount);
+    slowmoScale = FRENZY_SLOWMO_SCALE;
+    saturationFlash = 1;
+
+    playFrenzy();
+    haptic([20, 10, 20, 10, 40]);
+    spawnFloatingText(W / 2, H / 3, `FRENZY x${frenzyCount}!`, '#ffcc00', true);
+    shakeIntensity = 10;
+    recentEats = []; // reset window
+  }
 }
 
 // ============================================================
@@ -691,7 +1097,37 @@ function circlesOverlap(ax, ay, ar, bx, by, br) {
 function update(dt) {
   if (!running || !player) return;
 
-  gameTime += dt;
+  // Apply slow-mo
+  const effectiveDt = dt * slowmoScale;
+  gameTime += effectiveDt;
+
+  // Frenzy timer
+  if (frenzyActive) {
+    frenzyTimer -= dt; // real time, not slowed
+    if (frenzyTimer <= 0) {
+      frenzyActive = false;
+      slowmoScale = 1;
+    }
+  }
+  // Saturation flash decay
+  if (saturationFlash > 0) {
+    saturationFlash = Math.max(0, saturationFlash - dt * 3);
+  }
+
+  // Prestige animation
+  if (inPrestige) {
+    prestigeTimer -= dt;
+    if (prestigeTimer <= 0) {
+      completePrestige();
+    }
+    return; // freeze game during prestige
+  }
+
+  // Update zone based on player tier
+  currentZone = getZoneForTier(player.tier);
+
+  // Track max tier
+  maxTierReached = Math.max(maxTierReached, player.tier);
 
   // --- Player movement ---
   if (pointer.active) {
@@ -701,26 +1137,22 @@ function update(dt) {
 
     if (dist > 2) {
       const targetAngle = Math.atan2(dy, dx);
-      // Smooth rotation
       let angleDiff = targetAngle - player.angle;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-      player.angle += angleDiff * Math.min(1, dt * 12);
+      player.angle += angleDiff * Math.min(1, effectiveDt * 12);
 
-      // Speed — player is always fast, boost makes faster
       let speed = PLAYER_BASE_SPEED;
       if (boosting && boostFuel > 0) {
         speed *= BOOST_MULT;
         boostFuel = Math.max(0, boostFuel - BOOST_DRAIN);
       }
-      // Don't overshoot
-      const move = Math.min(dist, speed * (60 * dt));
+      const move = Math.min(dist, speed * (60 * effectiveDt));
       player.x += (dx / dist) * move;
       player.y += (dy / dist) * move;
     }
   }
 
-  // Boost regen when not boosting
   if (!boosting) {
     boostFuel = Math.min(BOOST_MAX, boostFuel + BOOST_REGEN);
   }
@@ -731,33 +1163,90 @@ function update(dt) {
   player.y = Math.max(pr, Math.min(H - pr, player.y));
 
   // Player animation
-  player.tailPhase += dt * (boosting ? 18 : 10);
-  player.mouthOpen = Math.max(0, player.mouthOpen - dt * 4);
+  player.tailPhase += effectiveDt * (boosting ? 18 : 10);
+  player.mouthOpen = Math.max(0, player.mouthOpen - effectiveDt * 4);
 
-  // Invincibility cooldown
   if (player.invincible > 0) {
-    player.invincible -= dt;
-    player.flashTimer += dt * 12;
+    player.invincible -= effectiveDt;
+    player.flashTimer += effectiveDt * 12;
   }
 
   frameCount++;
+
+  // --- Jellyfish (twilight/abyss zone obstacle) ---
+  if (currentZone === 'twilight' || currentZone === 'abyss') {
+    // Spawn jellyfish
+    if (Math.random() < effectiveDt * 0.3 && jellyfish.length < 5) {
+      spawnJellyfish();
+    }
+    // Update & collision
+    for (let i = jellyfish.length - 1; i >= 0; i--) {
+      const j = jellyfish[i];
+      j.x += j.vx * 60 * effectiveDt;
+      j.y += j.vy * 60 * effectiveDt;
+      j.phase += effectiveDt * 3;
+      j.tentaclePhase += effectiveDt * 2;
+
+      // Soft bounce
+      if (j.x < 30) j.vx = Math.abs(j.vx);
+      if (j.x > W - 30) j.vx = -Math.abs(j.vx);
+      if (j.y < 30) j.vy = Math.abs(j.vy) * 0.5;
+      if (j.y > H - 30) j.vy = -Math.abs(j.vy);
+
+      // Remove if way off screen
+      if (j.y < -100 || j.y > H + 100) { jellyfish.splice(i, 1); continue; }
+
+      // Collision with player — damage
+      if (player.invincible <= 0) {
+        const jdx = player.x - j.x, jdy = player.y - j.y;
+        const jdist = Math.sqrt(jdx * jdx + jdy * jdy);
+        if (jdist < player.radius + j.radius * 0.6) {
+          player.invincible = 1.5;
+          player.eaten = Math.max(0, player.eaten - 2);
+
+          if (player.tier <= 1) {
+            player.alive = false;
+            running = false;
+            haptic([30, 20, 60]);
+            playGameOver();
+            gameOver();
+            return;
+          }
+
+          player.tier--;
+          player.radius = TIER_RADIUS[player.tier] * radiusScale;
+          shakeIntensity = 12;
+          spawnEatParticles(player.x, player.y, '#bb55ff', 15);
+
+          const kAngle = Math.atan2(player.y - j.y, player.x - j.x);
+          player.x += Math.cos(kAngle) * 40;
+          player.y += Math.sin(kAngle) * 40;
+
+          haptic(50);
+          playHurt();
+          vignetteEl.style.opacity = '1';
+          setTimeout(() => vignetteEl.style.opacity = '0', 200);
+        }
+      }
+    }
+  } else {
+    // Clear jellyfish in non-twilight zones
+    jellyfish = [];
+  }
 
   // --- Enemy fish AI ---
   for (let i = fishes.length - 1; i >= 0; i--) {
     const f = fishes[i];
     if (!f.alive) { fishes.splice(i, 1); continue; }
 
-    // Timers
-    if (f.eatCooldown > 0) f.eatCooldown -= dt;
-    if (f.sizeBoost > 0) f.sizeBoost -= dt;
-    f.mouthOpen = Math.max(0, f.mouthOpen - dt * 4);
+    if (f.eatCooldown > 0) f.eatCooldown -= effectiveDt;
+    if (f.sizeBoost > 0) f.sizeBoost -= effectiveDt;
+    f.mouthOpen = Math.max(0, f.mouthOpen - effectiveDt * 4);
+    f.tailPhase += effectiveDt * (8 + f.speed * 3);
 
-    // Movement & animation
-    f.tailPhase += dt * (8 + f.speed * 3);
-
-    // Plancton: simple drift, no complex AI
     if (f.tier === 0) {
-      f.turnTimer -= dt;
+      // Plancton drift
+      f.turnTimer -= effectiveDt;
       if (f.turnTimer <= 0) {
         f.turnTimer = 3 + Math.random() * 4;
         f.targetAngle = f.angle + (Math.random() - 0.5) * 2;
@@ -765,19 +1254,17 @@ function update(dt) {
       let aDiff = f.targetAngle - f.angle;
       while (aDiff > Math.PI) aDiff -= Math.PI * 2;
       while (aDiff < -Math.PI) aDiff += Math.PI * 2;
-      f.angle += aDiff * Math.min(1, dt * 1.5);
+      f.angle += aDiff * Math.min(1, effectiveDt * 1.5);
 
-      const spd = f.speed * 0.5 * 60 * dt; // slow drift
+      const spd = f.speed * 0.5 * 60 * effectiveDt;
       f.x += Math.cos(f.angle) * spd;
       f.y += Math.sin(f.angle) * spd;
 
-      // Keep on screen (soft bounce)
       if (f.x < 20) f.targetAngle = 0;
       if (f.x > W - 20) f.targetAngle = Math.PI;
       if (f.y < 20) f.targetAngle = Math.PI / 2;
       if (f.y > H - 20) f.targetAngle = -Math.PI / 2;
 
-      // Remove if way off screen
       const margin = 150;
       if (f.x < -margin || f.x > W + margin || f.y < -margin || f.y > H + margin) {
         fishes.splice(i, 1);
@@ -785,7 +1272,7 @@ function update(dt) {
       }
     } else {
       // Normal fish AI
-      f.turnTimer -= dt;
+      f.turnTimer -= effectiveDt;
       if (f.turnTimer <= 0) {
         f.turnTimer = 2 + Math.random() * 4;
         if (player.tier > f.tier && distBetween(player, f) < 250) {
@@ -800,7 +1287,7 @@ function update(dt) {
       }
 
       if (f.fleeing) {
-        f.fleeTimer -= dt;
+        f.fleeTimer -= effectiveDt;
         if (f.fleeTimer <= 0) f.fleeing = false;
         f.targetAngle = Math.atan2(f.y - player.y, f.x - player.x);
       }
@@ -808,20 +1295,18 @@ function update(dt) {
       let aDiff = f.targetAngle - f.angle;
       while (aDiff > Math.PI) aDiff -= Math.PI * 2;
       while (aDiff < -Math.PI) aDiff += Math.PI * 2;
-      f.angle += aDiff * Math.min(1, dt * 3);
+      f.angle += aDiff * Math.min(1, effectiveDt * 3);
 
-      const spd = f.speed * (f.fleeing ? 1.5 : 1) * 60 * dt;
+      const spd = f.speed * (f.fleeing ? 1.5 : 1) * 60 * effectiveDt;
       f.x += Math.cos(f.angle) * spd;
       f.y += Math.sin(f.angle) * spd;
 
-      // Remove if way off screen
       const margin = f.radius * 4 + 100;
       if (f.x < -margin || f.x > W + margin || f.y < -margin || f.y > H + margin) {
         fishes.splice(i, 1);
         continue;
       }
 
-      // Bounce off edges gently
       if (f.x < f.radius) f.targetAngle = 0;
       if (f.x > W - f.radius) f.targetAngle = Math.PI;
       if (f.y < f.radius) f.targetAngle = Math.PI / 2;
@@ -829,7 +1314,6 @@ function update(dt) {
     }
 
     // --- Collision with player ---
-    // Plancton: easier to eat (just pass over, use full radius sum)
     const overlapFactor = f.tier === 0 ? 0.9 : 0.7;
     const dx = player.x - f.x, dy = player.y - f.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -837,41 +1321,58 @@ function update(dt) {
       if (f.tier < player.tier) {
         // EAT!
         f.alive = false;
-        score++;
+
+        // Frenzy scoring: double if frenzy is active
+        const pointValue = frenzyActive ? 2 : 1;
+        score += pointValue;
+        totalFishEaten++;
         player.totalEaten++;
         player.eaten++;
         player.mouthOpen = 1;
 
-        // Level up?
+        // Track eat time for frenzy
+        recentEats.push(gameTime);
+        checkFrenzy();
+
+        // Level up check
         if (player.tier < TIER_COUNT - 1 && player.eaten >= TIER_THRESHOLDS[player.tier]) {
           player.tier++;
           player.eaten = 0;
           player.radius = TIER_RADIUS[player.tier] * radiusScale;
           shakeIntensity = 8;
-          spawnEatParticles(player.x, player.y, TIER_COLORS[player.tier].body, 20);
+          spawnEatParticles(player.x, player.y, getFishColors(player.tier, currentZone).body, 20);
+          maxTierReached = Math.max(maxTierReached, player.tier);
+
+          // Zone change notification
+          const newZone = getZoneForTier(player.tier);
+          if (newZone !== currentZone) {
+            spawnFloatingText(W / 2, H / 3, ZONE_NAMES[player.tier], '#80e0ff', true);
+          }
+        } else if (player.tier === TIER_COUNT - 1) {
+          // At max tier — track prestige progress
+          prestigeEats++;
+          if (prestigeEats >= PRESTIGE_EXTRA_EATS) {
+            triggerPrestige();
+          }
         }
 
-        // Particles + bubble (smaller for plancton)
         const pCount = f.tier === 0 ? 3 : 6;
-        spawnEatParticles(f.x, f.y, TIER_COLORS[f.tier].body, pCount);
+        spawnEatParticles(f.x, f.y, getFishColors(f.tier, currentZone).body, pCount);
         if (f.tier > 0) spawnBubble(f.x, f.y);
         shakeIntensity = Math.max(shakeIntensity, f.tier === 0 ? 1 : 3);
 
-        // Score popup
-        spawnFloatingText(f.x, f.y, '+1', TIER_COLORS[f.tier].body);
-        // Scale bump
+        const scoreText = frenzyActive ? `+${pointValue}!` : `+${pointValue}`;
+        spawnFloatingText(f.x, f.y, scoreText, frenzyActive ? '#ffcc00' : getFishColors(f.tier, currentZone).body);
         playerScaleBump = 0.15;
-        // Haptic
         haptic(10);
-
         playEat();
+
       } else if (f.tier > player.tier && player.invincible <= 0) {
-        // HURT — shrink
+        // HURT
         player.invincible = 1.5;
         player.eaten = 0;
 
         if (player.tier <= 1) {
-          // Game over (tier 1 is the lowest playable tier)
           player.alive = false;
           running = false;
           haptic([30, 20, 60]);
@@ -897,7 +1398,7 @@ function update(dt) {
     }
   }
 
-  // --- Fish-fish eating (throttled: every N frames) ---
+  // --- Fish-fish eating ---
   if (frameCount % FISH_EAT_CHECK_INTERVAL === 0 && gameTime - lastFishEatTime >= FISH_EAT_GLOBAL_COOLDOWN) {
     fishFishEating:
     for (let i = 0; i < fishes.length; i++) {
@@ -907,27 +1408,20 @@ function update(dt) {
         if (i === j) continue;
         const b = fishes[j];
         if (!b.alive || b.tier >= a.tier) continue;
-        // Check proximity
         const dx = a.x - b.x, dy = a.y - b.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < (a.radius + b.radius) * 0.7) {
-          // a eats b
           b.alive = false;
           a.mouthOpen = 1;
           a.eatCooldown = FISH_EAT_PER_FISH_COOLDOWN;
-          a.sizeBoost = 1.5; // cosmetic size bump for 1.5s
+          a.sizeBoost = 1.5;
           lastFishEatTime = gameTime;
-
-          // Particles
-          spawnEatParticles(b.x, b.y, TIER_COLORS[b.tier].body, 5);
+          spawnEatParticles(b.x, b.y, getFishColors(b.tier, currentZone).body, 5);
           spawnBubble(b.x, b.y);
-
-          // Schedule compensatory respawn (same tier as eaten fish)
           const respawnTier = b.tier;
           const respawnDelay = 2 + Math.random();
           pendingRespawns.push({ tier: respawnTier, time: gameTime + respawnDelay });
-
-          break fishFishEating; // max 1 per check
+          break fishFishEating;
         }
       }
     }
@@ -942,7 +1436,6 @@ function update(dt) {
   }
 
   // --- Spawn new fish ---
-  // Count visible fish and plancton separately
   let visibleCount = 0;
   let planctonCount = 0;
   for (const f of fishes) {
@@ -950,20 +1443,17 @@ function update(dt) {
     if (f.x > -50 && f.x < W + 50 && f.y > -50 && f.y < H + 50) visibleCount++;
   }
 
-  // Maintain plancton population
   while (planctonCount < PLANCTON_TARGET_COUNT && fishes.length < MAX_FISH) {
     fishes.push(createFish(0, true));
     planctonCount++;
   }
 
-  // Maintain regular fish population
   while (visibleCount < MIN_VISIBLE && fishes.length < MAX_FISH) {
     const tier = chooseTier(player.tier, gameTime);
     fishes.push(createFish(tier, true));
     visibleCount++;
   }
-  // Also periodic spawn
-  if (Math.random() < dt * 2 && fishes.length < MAX_FISH) {
+  if (Math.random() < effectiveDt * 3 && fishes.length < MAX_FISH) {
     fishes.push(createFish(chooseTier(player.tier, gameTime), true));
   }
 
@@ -987,22 +1477,21 @@ function update(dt) {
     if (b.life <= 0) { bubbles.splice(i, 1); }
   }
 
-  // Ambient bubbles
-  if (Math.random() < dt * 2) {
+  if (Math.random() < effectiveDt * 2) {
     spawnBubble(Math.random() * W, H + 5);
   }
 
   // --- Floating texts ---
   for (let i = floatingTexts.length - 1; i >= 0; i--) {
     const ft = floatingTexts[i];
-    ft.y -= 1.2;
+    ft.y -= ft.big ? 0.6 : 1.2;
     ft.life -= ft.decay;
     if (ft.life <= 0) floatingTexts.splice(i, 1);
   }
 
   // --- Player scale bump decay ---
   if (playerScaleBump > 0) {
-    playerScaleBump = Math.max(0, playerScaleBump - dt * 0.75); // ~200ms to decay
+    playerScaleBump = Math.max(0, playerScaleBump - effectiveDt * 0.75);
   }
 
   // --- Camera shake ---
@@ -1015,10 +1504,8 @@ function update(dt) {
     shakeIntensity = 0;
   }
 
-  // Boost bar — update every frame (single DOM prop, cheap)
   boostBarEl.style.width = (boostFuel / BOOST_MAX * 100) + '%';
 
-  // HUD text update (throttled to ~4/s)
   const now = performance.now();
   if (now - lastHUDTime > 250) {
     lastHUDTime = now;
@@ -1039,32 +1526,69 @@ function render() {
   ctx.save();
   ctx.translate(shakeX, shakeY);
 
-  // Background — deep ocean gradient
+  // --- Zone-based background ---
+  const bg = ZONE_BG[currentZone] || ZONE_BG.surface;
   const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
-  bgGrad.addColorStop(0, '#001830');
-  bgGrad.addColorStop(0.5, '#001020');
-  bgGrad.addColorStop(1, '#000818');
+  bgGrad.addColorStop(0, bg.top);
+  bgGrad.addColorStop(0.5, bg.mid);
+  bgGrad.addColorStop(1, bg.bot);
   ctx.fillStyle = bgGrad;
   ctx.fillRect(-10, -10, W + 20, H + 20);
 
-  // Subtle light rays from top
+  // Light rays from top (intensity varies by zone)
   ctx.save();
-  ctx.globalAlpha = 0.04;
-  for (let i = 0; i < 5; i++) {
-    const rx = W * (0.15 + i * 0.18);
+  ctx.globalAlpha = bg.rayAlpha;
+  const rayCount = currentZone === 'abyss' ? 2 : 5;
+  for (let i = 0; i < rayCount; i++) {
+    const rx = W * (0.15 + i * (0.7 / rayCount));
     const rw = 40 + i * 20;
-    const grad = ctx.createLinearGradient(rx, 0, rx, H * 0.7);
-    grad.addColorStop(0, '#88ccff');
+    const rayH = currentZone === 'abyss' ? H * 0.3 : H * 0.7;
+    const grad = ctx.createLinearGradient(rx, 0, rx, rayH);
+    grad.addColorStop(0, bg.rayColor);
     grad.addColorStop(1, 'transparent');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.moveTo(rx - rw / 2, 0);
-    ctx.lineTo(rx - rw * 1.5, H * 0.7);
-    ctx.lineTo(rx + rw * 1.5, H * 0.7);
+    ctx.lineTo(rx - rw * 1.5, rayH);
+    ctx.lineTo(rx + rw * 1.5, rayH);
     ctx.lineTo(rx + rw / 2, 0);
     ctx.fill();
   }
   ctx.restore();
+
+  // Reef zone: coral silhouettes at bottom
+  if (currentZone === 'reef') {
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = '#44aa88';
+    for (let i = 0; i < 8; i++) {
+      const cx = W * (i / 8 + 0.02);
+      const ch = 30 + Math.sin(i * 2.7) * 25;
+      const cw = 20 + Math.sin(i * 1.3) * 12;
+      ctx.beginPath();
+      ctx.ellipse(cx, H - 5, cw, ch, 0, Math.PI, 0);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Abyss zone: scattered bioluminescent particles in background
+  if (currentZone === 'abyss') {
+    ctx.save();
+    const bioTime = gameTime * 0.5;
+    for (let i = 0; i < 15; i++) {
+      const bx = (W * (0.1 + (i * 0.137) % 0.8) + Math.sin(bioTime + i * 1.7) * 30) % W;
+      const by = (H * (0.1 + (i * 0.191) % 0.8) + Math.cos(bioTime + i * 2.3) * 20) % H;
+      const pulse = 0.3 + 0.7 * Math.sin(bioTime * 2 + i * 0.9);
+      ctx.globalAlpha = pulse * 0.15;
+      const colors = ['#00ffcc', '#ff00ff', '#4488ff', '#ffff00'];
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.beginPath();
+      ctx.arc(bx, by, 2 + pulse * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
 
   // Bubbles (behind fish)
   for (const b of bubbles) {
@@ -1074,7 +1598,6 @@ function render() {
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
     ctx.stroke();
-    // Tiny highlight
     ctx.fillStyle = 'rgba(200,230,255,0.3)';
     ctx.beginPath();
     ctx.arc(b.x - b.size * 0.2, b.y - b.size * 0.2, b.size * 0.3, 0, Math.PI * 2);
@@ -1082,29 +1605,57 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
+  // Jellyfish (between bubbles and fish)
+  for (const j of jellyfish) {
+    drawJellyfish(j);
+  }
+
   // Enemy fish & plancton
   for (const f of fishes) {
     if (!f.alive) continue;
     if (f.tier === 0) {
-      drawPlancton(f.x, f.y, f.radius, f.tailPhase);
+      drawPlancton(f.x, f.y, f.radius, f.tailPhase, currentZone);
     } else {
       const r = f.sizeBoost > 0 ? f.radius * (1 + 0.08 * f.sizeBoost) : f.radius;
-      drawFish(f.x, f.y, r, f.angle, f.tier, f.mouthOpen, f.tailPhase, false);
+      drawFish(f.x, f.y, r, f.angle, f.tier, f.mouthOpen, f.tailPhase, false, currentZone);
     }
   }
 
   // Player
   if (player && player.alive) {
+    // Abyss zone: player halo (visibility light)
+    if (currentZone === 'abyss') {
+      const haloR = player.radius * 5;
+      const halo = ctx.createRadialGradient(player.x, player.y, player.radius * 0.5, player.x, player.y, haloR);
+      halo.addColorStop(0, 'rgba(100,200,255,0.12)');
+      halo.addColorStop(0.5, 'rgba(60,140,200,0.05)');
+      halo.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, haloR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Darkness mask (reduce visibility away from player)
+      // Radial gradient: transparent near player, dark far away
+      const darkR = Math.max(W, H);
+      const dark = ctx.createRadialGradient(player.x, player.y, haloR * 0.7, player.x, player.y, darkR);
+      dark.addColorStop(0, 'rgba(0,2,8,0)');
+      dark.addColorStop(0.3, 'rgba(0,2,8,0.4)');
+      dark.addColorStop(1, 'rgba(0,2,8,0.7)');
+      ctx.fillStyle = dark;
+      ctx.fillRect(-10, -10, W + 20, H + 20);
+    }
+
     // Flash when invincible
     if (player.invincible > 0 && Math.sin(player.flashTimer * Math.PI) > 0) {
       ctx.globalAlpha = 0.4;
     }
     const pDrawR = player.radius * (1 + playerScaleBump);
     drawFish(player.x, player.y, pDrawR, player.angle, player.tier,
-             player.mouthOpen, player.tailPhase, true);
+             player.mouthOpen, player.tailPhase, true, currentZone);
     ctx.globalAlpha = 1;
 
-    // Boost trail when sprinting
+    // Boost trail
     if (boosting && boostFuel > 0) {
       ctx.globalAlpha = 0.2;
       ctx.fillStyle = '#ffcc44';
@@ -1129,15 +1680,52 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // Floating score texts
-  ctx.font = 'bold 16px "Segoe UI", system-ui, sans-serif';
-  ctx.textAlign = 'center';
+  // Floating texts
   for (const ft of floatingTexts) {
     ctx.globalAlpha = ft.life;
+    ctx.textAlign = 'center';
+    if (ft.big) {
+      ctx.font = 'bold 32px "Segoe UI", system-ui, sans-serif';
+      if (ft.glow) {
+        ctx.shadowColor = ft.color;
+        ctx.shadowBlur = 20;
+      }
+    } else {
+      ctx.font = 'bold 16px "Segoe UI", system-ui, sans-serif';
+      ctx.shadowBlur = 0;
+    }
     ctx.fillStyle = ft.color;
     ctx.fillText(ft.text, ft.x, ft.y);
+    ctx.shadowBlur = 0;
   }
   ctx.globalAlpha = 1;
+
+  // Saturation flash overlay (frenzy effect)
+  if (saturationFlash > 0) {
+    ctx.globalAlpha = saturationFlash * 0.15;
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+    ctx.globalAlpha = 1;
+  }
+
+  // Prestige zoom/darken animation
+  if (inPrestige) {
+    const t = 1 - (prestigeTimer / 1.5); // 0 → 1
+    ctx.globalAlpha = t * 0.8;
+    ctx.fillStyle = '#000010';
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+
+    // Depth text
+    ctx.globalAlpha = Math.min(1, t * 2);
+    ctx.fillStyle = '#80e0ff';
+    ctx.font = 'bold 28px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#00aaff';
+    ctx.shadowBlur = 20;
+    ctx.fillText('Plongée...', W / 2, H / 2);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
 
   ctx.restore();
 }
@@ -1147,16 +1735,40 @@ function render() {
 // ============================================================
 
 function gameOver() {
-  if (score > highScore) {
-    highScore = score;
+  const finalScore = score * scoreMultiplier;
+  const isNewRecord = finalScore > highScore;
+
+  if (isNewRecord) {
+    highScore = finalScore;
     localStorage.setItem('deepfeed_hi', String(highScore));
   }
-  endStatsEl.innerHTML = `Fish eaten: ${score}<br>Max size: ${TIER_NAMES[Math.max(0, player ? player.tier : 0)]}`;
-  playBtn.textContent = 'Play Again';
+
+  const timeSurvived = ((performance.now() - startTime) / 1000).toFixed(1);
+
+  // Build stats HTML
+  let statsHTML = '';
+
+  const addStat = (label, value, isRecord) => {
+    const cls = isRecord ? 'stat-value record' : 'stat-value';
+    statsHTML += `<div class="stat-row"><span class="stat-label">${label}</span><span class="${cls}">${value}</span></div>`;
+  };
+
+  addStat('Score', finalScore, isNewRecord);
+  addStat('Poissons mangés', totalFishEaten, false);
+  addStat('Taille max', TIER_NAMES[maxTierReached], false);
+  addStat('Profondeur max', depthLevel > 1 ? `Profondeur ${maxDepthReached}` : 'Surface', false);
+  if (bestFrenzy > 0) addStat('Meilleur Frenzy', `x${bestFrenzy}`, false);
+  addStat('Temps', `${timeSurvived}s`, false);
+
+  if (isNewRecord) {
+    statsHTML = `<div style="color:#ffcc00;font-weight:700;margin-bottom:8px;font-size:16px;text-shadow:0 0 12px rgba(255,200,0,.4)">NOUVEAU RECORD!</div>` + statsHTML;
+  }
+
+  endStatsEl.innerHTML = statsHTML;
+  playBtn.textContent = 'Replonger';
   overlay.classList.remove('hidden');
   updateHUD();
 
-  // Restart title ambient
   initTitleAmbient();
   titleLastTime = performance.now();
   titleRafId = requestAnimationFrame(titleLoop);
@@ -1172,7 +1784,7 @@ let safetyInterval = null;
 
 function loop(timestamp) {
   rafId = requestAnimationFrame(loop);
-  const dt = Math.min((timestamp - lastTime) / 1000, 0.05); // cap dt
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
 
   update(dt);
@@ -1184,7 +1796,6 @@ function startLoop() {
   if (rafId) cancelAnimationFrame(rafId);
   rafId = requestAnimationFrame(loop);
 
-  // Safety net: restart RAF if it dies
   if (safetyInterval) clearInterval(safetyInterval);
   safetyInterval = setInterval(() => {
     if (running && !document.hidden) {
@@ -1195,7 +1806,6 @@ function startLoop() {
   }, 2000);
 }
 
-// Visibility change — pause/resume
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && running) {
     lastTime = performance.now();
@@ -1223,7 +1833,6 @@ playBtn.addEventListener('click', (e) => {
   startLoop();
 });
 
-// Also handle touch on button for in-app browsers
 playBtn.addEventListener('touchend', (e) => {
   e.preventDefault();
   playBtn.click();
@@ -1278,18 +1887,18 @@ function titleLoop(timestamp) {
 
   ctx.save();
   const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
-  bgGrad.addColorStop(0, '#001830');
-  bgGrad.addColorStop(0.5, '#001020');
-  bgGrad.addColorStop(1, '#000818');
+  bgGrad.addColorStop(0, '#1a6090');
+  bgGrad.addColorStop(0.5, '#0d4070');
+  bgGrad.addColorStop(1, '#062848');
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, W, H);
 
-  ctx.globalAlpha = 0.04;
+  ctx.globalAlpha = 0.06;
   for (let i = 0; i < 5; i++) {
     const rx = W * (0.15 + i * 0.18);
     const rw = 40 + i * 20;
     const grad = ctx.createLinearGradient(rx, 0, rx, H * 0.7);
-    grad.addColorStop(0, '#88ccff');
+    grad.addColorStop(0, '#aaddff');
     grad.addColorStop(1, 'transparent');
     ctx.fillStyle = grad;
     ctx.beginPath();
@@ -1307,7 +1916,7 @@ function titleLoop(timestamp) {
     ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.globalAlpha = 1;
-  for (const p of titlePlancton) { drawPlancton(p.x, p.y, p.radius, p.phase); }
+  for (const p of titlePlancton) { drawPlancton(p.x, p.y, p.radius, p.phase, 'surface'); }
   ctx.restore();
 }
 
@@ -1315,7 +1924,6 @@ initTitleAmbient();
 titleLastTime = performance.now();
 titleRafId = requestAnimationFrame(titleLoop);
 
-// Show high score on load
 if (highScore > 0) highScoreEl.textContent = `Best: ${highScore}`;
 
 </script>
