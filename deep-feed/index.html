@@ -570,12 +570,15 @@ function initGame() {
   fishes = [];
   particles = [];
   bubbles = [];
+  floatingTexts = [];
   score = 0;
   gameTime = 0;
   boostFuel = BOOST_MAX;
   shakeIntensity = 0;
   frameCount = 0;
   lastFishEatTime = 0;
+  lastHUDTime = 0;
+  playerScaleBump = 0;
   pendingRespawns = [];
 
   // Spawn initial plancton (10-15) scattered on screen
@@ -604,11 +607,12 @@ function initGame() {
 function getPointerPos(e) {
   const touch = e.touches ? e.touches[0] : e;
   if (!touch) return;
-  // Detect touch input
-  if (e.type && (e.type.startsWith('touch') || (e.pointerType && e.pointerType === 'touch'))) {
-    isTouch = true;
-  } else if (e.type && (e.type.startsWith('mouse') || (e.pointerType && e.pointerType === 'mouse'))) {
-    isTouch = false;
+  // Detect touch vs mouse input
+  if (e.pointerType) {
+    isTouch = e.pointerType === 'touch';
+  } else if (e.type) {
+    if (e.type.startsWith('touch')) isTouch = true;
+    else if (e.type.startsWith('mouse')) isTouch = false;
   }
   pointer.x = touch.clientX;
   pointer.y = touch.clientY - (isTouch ? TOUCH_OFFSET_Y : 0);
@@ -1011,7 +1015,10 @@ function update(dt) {
     shakeIntensity = 0;
   }
 
-  // HUD update (throttled to ~4/s)
+  // Boost bar — update every frame (single DOM prop, cheap)
+  boostBarEl.style.width = (boostFuel / BOOST_MAX * 100) + '%';
+
+  // HUD text update (throttled to ~4/s)
   const now = performance.now();
   if (now - lastHUDTime > 250) {
     lastHUDTime = now;
@@ -1148,6 +1155,11 @@ function gameOver() {
   playBtn.textContent = 'Play Again';
   overlay.classList.remove('hidden');
   updateHUD();
+
+  // Restart title ambient
+  initTitleAmbient();
+  titleLastTime = performance.now();
+  titleRafId = requestAnimationFrame(titleLoop);
 }
 
 // ============================================================
@@ -1217,8 +1229,91 @@ playBtn.addEventListener('touchend', (e) => {
   playBtn.click();
 }, { passive: false });
 
-// Initial render (show background)
-render();
+// ============================================================
+//  TITLE SCREEN AMBIENT ANIMATION
+// ============================================================
+
+function initTitleAmbient() {
+  titleBubbles = [];
+  titlePlancton = [];
+  for (let i = 0; i < 8; i++) {
+    titleBubbles.push({
+      x: Math.random() * W, y: Math.random() * H,
+      vy: -0.3 - Math.random() * 0.8,
+      size: 1 + Math.random() * 3,
+      life: Math.random(), decay: 0.002 + Math.random() * 0.003,
+    });
+  }
+  for (let i = 0; i < 10; i++) {
+    titlePlancton.push({
+      x: Math.random() * W, y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+      radius: 3 + Math.random() * 3, phase: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
+let titleRafId = null;
+let titleLastTime = 0;
+
+function titleLoop(timestamp) {
+  if (running) return;
+  titleRafId = requestAnimationFrame(titleLoop);
+  const dt = Math.min((timestamp - titleLastTime) / 1000, 0.05);
+  titleLastTime = timestamp;
+
+  for (let i = titleBubbles.length - 1; i >= 0; i--) {
+    const b = titleBubbles[i];
+    b.y += b.vy; b.x += Math.sin(b.y * 0.05) * 0.2;
+    b.life -= b.decay;
+    if (b.life <= 0) { b.x = Math.random() * W; b.y = H + 5; b.life = 1; }
+  }
+  for (const p of titlePlancton) {
+    p.x += p.vx; p.y += p.vy; p.phase += dt * 2;
+    if (p.x < 0) p.vx = Math.abs(p.vx);
+    if (p.x > W) p.vx = -Math.abs(p.vx);
+    if (p.y < 0) p.vy = Math.abs(p.vy);
+    if (p.y > H) p.vy = -Math.abs(p.vy);
+  }
+
+  ctx.save();
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#001830');
+  bgGrad.addColorStop(0.5, '#001020');
+  bgGrad.addColorStop(1, '#000818');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.globalAlpha = 0.04;
+  for (let i = 0; i < 5; i++) {
+    const rx = W * (0.15 + i * 0.18);
+    const rw = 40 + i * 20;
+    const grad = ctx.createLinearGradient(rx, 0, rx, H * 0.7);
+    grad.addColorStop(0, '#88ccff');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(rx - rw / 2, 0);
+    ctx.lineTo(rx - rw * 1.5, H * 0.7);
+    ctx.lineTo(rx + rw * 1.5, H * 0.7);
+    ctx.lineTo(rx + rw / 2, 0);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  for (const b of titleBubbles) {
+    ctx.globalAlpha = b.life * 0.3;
+    ctx.strokeStyle = '#88ccff'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  for (const p of titlePlancton) { drawPlancton(p.x, p.y, p.radius, p.phase); }
+  ctx.restore();
+}
+
+initTitleAmbient();
+titleLastTime = performance.now();
+titleRafId = requestAnimationFrame(titleLoop);
 
 // Show high score on load
 if (highScore > 0) highScoreEl.textContent = `Best: ${highScore}`;
