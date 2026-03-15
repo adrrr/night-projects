@@ -988,6 +988,19 @@ function update(dt) {
     spawnBubble(Math.random() * W, H + 5);
   }
 
+  // --- Floating texts ---
+  for (let i = floatingTexts.length - 1; i >= 0; i--) {
+    const ft = floatingTexts[i];
+    ft.y -= 1.2;
+    ft.life -= ft.decay;
+    if (ft.life <= 0) floatingTexts.splice(i, 1);
+  }
+
+  // --- Player scale bump decay ---
+  if (playerScaleBump > 0) {
+    playerScaleBump = Math.max(0, playerScaleBump - dt * 0.75); // ~200ms to decay
+  }
+
   // --- Camera shake ---
   if (shakeIntensity > 0.5) {
     shakeX = (Math.random() - 0.5) * shakeIntensity;
@@ -998,8 +1011,12 @@ function update(dt) {
     shakeIntensity = 0;
   }
 
-  // HUD update (throttled)
-  updateHUD();
+  // HUD update (throttled to ~4/s)
+  const now = performance.now();
+  if (now - lastHUDTime > 250) {
+    lastHUDTime = now;
+    updateHUD();
+  }
 }
 
 function distBetween(a, b) {
@@ -1075,7 +1092,8 @@ function render() {
     if (player.invincible > 0 && Math.sin(player.flashTimer * Math.PI) > 0) {
       ctx.globalAlpha = 0.4;
     }
-    drawFish(player.x, player.y, player.radius, player.angle, player.tier,
+    const pDrawR = player.radius * (1 + playerScaleBump);
+    drawFish(player.x, player.y, pDrawR, player.angle, player.tier,
              player.mouthOpen, player.tailPhase, true);
     ctx.globalAlpha = 1;
 
@@ -1101,6 +1119,16 @@ function render() {
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
     ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Floating score texts
+  ctx.font = 'bold 16px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  for (const ft of floatingTexts) {
+    ctx.globalAlpha = ft.life;
+    ctx.fillStyle = ft.color;
+    ctx.fillText(ft.text, ft.x, ft.y);
   }
   ctx.globalAlpha = 1;
 
