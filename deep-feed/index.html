@@ -2,71 +2,116 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Deep Feed</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#001020;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 canvas{display:block;width:100%;height:100%}
-#ui{position:absolute;top:0;left:0;width:100%;pointer-events:none;padding:12px;font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
-#score{font-size:24px;font-weight:bold;text-shadow:0 0 8px rgba(0,180,255,.6)}
-#highscore{font-size:13px;opacity:.7;margin-top:2px;text-shadow:0 0 6px rgba(0,180,255,.4)}
-#combo{font-size:14px;color:#ff0;opacity:0;margin-top:4px;text-shadow:0 0 8px rgba(255,200,0,.6);transition:opacity .2s}
-#size-bar-wrap{margin-top:8px;width:140px;height:8px;background:rgba(255,255,255,.15);border-radius:4px;overflow:hidden}
-#size-bar{height:100%;width:0%;background:linear-gradient(90deg,#0ff,#0f0);border-radius:4px;transition:width .3s}
-#boost-wrap{margin-top:6px;width:140px;height:6px;background:rgba(255,255,255,.15);border-radius:3px;overflow:hidden}
-#boost-bar{height:100%;width:100%;background:linear-gradient(90deg,#ff0,#f80);border-radius:3px;transition:width .15s}
-#overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,10,30,.85);z-index:10;font-family:'Segoe UI',system-ui,sans-serif;color:#fff;text-align:center}
-#overlay h1{font-size:clamp(28px,6vw,52px);margin-bottom:8px;background:linear-gradient(135deg,#0ff,#08f,#0ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-shadow:none;filter:drop-shadow(0 0 20px rgba(0,200,255,.4))}
-#overlay .sub{font-size:clamp(14px,3vw,20px);opacity:.8;margin-bottom:24px}
-#overlay .stats{font-size:16px;margin-bottom:16px;opacity:.7}
-#play-btn{pointer-events:all;padding:14px 40px;font-size:clamp(16px,3.5vw,22px);border:2px solid rgba(0,220,255,.6);background:rgba(0,80,120,.4);color:#fff;border-radius:30px;cursor:pointer;transition:all .2s;backdrop-filter:blur(4px)}
-#play-btn:hover{background:rgba(0,150,200,.5);border-color:#0ff;box-shadow:0 0 30px rgba(0,220,255,.3)}
-#warning{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 50%,rgba(255,0,0,.3) 100%);transition:opacity .15s}
-.mobile-hint{font-size:12px;opacity:.5;margin-top:10px}
+
+/* HUD */
+#hud{position:absolute;top:0;left:0;width:100%;pointer-events:none;padding:14px 16px;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#fff;z-index:5}
+#score{font-size:22px;font-weight:700;text-shadow:0 2px 8px rgba(0,160,255,.5)}
+#highscore{font-size:12px;opacity:.6;margin-top:2px}
+#size-info{margin-top:8px;font-size:13px;opacity:.8}
+#size-bar-wrap{margin-top:4px;width:130px;height:7px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden}
+#size-bar{height:100%;width:0%;border-radius:4px;transition:width .3s ease}
+#boost-wrap{margin-top:5px;width:130px;height:5px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
+#boost-bar{height:100%;width:100%;background:linear-gradient(90deg,#ffcc00,#ff8800);border-radius:3px;transition:width .1s}
+
+/* Overlay screens */
+#overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,8,24,.88);z-index:10;font-family:'Segoe UI',system-ui,sans-serif;color:#fff;text-align:center;transition:opacity .4s}
+#overlay.hidden{opacity:0;pointer-events:none}
+#overlay h1{font-size:clamp(32px,7vw,56px);margin-bottom:6px;background:linear-gradient(135deg,#00e0ff,#0080ff,#00e0ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 20px rgba(0,180,255,.4))}
+#overlay .sub{font-size:clamp(13px,3vw,18px);opacity:.7;margin-bottom:24px;max-width:300px;line-height:1.4}
+#overlay .stats{font-size:15px;margin-bottom:16px;opacity:.65;line-height:1.6}
+.play-btn{pointer-events:all;padding:14px 44px;font-size:clamp(16px,3.5vw,22px);font-weight:600;border:2px solid rgba(0,200,255,.5);background:rgba(0,60,100,.4);color:#fff;border-radius:30px;cursor:pointer;transition:all .25s;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.play-btn:hover,.play-btn:active{background:rgba(0,120,180,.5);border-color:#0ff;box-shadow:0 0 30px rgba(0,200,255,.3)}
+.hint{font-size:11px;opacity:.4;margin-top:12px}
+
+/* Damage vignette */
+#vignette{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(255,0,0,.35) 100%);transition:opacity .15s;z-index:4}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="ui">
+
+<div id="hud">
   <div id="score">Score: 0</div>
-  <div id="highscore">Best: 0</div>
-  <div id="combo"></div>
+  <div id="highscore"></div>
+  <div id="size-info">Size: Tiny</div>
   <div id="size-bar-wrap"><div id="size-bar"></div></div>
   <div id="boost-wrap"><div id="boost-bar"></div></div>
 </div>
-<div id="warning"></div>
+
+<div id="vignette"></div>
+
 <div id="overlay">
   <h1>Deep Feed</h1>
-  <div class="sub">Eat smaller fish to grow. Bigger fish shrink you!</div>
+  <div class="sub">Eat smaller fish to grow bigger. Avoid the big ones!</div>
   <div class="stats" id="end-stats"></div>
-  <button id="play-btn">Dive In</button>
-  <div class="mobile-hint" id="hint"></div>
+  <button class="play-btn" id="play-btn">Dive In</button>
+  <div class="hint">Tap &amp; hold to boost</div>
 </div>
+
 <script>
 'use strict';
-const $ = id => document.getElementById(id);
-const C = $('c'), ctx = C.getContext('2d');
-const overlay = $('overlay'), playBtn = $('play-btn'), scoreEl = $('score');
-const highEl = $('highscore'), sizeBar = $('size-bar'), boostBar = $('boost-bar');
-const warningEl = $('warning'), endStats = $('end-stats'), hintEl = $('hint');
-const comboEl = $('combo');
 
-let W, H, dpr;
-function resize() {
-  dpr = window.devicePixelRatio || 1;
-  W = window.innerWidth; H = window.innerHeight;
-  C.width = W * dpr; C.height = H * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-resize();
-window.addEventListener('resize', resize);
+// ============================================================
+//  CONSTANTS & CONFIG
+// ============================================================
 
-const isMobile = 'ontouchstart' in window;
-hintEl.textContent = isMobile ? 'Drag to swim \u2022 Double-tap to dash' : 'Mouse to swim \u2022 Click/hold to boost';
+const TIER_COUNT = 5;
+const TIER_NAMES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge'];
+const TIER_COLORS = [
+  { body: '#66ee66', fin: '#44cc44', eye: '#fff' },  // 1 green
+  { body: '#44aaff', fin: '#2288dd', eye: '#fff' },  // 2 blue
+  { body: '#ff9933', fin: '#dd7711', eye: '#fff' },  // 3 orange
+  { body: '#ff4444', fin: '#cc2222', eye: '#fff' },  // 4 red
+  { body: '#bb55ff', fin: '#9933dd', eye: '#ff0' },  // 5 purple boss
+];
+// Base radius per tier (player radius at that tier)
+const TIER_RADIUS = [14, 22, 34, 50, 72];
+// How many fish eaten to advance from tier i to tier i+1
+const TIER_THRESHOLDS = [5, 10, 18, 30];
+// Enemy speed multiplier per tier (player is always faster)
+const ENEMY_SPEED = [0.7, 0.65, 0.55, 0.5, 0.4];
 
-// Audio — lazy init on first user gesture
+const MAX_FISH = 50;
+const MAX_PARTICLES = 120;
+const MAX_BUBBLES = 40;
+const MIN_VISIBLE = 18;
+
+const PLAYER_BASE_SPEED = 4.5;
+const BOOST_MULT = 1.7;
+const BOOST_MAX = 100;
+const BOOST_DRAIN = 1.2;
+const BOOST_REGEN = 0.35;
+
+const SHAKE_DECAY = 0.88;
+
+// ============================================================
+//  DOM REFS
+// ============================================================
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const playBtn = document.getElementById('play-btn');
+const scoreEl = document.getElementById('score');
+const highScoreEl = document.getElementById('highscore');
+const sizeInfoEl = document.getElementById('size-info');
+const sizeBarEl = document.getElementById('size-bar');
+const boostBarEl = document.getElementById('boost-bar');
+const vignetteEl = document.getElementById('vignette');
+const endStatsEl = document.getElementById('end-stats');
+
+// ============================================================
+//  AUDIO (Web Audio API — lazy init)
+// ============================================================
+
 let audioCtx = null;
+
 function ensureAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -74,1272 +119,854 @@ function ensureAudio() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-function playTone(freq, dur, type, vol, detune) {
+function playEat() {
   if (!audioCtx) return;
-  const g = audioCtx.createGain();
+  const t = audioCtx.currentTime;
   const o = audioCtx.createOscillator();
-  o.type = type || 'sine';
-  o.frequency.value = freq;
-  if (detune) o.detune.value = detune;
-  g.gain.setValueAtTime(vol || .15, audioCtx.currentTime);
-  g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + dur);
-  o.connect(g); g.connect(audioCtx.destination);
-  o.start(); o.stop(audioCtx.currentTime + dur);
+  const g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(400, t);
+  o.frequency.exponentialRampToValueAtTime(800, t + 0.06);
+  o.frequency.exponentialRampToValueAtTime(500, t + 0.12);
+  g.gain.setValueAtTime(0.18, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.15);
+  // Add a short noise burst for crunch
+  const bufSize = audioCtx.sampleRate * 0.04;
+  const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * 0.3 * (1 - i / bufSize);
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buf;
+  const ng = audioCtx.createGain();
+  ng.gain.setValueAtTime(0.15, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+  noise.connect(ng).connect(audioCtx.destination);
+  noise.start(t);
+  noise.stop(t + 0.06);
 }
 
-function bubblePop() { playTone(800 + Math.random() * 400, .08, 'sine', .12); }
-function eatSound(big) {
-  // Satisfying crunch + ascending tone
-  playTone(150, .15, 'square', .12);
-  playTone(200, .12, 'sawtooth', .1, -10);
-  playTone(350, .1, 'sine', .08);
-  playTone(500, .08, 'sine', .06);
-  if (big) { playTone(80, .25, 'square', .15); playTone(120, .2, 'sawtooth', .1); }
-}
-function warnSound() { playTone(120, .3, 'sawtooth', .08); playTone(100, .35, 'square', .06); }
-function deathSound() { playTone(60, .5, 'sawtooth', .15); playTone(40, .6, 'square', .1); }
-function powerupSound() { playTone(400, .15, 'sine', .12); playTone(600, .15, 'sine', .1); playTone(800, .2, 'sine', .08); }
-function dashSound() { playTone(200, .1, 'sawtooth', .08); playTone(300, .08, 'sine', .06); }
-function comboSound() { playTone(500, .1, 'sine', .1); playTone(700, .12, 'sine', .08); }
-
-let ambientNode = null, ambientGain = null;
-function startAmbient() {
-  if (ambientNode || !audioCtx) return;
-  ambientGain = audioCtx.createGain();
-  ambientGain.gain.value = .04;
-  ambientNode = audioCtx.createOscillator();
-  ambientNode.type = 'sine';
-  ambientNode.frequency.value = 55;
-  const f = audioCtx.createBiquadFilter();
-  f.type = 'lowpass'; f.frequency.value = 120;
-  ambientNode.connect(f); f.connect(ambientGain); ambientGain.connect(audioCtx.destination);
-  ambientNode.start();
-  const n = audioCtx.createOscillator();
-  n.type = 'triangle'; n.frequency.value = 38;
-  const ng = audioCtx.createGain(); ng.gain.value = .02;
-  const lfo = audioCtx.createOscillator(); lfo.frequency.value = .3;
-  const lfoG = audioCtx.createGain(); lfoG.gain.value = .015;
-  lfo.connect(lfoG); lfoG.connect(ng.gain);
-  n.connect(ng); ng.connect(audioCtx.destination);
-  n.start(); lfo.start();
+function playHurt() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'square';
+  o.frequency.setValueAtTime(300, t);
+  o.frequency.exponentialRampToValueAtTime(100, t + 0.25);
+  g.gain.setValueAtTime(0.15, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.3);
 }
 
-// Game state
-let running = false, gameOver = false;
-let score = 0, highScore = parseInt(localStorage.getItem('deepfeed_hi') || '0');
-const PLAYER_MIN_SIZE = 6; // game over at this size
-const PLAYER_START_SIZE = 14;
-let player, fishes, bubbles, seaweeds, particles, powerups, floatingTexts, cam;
-let mouseX, mouseY, boosting = false, boostFuel = 1;
-let difficulty = 1, warnTimer = 0, lastWarn = 0;
-let fishEaten = 0, maxSize = 0;
-let comboCount = 0, comboTimer = 0;
-let dashCooldown = 0, isDashing = false, dashTimer = 0;
-let gracePeriod = 0; // invincibility at start
-let gameTime = 0; // seconds since game start
-let lastTapTime = 0;
-let screenShake = 0, shakeIntensity = 0; // screen shake effect
-let camZoom = 1, targetZoom = 1; // auto-zoom
-let trailBubbles = []; // player trail bubbles
-highEl.textContent = 'Best: ' + highScore;
-
-// Haptic feedback wrapper (not supported on iOS Safari)
-function haptic(pattern) {
-  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(e) {}
-}
-
-// Species definitions — speed now inversely correlates with typical size
-const SPECIES = [
-  { name: 'minnow', color: '#7ec8e3', accent: '#aee1f5', bodyRatio: 2.8, finSize: .5, speed: 1.2, glow: false },
-  { name: 'goldfish', color: '#f4a926', accent: '#ffe066', bodyRatio: 2.2, finSize: .6, speed: .9, glow: false },
-  { name: 'clown', color: '#ff6633', accent: '#fff', bodyRatio: 2.4, finSize: .55, speed: 1, glow: false, stripes: true },
-  { name: 'angel', color: '#c084fc', accent: '#e9d5ff', bodyRatio: 1.8, finSize: .8, speed: .7, glow: true },
-  { name: 'neon', color: '#00ffcc', accent: '#66ffdd', bodyRatio: 3, finSize: .4, speed: 1.4, glow: true },
-  { name: 'puffer', color: '#fbbf24', accent: '#fde68a', bodyRatio: 1.5, finSize: .35, speed: .5, glow: false },
-  { name: 'barracuda', color: '#94a3b8', accent: '#cbd5e1', bodyRatio: 3.5, finSize: .45, speed: 1.3, glow: false },
-  { name: 'lantern', color: '#1e3a5f', accent: '#0ea5e9', bodyRatio: 2.2, finSize: .5, speed: .8, glow: true, lantern: true },
-  { name: 'red', color: '#ef4444', accent: '#fca5a5', bodyRatio: 2.5, finSize: .55, speed: 1.1, glow: false },
-  { name: 'teal', color: '#14b8a6', accent: '#5eead4', bodyRatio: 2.6, finSize: .5, speed: 1, glow: true },
-];
-
-// Power-up types
-const POWERUP_TYPES = [
-  { name: 'speed', color: '#ffff00', accent: '#fff', icon: '\u26a1', duration: 5, desc: 'Speed Boost!' },
-  { name: 'magnet', color: '#ff00ff', accent: '#faf', icon: '\ud83e\uddf2', duration: 6, desc: 'Fish Magnet!' },
-  { name: 'shield', color: '#00ffff', accent: '#aff', icon: '\ud83d\udee1\ufe0f', duration: 4, desc: 'Shield!' },
-];
-
-// Dynamic player color based on current size
-function getPlayerAppearance(size) {
-  if (size <= 8) return { color: '#5ec8e3', accent: '#8ee1f5', glow: true }; // pale/small
-  if (size <= 14) return { color: '#00ffcc', accent: '#66ffdd', glow: true }; // neon default
-  if (size <= 22) return { color: '#00e5a0', accent: '#66ffc8', glow: true }; // stronger green
-  if (size <= 35) return { color: '#0af', accent: '#6cf', glow: true }; // electric blue
-  if (size <= 50) return { color: '#a855f7', accent: '#d8b4fe', glow: true }; // purple predator
-  return { color: '#f43f5e', accent: '#fda4af', glow: true }; // red apex
-}
-
-function makeFish(x, y, size, sp, isPlayer) {
-  const species = sp || SPECIES[Math.random() * SPECIES.length | 0];
-  return {
-    x, y, size, species, isPlayer: !!isPlayer,
-    vx: 0, vy: 0,
-    angle: Math.random() * Math.PI * 2,
-    tailPhase: Math.random() * Math.PI * 2,
-    finPhase: Math.random() * Math.PI * 2,
-    mouthOpen: 0,
-    targetX: x + (Math.random() - .5) * 300,
-    targetY: y + (Math.random() - .5) * 300,
-    wanderTimer: Math.random() * 3,
-    alive: true, flash: 0,
-    chasing: false,
-    fleeing: false,
-  };
-}
-
-const WORLD_W = 3000, WORLD_H = 2200;
-
-function init() {
-  score = 0; fishEaten = 0; difficulty = 1; boostFuel = 1; warnTimer = 0;
-  comboCount = 0; comboTimer = 0; dashCooldown = 0; isDashing = false; dashTimer = 0;
-  gameTime = 0;
-  gracePeriod = 2.5; // 2.5s invincibility at start
-  cam = { x: 0, y: 0 };
-  camZoom = 1; targetZoom = 1;
-  trailBubbles = [];
-  player = makeFish(WORLD_W / 2, WORLD_H / 2, 14, SPECIES[4], true);
-  player.angle = 0;
-  player.activeEffects = {}; // { speed: timeLeft, magnet: timeLeft, shield: timeLeft }
-  mouseX = W / 2; mouseY = H / 2;
-  fishes = [];
-  bubbles = [];
-  particles = [];
-  powerups = [];
-  floatingTexts = [];
-  seaweeds = [];
-  maxSize = player.size;
-
-  // Spawn initial fish — flood with tiny edible fish for a powerful start
-  for (let i = 0; i < 70; i++) spawnFish(true);
-  // Seaweed
-  for (let i = 0; i < 30; i++) {
-    seaweeds.push({
-      x: Math.random() * WORLD_W,
-      h: 40 + Math.random() * 100,
-      segments: 5 + (Math.random() * 6 | 0),
-      phase: Math.random() * Math.PI * 2,
-      color: `hsl(${120 + Math.random() * 40}, ${50 + Math.random() * 30}%, ${15 + Math.random() * 15}%)`
-    });
-  }
-  // Initial bubbles
-  for (let i = 0; i < 20; i++) {
-    bubbles.push(makeBubble(Math.random() * WORLD_H));
-  }
-}
-
-function spawnFish(initialSpawn) {
-  let size;
-  const r = Math.random();
-
-  if (initialSpawn) {
-    // At game start: 85% tiny fish, almost no big ones — feel powerful!
-    if (r < .85) size = 3 + Math.random() * 7;      // tiny, easy prey
-    else if (r < .97) size = 7 + Math.random() * 5;  // small, still edible
-    else size = 14 + Math.random() * 6;               // rare medium fish
-  } else {
-    // During game: progressively more big fish as difficulty ramps
-    const ps = player ? player.size : PLAYER_START_SIZE;
-    const dangerChance = Math.min(0.20, difficulty * 0.03); // starts ~3%, caps 20%
-    const bigChance = Math.min(0.15, difficulty * 0.025);
-    if (r < .50 - dangerChance) size = ps * (.15 + Math.random() * .5);       // clearly edible
-    else if (r < .75 - dangerChance) size = ps * (.4 + Math.random() * .5);   // small-ish
-    else if (r < 1 - bigChance - dangerChance) size = ps * (.7 + Math.random() * .4); // similar
-    else if (r < 1 - dangerChance) size = ps * (1.2 + Math.random() * .6);    // bigger
-    else size = ps * (1.5 + Math.random() * Math.min(difficulty, 3));          // dangerous
-  }
-
-  // Never spawn at exact player size — nudge away
-  if (player) {
-    const ps = player.size;
-    if (Math.abs(size - ps) < 0.5) {
-      size = Math.random() < 0.5 ? ps * 0.85 : ps * 1.2;
-    }
-  }
-
-  // Spawn outside camera view + safety zone from player
-  let x, y, attempts = 0;
-  const safeZone = 350; // min distance from player
-  do {
-    const margin = 200;
-    if (Math.random() < .5) {
-      x = Math.random() * WORLD_W;
-      y = Math.random() < .5 ? -margin : WORLD_H + margin;
-    } else {
-      x = Math.random() < .5 ? -margin : WORLD_W + margin;
-      y = Math.random() * WORLD_H;
-    }
-    x = Math.max(0, Math.min(WORLD_W, x + (Math.random() - .5) * 400));
-    y = Math.max(0, Math.min(WORLD_H, y + (Math.random() - .5) * 400));
-    attempts++;
-  } while (player && attempts < 10 &&
-    Math.sqrt((x - player.x) ** 2 + (y - player.y) ** 2) < safeZone);
-
-  fishes.push(makeFish(x, y, size));
-}
-
-function spawnPowerup() {
-  const type = POWERUP_TYPES[Math.random() * POWERUP_TYPES.length | 0];
-  // Spawn near-ish to player but not on top
-  const angle = Math.random() * Math.PI * 2;
-  const dist = 300 + Math.random() * 400;
-  let x = player.x + Math.cos(angle) * dist;
-  let y = player.y + Math.sin(angle) * dist;
-  x = Math.max(50, Math.min(WORLD_W - 50, x));
-  y = Math.max(50, Math.min(WORLD_H - 50, y));
-  powerups.push({
-    x, y, type,
-    bobPhase: Math.random() * Math.PI * 2,
-    life: 12, // disappears after 12s
-    size: 12,
-    collected: false,
+function playGameOver() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  [260, 220, 180, 140].forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq, t + i * 0.2);
+    g.gain.setValueAtTime(0.12, t + i * 0.2);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.2 + 0.3);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t + i * 0.2);
+    o.stop(t + i * 0.2 + 0.35);
   });
 }
 
-function addFloatingText(x, y, text, color) {
-  floatingTexts.push({ x, y, text, color, life: 1, vy: -1.5 });
-}
+// ============================================================
+//  GAME STATE
+// ============================================================
 
-function makeBubble(startY) {
-  return {
-    x: Math.random() * WORLD_W,
-    y: startY != null ? startY : WORLD_H + 10,
-    r: 1 + Math.random() * 4,
-    speed: .3 + Math.random() * .8,
-    wobble: Math.random() * Math.PI * 2,
-    wobbleSpeed: .5 + Math.random() * 1.5,
-    opacity: .15 + Math.random() * .25
-  };
-}
+let W, H;                  // canvas pixel size
+let running = false;
+let gameTime = 0;          // seconds since game start
+let score = 0;
+let highScore = parseInt(localStorage.getItem('deepfeed_hi') || '0', 10);
+
+// Player
+let player = null;
+
+// Entities
+let fishes = [];
+let particles = [];
+let bubbles = [];
 
 // Input
-let touchId = null;
-function onPointerDown(px, py) {
-  ensureAudio(); startAmbient();
-  mouseX = px; mouseY = py;
+let pointer = { x: 0, y: 0, active: false };
+let boosting = false;
+let boostFuel = BOOST_MAX;
 
-  // Double-tap dash detection
-  const now = performance.now();
-  if (now - lastTapTime < 350 && dashCooldown <= 0 && running && !gameOver) {
-    triggerDash();
-  }
-  lastTapTime = now;
+// Camera shake
+let shakeX = 0, shakeY = 0, shakeIntensity = 0;
 
-  boosting = true;
+// ============================================================
+//  RESIZE
+// ============================================================
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-function onPointerMove(px, py) { mouseX = px; mouseY = py; }
-function onPointerUp() { boosting = false; }
+window.addEventListener('resize', resize);
+resize();
 
-function triggerDash() {
-  if (dashCooldown > 0 || !player) return;
-  isDashing = true;
-  dashTimer = 0.2; // 200ms dash
-  dashCooldown = 1.5; // 1.5s cooldown
-  dashSound();
-  // Burst of speed particles
-  spawnParticles(player.x, player.y, player.species.accent, 8);
-}
+// ============================================================
+//  FISH DRAWING
+// ============================================================
 
-C.addEventListener('mousedown', e => { e.preventDefault(); onPointerDown(e.clientX, e.clientY); });
-C.addEventListener('mousemove', e => { onPointerMove(e.clientX, e.clientY); });
-C.addEventListener('mouseup', () => onPointerUp());
-C.addEventListener('touchstart', e => {
-  e.preventDefault();
-  const t = e.changedTouches[0]; touchId = t.identifier;
-  onPointerDown(t.clientX, t.clientY);
-}, { passive: false });
-C.addEventListener('touchmove', e => {
-  e.preventDefault();
-  for (const t of e.changedTouches) if (t.identifier === touchId) onPointerMove(t.clientX, t.clientY);
-}, { passive: false });
-C.addEventListener('touchend', e => {
-  for (const t of e.changedTouches) if (t.identifier === touchId) { onPointerUp(); touchId = null; }
-});
-
-// Also listen on play button for touch
-playBtn.addEventListener('touchstart', e => { ensureAudio(); }, { passive: true });
-
-// Drawing
-function drawFish(f, t) {
-  // Dynamic color for player based on current size
-  const sp = f.isPlayer ? { ...f.species, ...getPlayerAppearance(f.size) } : f.species;
-  const s = f.size;
-  const bw = s * sp.bodyRatio;
-  const bh = s;
-
+function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer) {
   ctx.save();
-  ctx.translate(f.x - cam.x, f.y - cam.y);
-  ctx.rotate(f.angle);
+  ctx.translate(x, y);
+  ctx.rotate(angle);
 
-  // Flash effect
-  if (f.flash > 0) {
-    ctx.globalAlpha = .5 + f.flash * .5;
-  }
+  const c = TIER_COLORS[tier];
+  const r = radius;
+  const bodyLen = r * 2.2;
+  const bodyH = r * 1.1;
 
-  // Shield effect (player only)
-  if (f.isPlayer && player.activeEffects.shield > 0) {
-    const shieldGrd = ctx.createRadialGradient(0, 0, s * .8, 0, 0, s * 2.5);
-    shieldGrd.addColorStop(0, 'rgba(0,255,255,0)');
-    shieldGrd.addColorStop(.7, 'rgba(0,255,255,.08)');
-    shieldGrd.addColorStop(1, 'rgba(0,255,255,.15)');
-    ctx.fillStyle = shieldGrd;
-    ctx.beginPath(); ctx.arc(0, 0, s * 2.5, 0, Math.PI * 2); ctx.fill();
-    // Pulsing ring
-    ctx.strokeStyle = `rgba(0,255,255,${.2 + Math.sin(t * 6) * .1})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(0, 0, s * 2, 0, Math.PI * 2); ctx.stroke();
-  }
+  // Tail wag
+  const tailWag = Math.sin(tailPhase) * 0.3;
 
-  // Grace period glow (start invincibility)
-  if (f.isPlayer && gracePeriod > 0) {
-    ctx.globalAlpha = .5 + Math.sin(t * 10) * .3;
-  }
-
-  // Glow
-  if (sp.glow || (f.isPlayer && player.activeEffects.speed > 0)) {
-    const glowColor = (f.isPlayer && player.activeEffects.speed > 0) ? '#ffff00' : sp.accent;
-    const grd = ctx.createRadialGradient(0, 0, s * .5, 0, 0, s * 3);
-    grd.addColorStop(0, glowColor + '30');
-    grd.addColorStop(1, 'transparent');
-    ctx.fillStyle = grd;
-    ctx.beginPath();
-    ctx.arc(0, 0, s * 3, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Edible/dangerous indicator for non-player fish
-  if (!f.isPlayer && player && running && !gameOver) {
-    const indicatorColor = f.size < player.size ? 'rgba(0,255,80,' : 'rgba(255,40,40,';
-    const indicatorAlpha = f.size < player.size ? 0.25 : 0.35;
-    ctx.strokeStyle = indicatorColor + indicatorAlpha + ')';
-    ctx.lineWidth = Math.max(1.5, s * 0.08);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, bw * 0.55 + 3, bh + 3, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    // Subtle glow halo
-    const haloGrd = ctx.createRadialGradient(0, 0, bw * 0.4, 0, 0, bw * 0.7);
-    haloGrd.addColorStop(0, 'transparent');
-    haloGrd.addColorStop(1, indicatorColor + (indicatorAlpha * 0.4) + ')');
-    ctx.fillStyle = haloGrd;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, bw * 0.7, bh * 1.3, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Player trail
-  if (f.isPlayer) {
-    const trailLen = (boosting || isDashing) ? 10 : 4;
-    for (let i = trailLen; i > 0; i--) {
-      const a = .06 * (1 - i / trailLen);
-      ctx.fillStyle = sp.accent + Math.floor(a * 255).toString(16).padStart(2, '0');
-      ctx.beginPath();
-      ctx.ellipse(-bw * .3 - i * s * .3, 0, s * .5 * (1 - i / trailLen * .5), s * .3 * (1 - i / trailLen * .5), 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  if (f.isPlayer && gracePeriod > 0) {
-    ctx.globalAlpha = .6 + Math.sin(t * 10) * .3;
-  }
-
-  const tailSwing = Math.sin(f.tailPhase) * .35;
-  const finBob = Math.sin(f.finPhase) * .3;
+  // Shadow beneath
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.beginPath();
+  ctx.ellipse(2, 3, bodyLen * 0.48, bodyH * 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   // Tail fin
-  ctx.fillStyle = sp.accent;
+  ctx.save();
+  ctx.translate(-bodyLen * 0.4, 0);
+  ctx.rotate(tailWag);
+  ctx.fillStyle = c.fin;
   ctx.beginPath();
-  ctx.moveTo(-bw * .4, 0);
-  const tailX = -bw * .55;
-  const tailY = bh * .8;
-  ctx.quadraticCurveTo(tailX + tailSwing * s, -tailY, tailX - s * .3 + tailSwing * s * .5, -tailY * 1.2);
-  ctx.lineTo(tailX + tailSwing * s * .3, 0);
-  ctx.lineTo(tailX - s * .3 + tailSwing * s * .5, tailY * 1.2);
-  ctx.quadraticCurveTo(tailX + tailSwing * s, tailY, -bw * .4, 0);
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-r * 0.9, -r * 0.7);
+  ctx.quadraticCurveTo(-r * 0.5, 0, -r * 0.9, r * 0.7);
+  ctx.closePath();
   ctx.fill();
+  ctx.restore();
 
   // Body
-  ctx.fillStyle = sp.color;
+  ctx.fillStyle = c.body;
   ctx.beginPath();
-  ctx.ellipse(0, 0, bw * .5, bh, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, bodyLen * 0.45, bodyH, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Belly
-  ctx.fillStyle = sp.accent + '40';
+  // Body shine
+  const grad = ctx.createRadialGradient(-r * 0.2, -r * 0.3, 0, 0, 0, r * 1.2);
+  grad.addColorStop(0, 'rgba(255,255,255,0.25)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.ellipse(0, bh * .2, bw * .4, bh * .6, 0, 0, Math.PI);
+  ctx.ellipse(0, 0, bodyLen * 0.45, bodyH, 0, 0, Math.PI * 2);
   ctx.fill();
-
-  // Stripes (clownfish)
-  if (sp.stripes) {
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = s * .15;
-    for (let i = -1; i <= 1; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * bw * .18, -bh * .9);
-      ctx.lineTo(i * bw * .18, bh * .9);
-      ctx.stroke();
-    }
-  }
 
   // Dorsal fin
-  ctx.fillStyle = sp.accent;
+  ctx.fillStyle = c.fin;
   ctx.beginPath();
-  ctx.moveTo(bw * .1, -bh * .7);
-  ctx.quadraticCurveTo(0, -bh * (1.2 + finBob * .3), -bw * .2, -bh * .7);
+  ctx.moveTo(-r * 0.2, -bodyH * 0.85);
+  ctx.quadraticCurveTo(r * 0.1, -bodyH * 1.5, r * 0.4, -bodyH * 0.85);
   ctx.closePath();
   ctx.fill();
 
-  // Pectoral fins
-  const pFinSize = sp.finSize;
-  ctx.fillStyle = sp.accent + 'aa';
+  // Pectoral fin (bottom)
+  ctx.fillStyle = c.fin;
   ctx.beginPath();
-  ctx.moveTo(bw * .05, -bh * .3);
-  ctx.quadraticCurveTo(bw * .05 - s * pFinSize * .5, -bh * .3 - s * pFinSize * (1 + finBob * .4), -bw * .1, -bh * .4);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(bw * .05, bh * .3);
-  ctx.quadraticCurveTo(bw * .05 - s * pFinSize * .5, bh * .3 + s * pFinSize * (1 - finBob * .4), -bw * .1, bh * .4);
+  ctx.moveTo(r * 0.05, bodyH * 0.6);
+  ctx.quadraticCurveTo(r * 0.1, bodyH * 1.3, -r * 0.3, bodyH * 0.9);
   ctx.closePath();
   ctx.fill();
 
-  // Lantern
-  if (sp.lantern) {
-    const lx = bw * .5 + s * .3;
-    const ly = -bh * .8;
-    ctx.strokeStyle = sp.accent + '80';
-    ctx.lineWidth = 1;
+  // Mouth
+  if (mouthOpen > 0) {
+    ctx.fillStyle = '#331111';
     ctx.beginPath();
-    ctx.moveTo(bw * .3, -bh * .5);
-    ctx.quadraticCurveTo(bw * .5, -bh * 1.2, lx, ly);
-    ctx.stroke();
-    const gr = ctx.createRadialGradient(lx, ly, 0, lx, ly, s * .5);
-    gr.addColorStop(0, '#0ea5e9');
-    gr.addColorStop(.5, '#0ea5e966');
-    gr.addColorStop(1, 'transparent');
-    ctx.fillStyle = gr;
-    ctx.beginPath(); ctx.arc(lx, ly, s * .5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(lx, ly, s * .12, 0, Math.PI * 2); ctx.fill();
+    const mx = bodyLen * 0.42;
+    const mo = mouthOpen * r * 0.35;
+    ctx.ellipse(mx, 0, r * 0.15, mo, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // Eye
-  const eyeX = bw * .25;
-  const eyeY = -bh * .2;
-  const eyeR = s * .18;
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#111';
-  ctx.beginPath(); ctx.arc(eyeX + eyeR * .25, eyeY, eyeR * .55, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(eyeX + eyeR * .1, eyeY - eyeR * .2, eyeR * .2, 0, Math.PI * 2); ctx.fill();
-
-  // Mouth
-  const mouthOpen = f.mouthOpen || 0;
-  ctx.strokeStyle = sp.color === '#1e3a5f' ? '#fff' : '#333';
-  ctx.lineWidth = Math.max(1, s * .04);
+  const eyeX = r * 0.4;
+  const eyeY = -r * 0.25;
+  const eyeR = r * 0.2;
+  ctx.fillStyle = c.eye;
   ctx.beginPath();
-  const mx = bw * .48;
-  ctx.moveTo(mx, -bh * .05 - mouthOpen * s * .1);
-  ctx.quadraticCurveTo(mx + s * .05, bh * .05, mx, bh * .05 + mouthOpen * s * .1);
-  ctx.stroke();
+  ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2);
+  ctx.fill();
+  // Pupil
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(eyeX + eyeR * 0.25, eyeY, eyeR * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  // Glint
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(eyeX + eyeR * 0.45, eyeY - eyeR * 0.25, eyeR * 0.2, 0, Math.PI * 2);
+  ctx.fill();
 
-  // Puffer spikes
-  if (sp.name === 'puffer') {
-    ctx.strokeStyle = sp.color;
-    ctx.lineWidth = 1;
-    for (let a = 0; a < Math.PI * 2; a += .5) {
-      const sx = Math.cos(a) * bw * .5;
-      const sy = Math.sin(a) * bh;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(sx + Math.cos(a) * s * .25, sy + Math.sin(a) * s * .25);
-      ctx.stroke();
-    }
+  // Player glow ring
+  if (isPlayer) {
+    ctx.strokeStyle = 'rgba(0,220,255,0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyLen * 0.5 + 4, bodyH + 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   ctx.restore();
 }
 
-function drawBubble(b) {
-  const sx = b.x - cam.x, sy = b.y - cam.y;
-  const vW = W / camZoom, vH = H / camZoom;
-  if (sx < -20 || sx > vW + 20 || sy < -20 || sy > vH + 20) return;
-  ctx.strokeStyle = `rgba(150,220,255,${b.opacity})`;
-  ctx.lineWidth = .5;
-  ctx.beginPath();
-  ctx.arc(sx, sy, b.r, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = `rgba(200,240,255,${b.opacity * .5})`;
-  ctx.beginPath();
-  ctx.arc(sx - b.r * .3, sy - b.r * .3, b.r * .25, 0, Math.PI * 2);
-  ctx.fill();
-}
+// ============================================================
+//  PARTICLE & BUBBLE
+// ============================================================
 
-function drawSeaweed(sw, t) {
-  const baseX = sw.x - cam.x;
-  const baseY = WORLD_H - cam.y;
-  if (baseX < -60 || baseX > W / camZoom + 60) return;
-  const segH = sw.h / sw.segments;
-  ctx.strokeStyle = sw.color;
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(baseX, baseY);
-  let cx = baseX, cy = baseY;
-  for (let i = 0; i < sw.segments; i++) {
-    const sway = Math.sin(t * 1.5 + sw.phase + i * .5) * (8 + i * 2);
-    cx += sway / sw.segments;
-    cy -= segH;
-    ctx.lineTo(cx, cy);
-  }
-  ctx.stroke();
-  ctx.fillStyle = sw.color;
-  let lx = baseX, ly = baseY;
-  for (let i = 0; i < sw.segments; i++) {
-    const sway = Math.sin(t * 1.5 + sw.phase + i * .5) * (8 + i * 2);
-    lx += sway / sw.segments;
-    ly -= segH;
-    if (i % 2 === 0) {
-      ctx.beginPath();
-      ctx.ellipse(lx + (i % 4 === 0 ? 6 : -6), ly, 5, 2.5, (i % 4 === 0 ? .3 : -.3) + Math.sin(t + sw.phase) * .2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-}
-
-function drawParticle(p) {
-  const sx = p.x - cam.x, sy = p.y - cam.y;
-  ctx.globalAlpha = p.life;
-  ctx.fillStyle = p.color;
-  ctx.beginPath();
-  ctx.arc(sx, sy, p.r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-}
-
-function drawPowerup(p, t) {
-  const sx = p.x - cam.x, sy = p.y - cam.y + Math.sin(t * 3 + p.bobPhase) * 6;
-  const vW = W / camZoom, vH = H / camZoom;
-  if (sx < -30 || sx > vW + 30 || sy < -30 || sy > vH + 30) return;
-
-  // Glow
-  const grd = ctx.createRadialGradient(sx, sy, 2, sx, sy, 25);
-  grd.addColorStop(0, p.type.color + '60');
-  grd.addColorStop(1, 'transparent');
-  ctx.fillStyle = grd;
-  ctx.beginPath(); ctx.arc(sx, sy, 25, 0, Math.PI * 2); ctx.fill();
-
-  // Circle
-  ctx.strokeStyle = p.type.color;
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(sx, sy, 12, 0, Math.PI * 2); ctx.stroke();
-  ctx.fillStyle = p.type.color + '40';
-  ctx.beginPath(); ctx.arc(sx, sy, 12, 0, Math.PI * 2); ctx.fill();
-
-  // Icon
-  ctx.font = '14px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#fff';
-  ctx.fillText(p.type.icon, sx, sy);
-}
-
-function drawDangerArrows(t) {
-  const vW = W / camZoom, vH = H / camZoom;
-  // Show arrows pointing toward off-screen dangerous fish
-  for (const f of fishes) {
-    if (!f.alive || !f.chasing) continue;
-    const sx = f.x - cam.x, sy = f.y - cam.y;
-    // Only show for off-screen or edge fish
-    const margin = 60;
-    if (sx > margin && sx < vW - margin && sy > margin && sy < vH - margin) continue;
-
-    // Arrow on screen edge pointing toward danger
-    const px = player.x - cam.x, py = player.y - cam.y;
-    const angle = Math.atan2(sy - py, sx - px);
-    const edgeX = Math.max(30, Math.min(vW - 30, px + Math.cos(angle) * Math.min(vW, vH) * .4));
-    const edgeY = Math.max(30, Math.min(vH - 30, py + Math.sin(angle) * Math.min(vW, vH) * .4));
-
-    const pulse = .5 + Math.sin(t * 8) * .3;
-    ctx.save();
-    ctx.translate(edgeX, edgeY);
-    ctx.rotate(angle);
-    ctx.fillStyle = `rgba(255,60,60,${pulse})`;
-    ctx.beginPath();
-    ctx.moveTo(12, 0);
-    ctx.lineTo(-6, -7);
-    ctx.lineTo(-6, 7);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-function spawnParticles(x, y, color, count) {
-  const maxToSpawn = Math.min(count, 200 - particles.length);
-  for (let i = 0; i < maxToSpawn; i++) {
+function spawnEatParticles(x, y, color, count) {
+  for (let i = 0; i < count && particles.length < MAX_PARTICLES; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 1 + Math.random() * 3;
     particles.push({
       x, y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      r: 1 + Math.random() * 3,
       life: 1,
-      decay: .02 + Math.random() * .03,
-      color
+      decay: 0.02 + Math.random() * 0.02,
+      size: 2 + Math.random() * 4,
+      color,
     });
   }
 }
 
-// Size-based speed: bigger fish are SLOWER (key game design fix)
-// gameTime-based ramp: enemies start at 50% speed, reach full speed around 60s
-function enemySpeedRamp() {
-  return Math.min(1, 0.5 + gameTime / 120);
+function spawnBubble(x, y) {
+  if (bubbles.length >= MAX_BUBBLES) return;
+  bubbles.push({
+    x: x + (Math.random() - 0.5) * 10,
+    y,
+    vy: -0.5 - Math.random() * 1.5,
+    size: 1 + Math.random() * 3,
+    life: 1,
+    decay: 0.005 + Math.random() * 0.005,
+  });
 }
-function fishSpeedForSize(size, speciesSpeed) {
-  const sizeSpeedFactor = Math.max(0.35, 1.2 - size * 0.015);
-  return 20 * speciesSpeed * sizeSpeedFactor * enemySpeedRamp();
+
+// ============================================================
+//  ENEMY FISH
+// ============================================================
+
+function createFish(tier, forceEdge) {
+  const r = TIER_RADIUS[tier] * (0.85 + Math.random() * 0.3);
+  let x, y, angle;
+
+  if (forceEdge || !player) {
+    // Spawn from screen edges
+    const side = Math.floor(Math.random() * 4);
+    const margin = r * 2;
+    switch (side) {
+      case 0: x = -margin;          y = Math.random() * H; break; // left
+      case 1: x = W + margin;       y = Math.random() * H; break; // right
+      case 2: x = Math.random() * W; y = -margin; break;          // top
+      case 3: x = Math.random() * W; y = H + margin; break;      // bottom
+    }
+    // Aim roughly towards center area
+    const tx = W * (0.2 + Math.random() * 0.6);
+    const ty = H * (0.2 + Math.random() * 0.6);
+    angle = Math.atan2(ty - y, tx - x);
+  } else {
+    // Shouldn't happen but fallback
+    x = Math.random() * W;
+    y = Math.random() * H;
+    angle = Math.random() * Math.PI * 2;
+  }
+
+  const baseSpeed = (1.2 + Math.random() * 0.8) * ENEMY_SPEED[tier];
+  return {
+    x, y, angle,
+    radius: r,
+    tier,
+    speed: baseSpeed,
+    tailPhase: Math.random() * Math.PI * 2,
+    mouthOpen: 0,
+    alive: true,
+    turnTimer: 1 + Math.random() * 3,
+    targetAngle: angle,
+    // Fleeing state
+    fleeing: false,
+    fleeTimer: 0,
+  };
 }
 
-// Update
-function update(dt) {
-  if (!running || gameOver) return;
-  const t = performance.now() / 1000;
-
-  // Time tracking & difficulty ramp
-  gameTime += dt;
-  // Difficulty ramps with both time and score
-  difficulty = 1 + gameTime / 120 + score / 100; // slow ramp over ~2 min
-
-  // Grace period countdown
-  if (gracePeriod > 0) gracePeriod -= dt;
-
-  // Combo timer
-  if (comboTimer > 0) {
-    comboTimer -= dt;
-    if (comboTimer <= 0) {
-      comboCount = 0;
-      comboEl.style.opacity = 0;
+function chooseTier(playerTier, elapsed) {
+  // Weight distribution based on player tier and time
+  // Early game: mostly tiny, some small
+  // As player grows: bigger fish appear
+  const maxSpawnTier = Math.min(TIER_COUNT - 1, playerTier + 1);
+  const weights = [];
+  for (let t = 0; t < TIER_COUNT; t++) {
+    if (t > maxSpawnTier) { weights.push(0); continue; }
+    if (t < playerTier) {
+      // Food fish — always plenty
+      weights.push(t === playerTier - 1 ? 4 : 2);
+    } else if (t === playerTier) {
+      // Same size — some
+      weights.push(1.5);
+    } else {
+      // Bigger = danger, rarer early, more later
+      const dangerScale = Math.min(1, elapsed / 60);
+      weights.push(0.5 + dangerScale * 1.5);
     }
   }
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let t = 0; t < TIER_COUNT; t++) {
+    r -= weights[t];
+    if (r <= 0) return t;
+  }
+  return 0;
+}
 
-  // Dash cooldown
-  if (dashCooldown > 0) dashCooldown -= dt;
-  if (dashTimer > 0) {
-    dashTimer -= dt;
-    if (dashTimer <= 0) isDashing = false;
+// ============================================================
+//  PLAYER
+// ============================================================
+
+function createPlayer() {
+  return {
+    x: W / 2,
+    y: H / 2,
+    angle: 0,
+    tier: 0,
+    radius: TIER_RADIUS[0],
+    tailPhase: 0,
+    mouthOpen: 0,
+    eaten: 0,          // fish eaten in current tier
+    totalEaten: 0,     // total fish eaten (score)
+    alive: true,
+    invincible: 0,     // seconds of invincibility after hit
+    flashTimer: 0,
+  };
+}
+
+// ============================================================
+//  GAME INIT
+// ============================================================
+
+function initGame() {
+  player = createPlayer();
+  fishes = [];
+  particles = [];
+  bubbles = [];
+  score = 0;
+  gameTime = 0;
+  boostFuel = BOOST_MAX;
+  shakeIntensity = 0;
+
+  // Spawn initial fish — lots of small ones
+  for (let i = 0; i < 25; i++) {
+    const tier = Math.random() < 0.8 ? 0 : 1;
+    fishes.push(createFish(tier, true));
   }
 
-  // Active effects countdown
-  for (const key in player.activeEffects) {
-    if (player.activeEffects[key] > 0) {
-      player.activeEffects[key] -= dt;
-      if (player.activeEffects[key] <= 0) delete player.activeEffects[key];
+  updateHUD();
+}
+
+// ============================================================
+//  INPUT HANDLING
+// ============================================================
+
+function getPointerPos(e) {
+  const touch = e.touches ? e.touches[0] : e;
+  if (!touch) return;
+  pointer.x = touch.clientX;
+  pointer.y = touch.clientY;
+  pointer.active = true;
+}
+
+function onPointerDown(e) {
+  e.preventDefault();
+  ensureAudio();
+  getPointerPos(e);
+  boosting = true;
+}
+function onPointerMove(e) {
+  e.preventDefault();
+  getPointerPos(e);
+}
+function onPointerUp(e) {
+  e.preventDefault();
+  boosting = false;
+}
+
+// Pointer events (primary)
+canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+canvas.addEventListener('pointerup', onPointerUp, { passive: false });
+canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
+
+// Touch fallback for in-app browsers
+canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+canvas.addEventListener('touchmove', onPointerMove, { passive: false });
+canvas.addEventListener('touchend', onPointerUp, { passive: false });
+canvas.addEventListener('touchcancel', onPointerUp, { passive: false });
+
+// Mouse fallback
+canvas.addEventListener('mousedown', (e) => { ensureAudio(); pointer.active = true; boosting = true; });
+canvas.addEventListener('mouseup', () => { boosting = false; });
+canvas.addEventListener('mousemove', (e) => { pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true; });
+
+// ============================================================
+//  HUD UPDATE
+// ============================================================
+
+function updateHUD() {
+  scoreEl.textContent = `Score: ${score}`;
+  if (highScore > 0) highScoreEl.textContent = `Best: ${highScore}`;
+
+  if (player) {
+    sizeInfoEl.textContent = `Size: ${TIER_NAMES[player.tier]}`;
+    // Progress bar to next tier
+    if (player.tier < TIER_COUNT - 1) {
+      const progress = (player.eaten / TIER_THRESHOLDS[player.tier]) * 100;
+      sizeBarEl.style.width = Math.min(100, progress) + '%';
+      sizeBarEl.style.background = `linear-gradient(90deg, ${TIER_COLORS[player.tier].body}, ${TIER_COLORS[player.tier + 1].body})`;
+    } else {
+      sizeBarEl.style.width = '100%';
+      sizeBarEl.style.background = TIER_COLORS[player.tier].body;
     }
   }
+  boostBarEl.style.width = (boostFuel / BOOST_MAX * 100) + '%';
+}
 
-  // Player movement — with finger offset so fish leads ahead of touch point
-  let worldMouseX = mouseX / camZoom + cam.x;
-  let worldMouseY = mouseY / camZoom + cam.y;
-  const rawDx = worldMouseX - player.x;
-  const rawDy = worldMouseY - player.y;
-  const rawDist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
-  if (isMobile && rawDist > 10) {
-    const offsetPx = 35 / camZoom;
-    worldMouseX += (rawDx / rawDist) * offsetPx;
-    worldMouseY += (rawDy / rawDist) * offsetPx;
-  }
-  const dx = worldMouseX - player.x;
-  const dy = worldMouseY - player.y;
+// ============================================================
+//  COLLISION
+// ============================================================
+
+function circlesOverlap(ax, ay, ar, bx, by, br) {
+  const dx = ax - bx, dy = ay - by;
   const dist = Math.sqrt(dx * dx + dy * dy);
-  const targetAngle = Math.atan2(dy, dx);
+  return dist < (ar + br) * 0.7; // 0.7 = forgiving overlap
+}
 
-  let angleDiff = targetAngle - player.angle;
-  while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-  while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-  player.angle += angleDiff * Math.min(1, 14 * dt);
+// ============================================================
+//  UPDATE
+// ============================================================
 
-  // Player speed: ALWAYS faster than enemies of similar size — this is core to fun
-  let baseSpeed = 420 - player.size * 0.5;
-  let speed = Math.max(250, baseSpeed);
+function update(dt) {
+  if (!running || !player) return;
 
-  // Speed power-up
-  if (player.activeEffects.speed > 0) speed *= 1.4;
+  gameTime += dt;
 
-  // Boost (hold)
-  if (boosting && boostFuel > 0) {
-    speed *= 1.6;
-    boostFuel = Math.max(0, boostFuel - dt * .35);
-  } else if (!boosting) {
-    boostFuel = Math.min(1, boostFuel + dt * .4); // recharges faster
+  // --- Player movement ---
+  if (pointer.active) {
+    const dx = pointer.x - player.x;
+    const dy = pointer.y - player.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > 2) {
+      const targetAngle = Math.atan2(dy, dx);
+      // Smooth rotation
+      let angleDiff = targetAngle - player.angle;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      player.angle += angleDiff * Math.min(1, dt * 12);
+
+      // Speed — player is always fast, boost makes faster
+      let speed = PLAYER_BASE_SPEED;
+      if (boosting && boostFuel > 0) {
+        speed *= BOOST_MULT;
+        boostFuel = Math.max(0, boostFuel - BOOST_DRAIN);
+      }
+      // Don't overshoot
+      const move = Math.min(dist, speed * (60 * dt));
+      player.x += (dx / dist) * move;
+      player.y += (dy / dist) * move;
+    }
   }
 
-  // Dash (burst)
-  if (isDashing) {
-    speed *= 2.5;
+  // Boost regen when not boosting
+  if (!boosting) {
+    boostFuel = Math.min(BOOST_MAX, boostFuel + BOOST_REGEN);
   }
 
-  boostBar.style.width = (boostFuel * 100) + '%';
+  // Keep player on screen
+  const pr = player.radius;
+  player.x = Math.max(pr, Math.min(W - pr, player.x));
+  player.y = Math.max(pr, Math.min(H - pr, player.y));
 
-  if (dist > 5) {
-    // Direct movement — player fish goes where you point, minimal drift
-    const moveAmt = Math.min(speed, dist * 4) * dt;
-    const targetVx = Math.cos(player.angle) * moveAmt;
-    const targetVy = Math.sin(player.angle) * moveAmt;
-    // Very high lerp = instant response, fish goes where you point
-    player.vx += (targetVx - player.vx) * .7;
-    player.vy += (targetVy - player.vy) * .7;
-  }
-  player.x += player.vx * dt * 80;
-  player.y += player.vy * dt * 80;
-  // Very low friction = maintains momentum, feels fast and responsive
-  player.vx *= .88;
-  player.vy *= .88;
+  // Player animation
+  player.tailPhase += dt * (boosting ? 18 : 10);
+  player.mouthOpen = Math.max(0, player.mouthOpen - dt * 4);
 
-  // Clamp to world
-  player.x = Math.max(player.size, Math.min(WORLD_W - player.size, player.x));
-  player.y = Math.max(player.size, Math.min(WORLD_H - player.size, player.y));
-
-  // Animate
-  const swimSpeed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
-  player.tailPhase += (4 + swimSpeed * 2) * dt;
-  player.finPhase += 3 * dt;
-
-  // Auto-zoom: dezoom as player grows
-  targetZoom = Math.max(0.55, 1.0 - (player.size - PLAYER_START_SIZE) * 0.008);
-  camZoom += (targetZoom - camZoom) * 1.5 * dt; // smooth transition
-
-  // Camera — accounts for zoom
-  const viewW = W / camZoom, viewH = H / camZoom;
-  cam.x += (player.x - viewW / 2 - cam.x) * 4 * dt;
-  cam.y += (player.y - viewH / 2 - cam.y) * 4 * dt;
-  cam.x = Math.max(0, Math.min(WORLD_W - viewW, cam.x));
-  cam.y = Math.max(0, Math.min(WORLD_H - viewH, cam.y));
-
-  // Trail bubbles behind player — proportional to speed
-  const playerSpeed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
-  const trailRate = Math.min(1, playerSpeed * 0.15);
-  if (Math.random() < trailRate && trailBubbles.length < 50) {
-    const backAngle = player.angle + Math.PI;
-    const spread = (Math.random() - 0.5) * 0.8;
-    const bSize = player.size * 0.5;
-    trailBubbles.push({
-      x: player.x + Math.cos(backAngle + spread) * bSize,
-      y: player.y + Math.sin(backAngle + spread) * bSize,
-      r: 1 + Math.random() * 2.5,
-      life: 0.6 + Math.random() * 0.4,
-      vx: Math.cos(backAngle + spread) * (0.3 + Math.random() * 0.5),
-      vy: Math.sin(backAngle + spread) * (0.3 + Math.random() * 0.5) - 0.3,
-    });
-  }
-  for (let i = trailBubbles.length - 1; i >= 0; i--) {
-    const tb = trailBubbles[i];
-    tb.x += tb.vx; tb.y += tb.vy;
-    tb.life -= dt * 1.5;
-    if (tb.life <= 0) trailBubbles.splice(i, 1);
+  // Invincibility cooldown
+  if (player.invincible > 0) {
+    player.invincible -= dt;
+    player.flashTimer += dt * 12;
   }
 
-  // Warning tracking
-  let closestDanger = Infinity;
-
-  // Magnet effect: pull small fish toward player
-  const magnetActive = player.activeEffects.magnet > 0;
-
-  // Fish AI
+  // --- Enemy fish AI ---
   for (let i = fishes.length - 1; i >= 0; i--) {
     const f = fishes[i];
     if (!f.alive) { fishes.splice(i, 1); continue; }
 
-    const fdx = player.x - f.x;
-    const fdy = player.y - f.y;
-    const fdist = Math.sqrt(fdx * fdx + fdy * fdy);
+    // Movement
+    f.tailPhase += dt * (8 + f.speed * 3);
 
-    const canEatPlayer = f.size > player.size;
-    const playerCanEat = player.size > f.size;
-
-    // Enemies detect player at shorter range, giving more reaction time
-    f.chasing = canEatPlayer && fdist < 280 + f.size * 2;
-    f.fleeing = playerCanEat && fdist < 180 + player.size * 2;
-
-    // Magnet pulls edible fish
-    if (magnetActive && playerCanEat && fdist < 300) {
-      const pullAngle = Math.atan2(fdy, fdx);
-      f.vx += Math.cos(pullAngle) * 40 * dt;
-      f.vy += Math.sin(pullAngle) * 40 * dt;
-      f.fleeing = false; // override flee
-    }
-
-    if (f.chasing) {
-      // Chase player — BIG fish are SLOW chasers (key fix!)
-      const chaseAngle = Math.atan2(fdy, fdx);
-      let ad = chaseAngle - f.angle;
-      while (ad > Math.PI) ad -= Math.PI * 2;
-      while (ad < -Math.PI) ad += Math.PI * 2;
-      // Slower turning for big fish
-      const turnRate = Math.max(2, 5 - f.size * 0.04);
-      f.angle += ad * turnRate * dt;
-      // Speed inversely proportional to size, ramps with game time
-      const sizeSlowdown = Math.max(0.3, 1.1 - f.size * 0.012);
-      const spd = (20 + f.size * .15) * f.species.speed * sizeSlowdown * enemySpeedRamp();
-      f.vx += Math.cos(f.angle) * spd * dt;
-      f.vy += Math.sin(f.angle) * spd * dt;
-      f.mouthOpen = .5 + Math.sin(t * 8) * .3;
-
-      if (canEatPlayer) closestDanger = Math.min(closestDanger, fdist);
-    } else if (f.fleeing) {
-      const fleeAngle = Math.atan2(-fdy, -fdx);
-      let ad = fleeAngle - f.angle;
-      while (ad > Math.PI) ad -= Math.PI * 2;
-      while (ad < -Math.PI) ad += Math.PI * 2;
-      f.angle += ad * 4 * dt;
-      // Fleeing fish are a bit slower so player can catch them
-      const spd = fishSpeedForSize(f.size, f.species.speed) * 1.2;
-      f.vx += Math.cos(f.angle) * spd * dt;
-      f.vy += Math.sin(f.angle) * spd * dt;
-    } else {
-      // Wander
-      f.wanderTimer -= dt;
-      if (f.wanderTimer <= 0) {
-        f.wanderTimer = 2 + Math.random() * 4;
-        f.targetX = f.x + (Math.random() - .5) * 500;
-        f.targetY = f.y + (Math.random() - .5) * 400;
-        f.targetX = Math.max(50, Math.min(WORLD_W - 50, f.targetX));
-        f.targetY = Math.max(50, Math.min(WORLD_H - 50, f.targetY));
+    // Turn timer — change direction periodically
+    f.turnTimer -= dt;
+    if (f.turnTimer <= 0) {
+      f.turnTimer = 2 + Math.random() * 4;
+      // Some fish flee from player if player is bigger
+      if (player.tier > f.tier && distBetween(player, f) < 250) {
+        f.fleeing = true;
+        f.fleeTimer = 1.5 + Math.random();
+        f.targetAngle = Math.atan2(f.y - player.y, f.x - player.x);
+      } else if (player.tier < f.tier && distBetween(player, f) < 300) {
+        // Chase player if bigger
+        f.targetAngle = Math.atan2(player.y - f.y, player.x - f.x);
+      } else {
+        f.targetAngle = f.angle + (Math.random() - 0.5) * 1.5;
       }
-      const wa = Math.atan2(f.targetY - f.y, f.targetX - f.x);
-      let ad = wa - f.angle;
-      while (ad > Math.PI) ad -= Math.PI * 2;
-      while (ad < -Math.PI) ad += Math.PI * 2;
-      f.angle += ad * 2 * dt;
-      const spd = fishSpeedForSize(f.size, f.species.speed);
-      f.vx += Math.cos(f.angle) * spd * dt;
-      f.vy += Math.sin(f.angle) * spd * dt;
     }
 
-    f.vx *= .94;
-    f.vy *= .94;
-    f.x += f.vx * dt * 35;
-    f.y += f.vy * dt * 35;
+    if (f.fleeing) {
+      f.fleeTimer -= dt;
+      if (f.fleeTimer <= 0) f.fleeing = false;
+      f.targetAngle = Math.atan2(f.y - player.y, f.x - player.x);
+    }
 
-    // Soft world bounds
-    if (f.x < -100) f.vx += 2;
-    if (f.x > WORLD_W + 100) f.vx -= 2;
-    if (f.y < -100) f.vy += 2;
-    if (f.y > WORLD_H + 100) f.vy -= 2;
+    // Smooth angle
+    let aDiff = f.targetAngle - f.angle;
+    while (aDiff > Math.PI) aDiff -= Math.PI * 2;
+    while (aDiff < -Math.PI) aDiff += Math.PI * 2;
+    f.angle += aDiff * Math.min(1, dt * 3);
 
-    f.tailPhase += (3 + Math.abs(f.vx + f.vy) * 1.5) * dt;
-    f.finPhase += 2.5 * dt;
-    if (f.flash > 0) f.flash -= dt * 3;
-    if (!f.chasing) f.mouthOpen *= .9;
+    const spd = f.speed * (f.fleeing ? 1.5 : 1) * 60 * dt;
+    f.x += Math.cos(f.angle) * spd;
+    f.y += Math.sin(f.angle) * spd;
 
-    // Collision with player — generous hitbox for mobile
-    const eatDist = (player.size + f.size) * 1.3;
-    if (fdist < eatDist) {
-      if (playerCanEat) {
-        // Player eats fish — grow +1 unit
+    // Remove if way off screen
+    const margin = f.radius * 4 + 100;
+    if (f.x < -margin || f.x > W + margin || f.y < -margin || f.y > H + margin) {
+      fishes.splice(i, 1);
+      continue;
+    }
+
+    // Bounce off edges gently
+    if (f.x < f.radius) f.targetAngle = 0;
+    if (f.x > W - f.radius) f.targetAngle = Math.PI;
+    if (f.y < f.radius) f.targetAngle = Math.PI / 2;
+    if (f.y > H - f.radius) f.targetAngle = -Math.PI / 2;
+
+    // --- Collision with player ---
+    if (circlesOverlap(player.x, player.y, player.radius, f.x, f.y, f.radius)) {
+      if (f.tier < player.tier) {
+        // EAT!
         f.alive = false;
-        player.size += 1;
-        maxSize = Math.max(maxSize, player.size);
-
-        // Score = total fish eaten
         score++;
-        fishEaten++;
-
-        // Combo system
-        comboCount++;
-        comboTimer = 2.5;
-        const comboText = comboCount > 1 ? ` x${comboCount}` : '';
-        addFloatingText(f.x, f.y, `+1${comboText}`, comboCount > 2 ? '#ff0' : '#fff');
-
-        if (comboCount > 1) {
-          comboEl.textContent = `Combo x${comboCount}!`;
-          comboEl.style.opacity = 1;
-          if (comboCount > 2) comboSound();
-        }
-
-        // JUICY eat: burst of particles from eaten fish toward player (suction)
-        // Reduce particle count when many already exist to prevent lag
-        const eatAngle = Math.atan2(player.y - f.y, player.x - f.x);
-        const maxEatParticles = particles.length > 120 ? 5 : (12 + f.size);
-        for (let j = 0; j < maxEatParticles; j++) {
-          const a = eatAngle + (Math.random() - .5) * 1.5;
-          const spd = 2 + Math.random() * 4;
-          particles.push({
-            x: f.x, y: f.y,
-            vx: Math.cos(a) * spd,
-            vy: Math.sin(a) * spd,
-            r: 1 + Math.random() * 3,
-            life: 1,
-            decay: .03 + Math.random() * .03,
-            color: f.species.accent
-          });
-        }
-        // Sparkle ring at eat point (skip if too many particles)
-        const sparkleCount = particles.length > 120 ? 3 : 8;
-        for (let j = 0; j < sparkleCount; j++) {
-          const a = (j / 8) * Math.PI * 2;
-          particles.push({
-            x: f.x, y: f.y,
-            vx: Math.cos(a) * 3,
-            vy: Math.sin(a) * 3,
-            r: 2,
-            life: .8,
-            decay: .04,
-            color: '#fff'
-          });
-        }
-        // Brief screen pulse (tiny shake for satisfaction)
-        screenShake = .1; shakeIntensity = 3;
+        player.totalEaten++;
+        player.eaten++;
         player.mouthOpen = 1;
-        eatSound(f.size > 15);
-        bubblePop();
-        haptic(50);
-        setTimeout(() => { if (player) player.mouthOpen = 0; }, 200);
-      } else if (canEatPlayer && gracePeriod <= 0) {
-        // Shield blocks hit
-        if (player.activeEffects.shield > 0) {
-          delete player.activeEffects.shield;
-          spawnParticles(player.x, player.y, '#0ff', 20);
-          addFloatingText(player.x, player.y - 30, 'Shield!', '#0ff');
-          f.vx -= fdx * .05;
-          f.vy -= fdy * .05;
-        } else {
-          // Shrink -1 unit, NOT instant death
-          player.size -= 1;
-          // JUICY hit: big screen shake + red particles burst
-          screenShake = .35; shakeIntensity = 12;
-          spawnParticles(player.x, player.y, '#ff4444', 20);
-          spawnParticles(player.x, player.y, '#ff8800', 10);
-          addFloatingText(player.x, player.y - 20, '-1', '#f44');
-          warnSound();
-          haptic(200);
-          // Extra hit sound
-          playTone(80, .2, 'square', .15);
-          playTone(50, .3, 'sawtooth', .1);
-          player.flash = 1;
-          warningEl.style.opacity = 1; // flash red vignette
-          // Brief invincibility after hit
-          gracePeriod = 1.0;
-          // Strong knockback away from attacker
-          const pushAngle = Math.atan2(-fdy, -fdx);
-          player.vx += Math.cos(pushAngle) * 15;
-          player.vy += Math.sin(pushAngle) * 15;
 
-          if (player.size <= PLAYER_MIN_SIZE) {
-            die();
-            return;
-          }
+        // Level up?
+        if (player.tier < TIER_COUNT - 1 && player.eaten >= TIER_THRESHOLDS[player.tier]) {
+          player.tier++;
+          player.eaten = 0;
+          player.radius = TIER_RADIUS[player.tier];
+          shakeIntensity = 8;
+          // Extra particles for level up
+          spawnEatParticles(player.x, player.y, TIER_COLORS[player.tier].body, 20);
         }
+
+        // Particles + bubble
+        spawnEatParticles(f.x, f.y, TIER_COLORS[f.tier].body, 6);
+        spawnBubble(f.x, f.y);
+        shakeIntensity = Math.max(shakeIntensity, 3);
+
+        playEat();
+      } else if (f.tier > player.tier && player.invincible <= 0) {
+        // HURT — shrink
+        player.invincible = 1.5;
+        player.eaten = 0;
+
+        if (player.tier <= 0) {
+          // Game over
+          player.alive = false;
+          running = false;
+          playGameOver();
+          gameOver();
+          return;
+        }
+
+        player.tier--;
+        player.radius = TIER_RADIUS[player.tier];
+        shakeIntensity = 12;
+        spawnEatParticles(player.x, player.y, '#ff4444', 15);
+
+        // Knockback
+        const kAngle = Math.atan2(player.y - f.y, player.x - f.x);
+        player.x += Math.cos(kAngle) * 40;
+        player.y += Math.sin(kAngle) * 40;
+
+        playHurt();
+        vignetteEl.style.opacity = '1';
+        setTimeout(() => vignetteEl.style.opacity = '0', 200);
       }
+      // Same tier = nothing (pass through)
     }
   }
 
-  // Screen shake decay
-  if (screenShake > 0) screenShake -= dt * 2;
-
-  // Warning effect
-  if (closestDanger < 300) {
-    const intensity = 1 - closestDanger / 300;
-    warningEl.style.opacity = intensity * .5;
-    if (t - lastWarn > 1.5) { warnSound(); lastWarn = t; }
-  } else {
-    warningEl.style.opacity = 0;
+  // --- Spawn new fish ---
+  // Count visible fish
+  let visibleCount = 0;
+  for (const f of fishes) {
+    if (f.x > -50 && f.x < W + 50 && f.y > -50 && f.y < H + 50) visibleCount++;
+  }
+  while (visibleCount < MIN_VISIBLE && fishes.length < MAX_FISH) {
+    const tier = chooseTier(player.tier, gameTime);
+    fishes.push(createFish(tier, true));
+    visibleCount++;
+  }
+  // Also periodic spawn
+  if (Math.random() < dt * 2 && fishes.length < MAX_FISH) {
+    fishes.push(createFish(chooseTier(player.tier, gameTime), true));
   }
 
-  // Maintain fish count — always plenty of fish to eat
-  const targetCount = Math.min(65, 40 + difficulty * 4 | 0);
-  while (fishes.length < targetCount) spawnFish(false);
-
-  // Spawn power-ups periodically
-  if (Math.random() < dt * 0.08 && powerups.length < 3) {
-    spawnPowerup();
-  }
-
-  // Power-up collection
-  for (let i = powerups.length - 1; i >= 0; i--) {
-    const p = powerups[i];
-    p.life -= dt;
-    if (p.life <= 0 || p.collected) { powerups.splice(i, 1); continue; }
-    const pdx = player.x - p.x;
-    const pdy = player.y - p.y;
-    const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
-    if (pdist < player.size + 15) {
-      p.collected = true;
-      player.activeEffects[p.type.name] = p.type.duration;
-      addFloatingText(p.x, p.y - 20, p.type.desc, p.type.color);
-      powerupSound();
-      spawnParticles(p.x, p.y, p.type.color, 15);
-    }
-  }
-
-  // Remove far-away fish
-  for (let i = fishes.length - 1; i >= 0; i--) {
-    const f = fishes[i];
-    const d = Math.abs(f.x - player.x) + Math.abs(f.y - player.y);
-    if (d > 2500 && !f.chasing) { fishes.splice(i, 1); }
-  }
-
-  // Bubbles — cap to prevent unbounded growth
-  if (Math.random() < .3 && bubbles.length < 80) bubbles.push(makeBubble());
-  for (let i = bubbles.length - 1; i >= 0; i--) {
-    const b = bubbles[i];
-    b.y -= b.speed;
-    b.x += Math.sin(t * b.wobbleSpeed + b.wobble) * .3;
-    if (b.y < -20) { bubbles.splice(i, 1); }
-  }
-
-  // Particles — cap to prevent lag during high combos
-  while (particles.length > 200) particles.shift();
+  // --- Particles ---
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.x += p.vx;
     p.y += p.vy;
-    p.vx *= .96;
-    p.vy *= .96;
+    p.vx *= 0.95;
+    p.vy *= 0.95;
     p.life -= p.decay;
-    if (p.life <= 0) particles.splice(i, 1);
+    if (p.life <= 0) { particles.splice(i, 1); }
   }
 
-  // Floating texts — cap
-  while (floatingTexts.length > 20) floatingTexts.shift();
-  for (let i = floatingTexts.length - 1; i >= 0; i--) {
-    const ft = floatingTexts[i];
-    ft.y += ft.vy;
-    ft.life -= dt * .8;
-    if (ft.life <= 0) floatingTexts.splice(i, 1);
+  // --- Bubbles ---
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.y += b.vy;
+    b.x += Math.sin(b.y * 0.05) * 0.3;
+    b.life -= b.decay;
+    if (b.life <= 0) { bubbles.splice(i, 1); }
   }
 
-  // UI
-  scoreEl.textContent = '🐟 ' + score;
-  // Size bar shows how far from min size (danger) to max growth
-  const sizeRange = maxSize > PLAYER_START_SIZE ? maxSize * 1.5 : 50;
-  const sizePercent = Math.max(0, Math.min(100, ((player.size - PLAYER_MIN_SIZE) / (sizeRange - PLAYER_MIN_SIZE)) * 100));
-  sizeBar.style.width = sizePercent + '%';
-  // Color shifts to red when small
-  if (player.size < PLAYER_START_SIZE * 0.7) {
-    sizeBar.style.background = 'linear-gradient(90deg,#f44,#f80)';
+  // Ambient bubbles
+  if (Math.random() < dt * 2) {
+    spawnBubble(Math.random() * W, H + 5);
+  }
+
+  // --- Camera shake ---
+  if (shakeIntensity > 0.5) {
+    shakeX = (Math.random() - 0.5) * shakeIntensity;
+    shakeY = (Math.random() - 0.5) * shakeIntensity;
+    shakeIntensity *= SHAKE_DECAY;
   } else {
-    sizeBar.style.background = 'linear-gradient(90deg,#0ff,#0f0)';
+    shakeX = shakeY = 0;
+    shakeIntensity = 0;
   }
+
+  // HUD update (throttled)
+  updateHUD();
 }
 
-function die() {
-  gameOver = true;
-  running = false;
-  deathSound();
-  haptic([200, 100, 200]);
-  spawnParticles(player.x, player.y, '#ff4444', 30);
-  warningEl.style.opacity = 0;
-  if (score > highScore) {
-    highScore = score;
-    localStorage.setItem('deepfeed_hi', highScore);
-    highEl.textContent = 'Best: ' + highScore;
-  }
-  endStats.innerHTML = `Fish eaten: ${score} &nbsp;|&nbsp; Max size: ${maxSize.toFixed(0)} &nbsp;|&nbsp; Time: ${Math.floor(gameTime)}s`;
-  overlay.querySelector('h1').textContent = 'Eaten!';
-  overlay.querySelector('.sub').textContent = 'The deep ocean claims another...';
-  playBtn.textContent = 'Try Again';
-  overlay.style.display = 'flex';
+function distBetween(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
-// Render
+// ============================================================
+//  RENDER
+// ============================================================
+
 function render() {
-  const t = performance.now() / 1000;
-  ctx.clearRect(0, 0, W, H);
-
-  // Screen shake offset
-  if (screenShake > 0) {
-    const shakeX = (Math.random() - .5) * shakeIntensity * screenShake;
-    const shakeY = (Math.random() - .5) * shakeIntensity * screenShake;
-    ctx.save();
-    ctx.translate(shakeX, shakeY);
-  }
-
-  // Apply zoom
   ctx.save();
-  ctx.scale(camZoom, camZoom);
-  const effW = W / camZoom, effH = H / camZoom;
+  ctx.translate(shakeX, shakeY);
 
-  // Ocean gradient background
-  const bg = ctx.createLinearGradient(0, 0, 0, effH);
-  bg.addColorStop(0, '#0a1628');
-  bg.addColorStop(.4, '#061224');
-  bg.addColorStop(.7, '#040e1a');
-  bg.addColorStop(1, '#020810');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, effW, effH);
+  // Background — deep ocean gradient
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#001830');
+  bgGrad.addColorStop(0.5, '#001020');
+  bgGrad.addColorStop(1, '#000818');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(-10, -10, W + 20, H + 20);
 
-  // Light rays
+  // Subtle light rays from top
   ctx.save();
-  ctx.globalAlpha = .03;
+  ctx.globalAlpha = 0.04;
   for (let i = 0; i < 5; i++) {
-    const rx = (effW * .15 + i * effW * .18) - (cam.x * .1 % (effW * .3));
-    ctx.fillStyle = '#4488cc';
+    const rx = W * (0.15 + i * 0.18);
+    const rw = 40 + i * 20;
+    const grad = ctx.createLinearGradient(rx, 0, rx, H * 0.7);
+    grad.addColorStop(0, '#88ccff');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(rx - 20, 0);
-    ctx.lineTo(rx + 30 + i * 10, effH);
-    ctx.lineTo(rx - 30 - i * 10, effH);
+    ctx.moveTo(rx - rw / 2, 0);
+    ctx.lineTo(rx - rw * 1.5, H * 0.7);
+    ctx.lineTo(rx + rw * 1.5, H * 0.7);
+    ctx.lineTo(rx + rw / 2, 0);
     ctx.fill();
   }
   ctx.restore();
 
-  // Ocean floor
-  const floorY = WORLD_H - cam.y;
-  if (floorY < effH + 20) {
-    const floorGrad = ctx.createLinearGradient(0, floorY - 30, 0, floorY + 20);
-    floorGrad.addColorStop(0, '#0d1520');
-    floorGrad.addColorStop(1, '#1a1510');
-    ctx.fillStyle = floorGrad;
-    ctx.fillRect(0, floorY - 30, effW, effH - floorY + 50);
-    ctx.fillStyle = '#2a2418';
-    for (let x = (cam.x * .7 % 40); x < effW; x += 35 + Math.sin(x) * 10) {
-      ctx.beginPath();
-      ctx.arc(x, floorY - 5 + Math.sin(x * .3) * 4, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // Seaweed
-  for (const sw of seaweeds) drawSeaweed(sw, t);
-  // Bubbles
-  for (const b of bubbles) drawBubble(b);
-  // Power-ups
-  for (const p of powerups) drawPowerup(p, t);
-
-  if (running || gameOver) {
-    // Sort fish by size for depth
-    const allFish = gameOver ? [...fishes] : [player, ...fishes];
-    allFish.sort((a, b) => a.size - b.size);
-    for (const f of allFish) {
-      const sx = f.x - cam.x, sy = f.y - cam.y;
-      const r = f.size * 4;
-      if (sx > -r && sx < effW + r && sy > -r && sy < effH + r) {
-        drawFish(f, t);
-      }
-    }
-
-    // Danger arrows for off-screen threats
-    if (running) drawDangerArrows(t);
-  }
-
-  // Floating texts
-  for (const ft of floatingTexts) {
-    const sx = ft.x - cam.x, sy = ft.y - cam.y;
-    ctx.globalAlpha = ft.life;
-    ctx.font = 'bold 16px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = ft.color;
-    ctx.fillText(ft.text, sx, sy);
-    ctx.globalAlpha = 1;
-  }
-
-  // Trail bubbles
-  for (const tb of trailBubbles) {
-    const sx = tb.x - cam.x, sy = tb.y - cam.y;
-    ctx.globalAlpha = tb.life * 0.5;
-    ctx.strokeStyle = 'rgba(180,230,255,0.6)';
+  // Bubbles (behind fish)
+  for (const b of bubbles) {
+    ctx.globalAlpha = b.life * 0.3;
+    ctx.strokeStyle = '#88ccff';
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.arc(sx, sy, tb.r, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  // Particles on top
-  for (const p of particles) drawParticle(p);
-
-  // Depth fog
-  ctx.fillStyle = 'rgba(2,8,16,.3)';
-  ctx.fillRect(0, 0, effW, 30);
-  const edgeFog = ctx.createLinearGradient(0, effH - 40, 0, effH);
-  edgeFog.addColorStop(0, 'transparent');
-  edgeFog.addColorStop(1, 'rgba(2,8,16,.5)');
-  ctx.fillStyle = edgeFog;
-  ctx.fillRect(0, effH - 40, effW, 40);
-
-  // Dash cooldown indicator (small arc near player)
-  if (running && !gameOver && dashCooldown > 0) {
-    const px = player.x - cam.x, py = player.y - cam.y;
-    const progress = 1 - dashCooldown / 1.5;
-    ctx.strokeStyle = `rgba(255,255,0,${.3})`;
-    ctx.lineWidth = 2;
+    // Tiny highlight
+    ctx.fillStyle = 'rgba(200,230,255,0.3)';
     ctx.beginPath();
-    ctx.arc(px, py, player.size * 2.5, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
-    ctx.stroke();
+    ctx.arc(b.x - b.size * 0.2, b.y - b.size * 0.2, b.size * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Enemy fish
+  for (const f of fishes) {
+    if (!f.alive) continue;
+    drawFish(f.x, f.y, f.radius, f.angle, f.tier, f.mouthOpen, f.tailPhase, false);
   }
 
-  // Close zoom transform
-  ctx.restore();
+  // Player
+  if (player && player.alive) {
+    // Flash when invincible
+    if (player.invincible > 0 && Math.sin(player.flashTimer * Math.PI) > 0) {
+      ctx.globalAlpha = 0.4;
+    }
+    drawFish(player.x, player.y, player.radius, player.angle, player.tier,
+             player.mouthOpen, player.tailPhase, true);
+    ctx.globalAlpha = 1;
 
-  // Close screen shake transform
-  if (screenShake > 0) ctx.restore();
+    // Boost trail when sprinting
+    if (boosting && boostFuel > 0) {
+      ctx.globalAlpha = 0.2;
+      ctx.fillStyle = '#ffcc44';
+      for (let i = 0; i < 3; i++) {
+        const bx = player.x - Math.cos(player.angle) * (player.radius + 10 + i * 8) + (Math.random() - 0.5) * 6;
+        const by = player.y - Math.sin(player.angle) * (player.radius + 10 + i * 8) + (Math.random() - 0.5) * 6;
+        ctx.beginPath();
+        ctx.arc(bx, by, 2 + Math.random() * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Particles
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
 }
 
-// Game loop with robustness
+// ============================================================
+//  GAME OVER
+// ============================================================
+
+function gameOver() {
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('deepfeed_hi', String(highScore));
+  }
+  endStatsEl.innerHTML = `Fish eaten: ${score}<br>Max size: ${TIER_NAMES[Math.max(0, player ? player.tier : 0)]}`;
+  playBtn.textContent = 'Play Again';
+  overlay.classList.remove('hidden');
+  updateHUD();
+}
+
+// ============================================================
+//  GAME LOOP
+// ============================================================
+
 let lastTime = 0;
-let loopId = 0;
+let rafId = null;
 let safetyInterval = null;
 
-function loop(now) {
-  loopId = requestAnimationFrame(loop);
-  const dt = Math.min(.05, (now - lastTime) / 1000);
-  lastTime = now;
+function loop(timestamp) {
+  rafId = requestAnimationFrame(loop);
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05); // cap dt
+  lastTime = timestamp;
+
   update(dt);
   render();
 }
 
-// Visibility change: pause/resume gracefully
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    cancelAnimationFrame(loopId);
-    loopId = 0;
-  } else {
-    if (!loopId) {
+function startLoop() {
+  lastTime = performance.now();
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(loop);
+
+  // Safety net: restart RAF if it dies
+  if (safetyInterval) clearInterval(safetyInterval);
+  safetyInterval = setInterval(() => {
+    if (running && !document.hidden) {
       lastTime = performance.now();
-      loopId = requestAnimationFrame(loop);
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(loop);
     }
-  }
-});
-
-// Safety net: restart loop if it stops
-function ensureLoop() {
-  if (!loopId && !document.hidden) {
-    lastTime = performance.now();
-    loopId = requestAnimationFrame(loop);
-  }
+  }, 2000);
 }
-safetyInterval = setInterval(ensureLoop, 1000);
 
-let playBtnDebounce = false;
-playBtn.addEventListener('click', () => {
-  if (playBtnDebounce) return;
-  playBtnDebounce = true;
-  setTimeout(() => { playBtnDebounce = false; }, 500);
-  ensureAudio(); startAmbient();
-  overlay.style.display = 'none';
-  gameOver = false;
-  running = true;
-  init();
+// Visibility change — pause/resume
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && running) {
+    lastTime = performance.now();
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(loop);
+  }
 });
-playBtn.addEventListener('touchstart', (e) => {
-  ensureAudio();
-}, { passive: true });
 
-// Start rendering even on menu
-init();
-lastTime = performance.now();
-loopId = requestAnimationFrame(loop);
+// ============================================================
+//  START / RESTART
+// ============================================================
+
+let btnCooldown = false;
+
+playBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  if (btnCooldown) return;
+  btnCooldown = true;
+  setTimeout(() => btnCooldown = false, 500);
+
+  ensureAudio();
+  overlay.classList.add('hidden');
+  initGame();
+  running = true;
+  startLoop();
+});
+
+// Also handle touch on button for in-app browsers
+playBtn.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  playBtn.click();
+}, { passive: false });
+
+// Initial render (show background)
+render();
+
+// Show high score on load
+if (highScore > 0) highScoreEl.textContent = `Best: ${highScore}`;
+
 </script>
 </body>
 </html>
