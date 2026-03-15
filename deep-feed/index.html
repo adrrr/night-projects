@@ -968,8 +968,10 @@ function update(dt) {
         }
 
         // JUICY eat: burst of particles from eaten fish toward player (suction)
+        // Reduce particle count when many already exist to prevent lag
         const eatAngle = Math.atan2(player.y - f.y, player.x - f.x);
-        for (let j = 0; j < 12 + f.size; j++) {
+        const maxEatParticles = particles.length > 120 ? 5 : (12 + f.size);
+        for (let j = 0; j < maxEatParticles; j++) {
           const a = eatAngle + (Math.random() - .5) * 1.5;
           const spd = 2 + Math.random() * 4;
           particles.push({
@@ -982,8 +984,9 @@ function update(dt) {
             color: f.species.accent
           });
         }
-        // Sparkle ring at eat point
-        for (let j = 0; j < 8; j++) {
+        // Sparkle ring at eat point (skip if too many particles)
+        const sparkleCount = particles.length > 120 ? 3 : 8;
+        for (let j = 0; j < sparkleCount; j++) {
           const a = (j / 8) * Math.PI * 2;
           particles.push({
             x: f.x, y: f.y,
@@ -1095,7 +1098,8 @@ function update(dt) {
     if (b.y < -20) { bubbles.splice(i, 1); }
   }
 
-  // Particles
+  // Particles — cap to prevent lag during high combos
+  while (particles.length > 200) particles.shift();
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.x += p.vx;
@@ -1106,7 +1110,8 @@ function update(dt) {
     if (p.life <= 0) particles.splice(i, 1);
   }
 
-  // Floating texts
+  // Floating texts — cap
+  while (floatingTexts.length > 20) floatingTexts.shift();
   for (let i = floatingTexts.length - 1; i >= 0; i--) {
     const ft = floatingTexts[i];
     ft.y += ft.vy;
