@@ -259,3 +259,8 @@ Arcade de cell-splitting — commence avec un seul orbe lumineux, tap/click pour
 Jeu aquatique eat-to-grow — tu contrôles un petit poisson bioluminescent dans l'océan profond. Mange les poissons plus petits pour grossir, évite les prédateurs qui te chassent. 10 espèces distinctes dessinées en canvas (poisson-clown à rayures, poisson-globe avec piquants, baudroie avec lanterne, etc.). Fond océanique avec gradient profond, algues animées, bulles montantes, rayons de lumière. Web Audio immersif (ambiance sous-marine, pop de bulles, alertes prédateur). Touch drag pour nager, tap pour booster. Barre de taille, barre de boost, high score localStorage. Difficulté progressive.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/deep-feed/)
+
+### 🕳️ **[Gravity Well](https://adrrr.github.io/night-projects/gravity-well/)**
+Jeu gravitationnel addictif — tu contrôles un trou noir au centre de l'écran. Tap/clic pour pulser ton champ gravitationnel et attirer les astéroïdes vers toi. La matière bleue score des points et te fait grossir. L'antimatière rouge te rétrécit — trop d'antimatière et tu t'effondres ! Système de combos (3+ absorptions rapides = bonus), physique satisfaisante avec gravité passive + pulse, effets visuels soignés (disque d'accrétion animé, particules, screen shake, vagues de pulse), sons Web Audio. Difficulté progressive avec plus d'objets et plus d'antimatière. High score localStorage.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/gravity-well/)
