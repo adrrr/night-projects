@@ -707,9 +707,9 @@ function update(dt) {
   while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
   player.angle += angleDiff * Math.min(1, 14 * dt);
 
-  // Player speed: starts fast, slows gently with growth, but always feels responsive
-  let baseSpeed = 140 - player.size * 0.4;
-  let speed = Math.max(70, baseSpeed);
+  // Player speed: ALWAYS faster than enemies of similar size — this is core to fun
+  let baseSpeed = 200 - player.size * 0.35;
+  let speed = Math.max(110, baseSpeed);
 
   // Speed power-up
   if (player.activeEffects.speed > 0) speed *= 1.4;
@@ -734,15 +734,15 @@ function update(dt) {
     const moveAmt = Math.min(speed, dist * 4) * dt;
     const targetVx = Math.cos(player.angle) * moveAmt;
     const targetVy = Math.sin(player.angle) * moveAmt;
-    // High lerp factor = snappy, responsive controls
-    player.vx += (targetVx - player.vx) * .45;
-    player.vy += (targetVy - player.vy) * .45;
+    // Very high lerp = instant response, fish goes where you point
+    player.vx += (targetVx - player.vx) * .7;
+    player.vy += (targetVy - player.vy) * .7;
   }
-  player.x += player.vx * dt * 40;
-  player.y += player.vy * dt * 40;
-  // Much less drift — stops quickly when you stop moving
-  player.vx *= .75;
-  player.vy *= .75;
+  player.x += player.vx * dt * 55;
+  player.y += player.vy * dt * 55;
+  // Less friction = maintains momentum, feels fast
+  player.vx *= .82;
+  player.vy *= .82;
 
   // Clamp to world
   player.x = Math.max(player.size, Math.min(WORLD_W - player.size, player.x));
@@ -800,7 +800,7 @@ function update(dt) {
       f.angle += ad * turnRate * dt;
       // Speed inversely proportional to size, ramps with game time
       const sizeSlowdown = Math.max(0.3, 1.1 - f.size * 0.012);
-      const spd = (25 + f.size * .2) * f.species.speed * sizeSlowdown * enemySpeedRamp();
+      const spd = (20 + f.size * .15) * f.species.speed * sizeSlowdown * enemySpeedRamp();
       f.vx += Math.cos(f.angle) * spd * dt;
       f.vy += Math.sin(f.angle) * spd * dt;
       f.mouthOpen = .5 + Math.sin(t * 8) * .3;
