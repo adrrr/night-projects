@@ -89,9 +89,12 @@ function playTone(freq, dur, type, vol, detune) {
 
 function bubblePop() { playTone(800 + Math.random() * 400, .08, 'sine', .12); }
 function eatSound(big) {
-  playTone(150, .15, 'square', .1);
-  playTone(200, .12, 'sawtooth', .08, -10);
-  if (big) { playTone(80, .25, 'square', .12); }
+  // Satisfying crunch + ascending tone
+  playTone(150, .15, 'square', .12);
+  playTone(200, .12, 'sawtooth', .1, -10);
+  playTone(350, .1, 'sine', .08);
+  playTone(500, .08, 'sine', .06);
+  if (big) { playTone(80, .25, 'square', .15); playTone(120, .2, 'sawtooth', .1); }
 }
 function warnSound() { playTone(120, .3, 'sawtooth', .08); playTone(100, .35, 'square', .06); }
 function deathSound() { playTone(60, .5, 'sawtooth', .15); playTone(40, .6, 'square', .1); }
@@ -135,6 +138,7 @@ let dashCooldown = 0, isDashing = false, dashTimer = 0;
 let gracePeriod = 0; // invincibility at start
 let gameTime = 0; // seconds since game start
 let lastTapTime = 0;
+let screenShake = 0, shakeIntensity = 0; // screen shake effect
 highEl.textContent = 'Best: ' + highScore;
 
 // Species definitions — speed now inversely correlates with typical size
@@ -157,6 +161,16 @@ const POWERUP_TYPES = [
   { name: 'magnet', color: '#ff00ff', accent: '#faf', icon: '\ud83e\uddf2', duration: 6, desc: 'Fish Magnet!' },
   { name: 'shield', color: '#00ffff', accent: '#aff', icon: '\ud83d\udee1\ufe0f', duration: 4, desc: 'Shield!' },
 ];
+
+// Dynamic player color based on current size
+function getPlayerAppearance(size) {
+  if (size <= 8) return { color: '#5ec8e3', accent: '#8ee1f5', glow: true }; // pale/small
+  if (size <= 14) return { color: '#00ffcc', accent: '#66ffdd', glow: true }; // neon default
+  if (size <= 22) return { color: '#00e5a0', accent: '#66ffc8', glow: true }; // stronger green
+  if (size <= 35) return { color: '#0af', accent: '#6cf', glow: true }; // electric blue
+  if (size <= 50) return { color: '#a855f7', accent: '#d8b4fe', glow: true }; // purple predator
+  return { color: '#f43f5e', accent: '#fda4af', glow: true }; // red apex
+}
 
 function makeFish(x, y, size, sp, isPlayer) {
   const species = sp || SPECIES[Math.random() * SPECIES.length | 0];
@@ -339,7 +353,8 @@ playBtn.addEventListener('touchstart', e => { ensureAudio(); }, { passive: true 
 
 // Drawing
 function drawFish(f, t) {
-  const sp = f.species;
+  // Dynamic color for player based on current size
+  const sp = f.isPlayer ? { ...f.species, ...getPlayerAppearance(f.size) } : f.species;
   const s = f.size;
   const bw = s * sp.bodyRatio;
   const bh = s;
@@ -708,8 +723,8 @@ function update(dt) {
   player.angle += angleDiff * Math.min(1, 14 * dt);
 
   // Player speed: ALWAYS faster than enemies of similar size — this is core to fun
-  let baseSpeed = 200 - player.size * 0.35;
-  let speed = Math.max(110, baseSpeed);
+  let baseSpeed = 420 - player.size * 0.5;
+  let speed = Math.max(250, baseSpeed);
 
   // Speed power-up
   if (player.activeEffects.speed > 0) speed *= 1.4;
@@ -738,11 +753,11 @@ function update(dt) {
     player.vx += (targetVx - player.vx) * .7;
     player.vy += (targetVy - player.vy) * .7;
   }
-  player.x += player.vx * dt * 55;
-  player.y += player.vy * dt * 55;
-  // Less friction = maintains momentum, feels fast
-  player.vx *= .82;
-  player.vy *= .82;
+  player.x += player.vx * dt * 80;
+  player.y += player.vy * dt * 80;
+  // Very low friction = maintains momentum, feels fast and responsive
+  player.vx *= .88;
+  player.vy *= .88;
 
   // Clamp to world
   player.x = Math.max(player.size, Math.min(WORLD_W - player.size, player.x));
@@ -774,8 +789,8 @@ function update(dt) {
     const fdy = player.y - f.y;
     const fdist = Math.sqrt(fdx * fdx + fdy * fdy);
 
-    const canEatPlayer = f.size > player.size * 1.15;
-    const playerCanEat = player.size > f.size * 1.15;
+    const canEatPlayer = f.size > player.size * 1.05;
+    const playerCanEat = player.size > f.size * 1.05;
 
     // Enemies detect player at shorter range, giving more reaction time
     f.chasing = canEatPlayer && fdist < 280 + f.size * 2;
@@ -852,8 +867,8 @@ function update(dt) {
     if (f.flash > 0) f.flash -= dt * 3;
     if (!f.chasing) f.mouthOpen *= .9;
 
-    // Collision with player
-    const eatDist = (player.size + f.size) * .6;
+    // Collision with player — generous hitbox matching visual body size
+    const eatDist = (player.size + f.size) * 1.1;
     if (fdist < eatDist) {
       if (playerCanEat) {
         // Player eats fish — grow +1 unit
@@ -877,7 +892,36 @@ function update(dt) {
           if (comboCount > 2) comboSound();
         }
 
-        spawnParticles(f.x, f.y, f.species.accent, 10 + f.size / 2);
+        // JUICY eat: burst of particles from eaten fish toward player (suction)
+        const eatAngle = Math.atan2(player.y - f.y, player.x - f.x);
+        for (let j = 0; j < 12 + f.size; j++) {
+          const a = eatAngle + (Math.random() - .5) * 1.5;
+          const spd = 2 + Math.random() * 4;
+          particles.push({
+            x: f.x, y: f.y,
+            vx: Math.cos(a) * spd,
+            vy: Math.sin(a) * spd,
+            r: 1 + Math.random() * 3,
+            life: 1,
+            decay: .03 + Math.random() * .03,
+            color: f.species.accent
+          });
+        }
+        // Sparkle ring at eat point
+        for (let j = 0; j < 8; j++) {
+          const a = (j / 8) * Math.PI * 2;
+          particles.push({
+            x: f.x, y: f.y,
+            vx: Math.cos(a) * 3,
+            vy: Math.sin(a) * 3,
+            r: 2,
+            life: .8,
+            decay: .04,
+            color: '#fff'
+          });
+        }
+        // Brief screen pulse (tiny shake for satisfaction)
+        screenShake = .1; shakeIntensity = 3;
         player.mouthOpen = 1;
         eatSound(f.size > 15);
         bubblePop();
@@ -893,16 +937,23 @@ function update(dt) {
         } else {
           // Shrink -1 unit, NOT instant death
           player.size -= 1;
-          spawnParticles(player.x, player.y, '#ff4444', 12);
+          // JUICY hit: big screen shake + red particles burst
+          screenShake = .35; shakeIntensity = 12;
+          spawnParticles(player.x, player.y, '#ff4444', 20);
+          spawnParticles(player.x, player.y, '#ff8800', 10);
           addFloatingText(player.x, player.y - 20, '-1', '#f44');
           warnSound();
+          // Extra hit sound
+          playTone(80, .2, 'square', .15);
+          playTone(50, .3, 'sawtooth', .1);
           player.flash = 1;
+          warningEl.style.opacity = 1; // flash red vignette
           // Brief invincibility after hit
           gracePeriod = 1.0;
-          // Push player away from attacker
+          // Strong knockback away from attacker
           const pushAngle = Math.atan2(-fdy, -fdx);
-          player.vx += Math.cos(pushAngle) * 8;
-          player.vy += Math.sin(pushAngle) * 8;
+          player.vx += Math.cos(pushAngle) * 15;
+          player.vy += Math.sin(pushAngle) * 15;
 
           if (player.size <= PLAYER_MIN_SIZE) {
             die();
@@ -912,6 +963,9 @@ function update(dt) {
       }
     }
   }
+
+  // Screen shake decay
+  if (screenShake > 0) screenShake -= dt * 2;
 
   // Warning effect
   if (closestDanger < 300) {
@@ -1020,6 +1074,14 @@ function render() {
   const t = performance.now() / 1000;
   ctx.clearRect(0, 0, W, H);
 
+  // Screen shake offset
+  if (screenShake > 0) {
+    const shakeX = (Math.random() - .5) * shakeIntensity * screenShake;
+    const shakeY = (Math.random() - .5) * shakeIntensity * screenShake;
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+  }
+
   // Ocean gradient background
   const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, '#0a1628');
@@ -1115,6 +1177,9 @@ function render() {
     ctx.arc(px, py, player.size * 2.5, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
     ctx.stroke();
   }
+
+  // Close screen shake transform
+  if (screenShake > 0) ctx.restore();
 }
 
 // Game loop with robustness
