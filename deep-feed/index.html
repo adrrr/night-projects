@@ -686,7 +686,8 @@ function drawDangerArrows(t) {
 }
 
 function spawnParticles(x, y, color, count) {
-  for (let i = 0; i < count; i++) {
+  const maxToSpawn = Math.min(count, 200 - particles.length);
+  for (let i = 0; i < maxToSpawn; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 1 + Math.random() * 3;
     particles.push({
@@ -829,7 +830,7 @@ function update(dt) {
   // Trail bubbles behind player — proportional to speed
   const playerSpeed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
   const trailRate = Math.min(1, playerSpeed * 0.15);
-  if (Math.random() < trailRate) {
+  if (Math.random() < trailRate && trailBubbles.length < 50) {
     const backAngle = player.angle + Math.PI;
     const spread = (Math.random() - 0.5) * 0.8;
     const bSize = player.size * 0.5;
@@ -873,7 +874,7 @@ function update(dt) {
 
     // Magnet pulls edible fish
     if (magnetActive && playerCanEat && fdist < 300) {
-      const pullAngle = Math.atan2(fdx, fdy);
+      const pullAngle = Math.atan2(fdy, fdx);
       f.vx += Math.cos(pullAngle) * 40 * dt;
       f.vy += Math.sin(pullAngle) * 40 * dt;
       f.fleeing = false; // override flee
@@ -1089,8 +1090,8 @@ function update(dt) {
     if (d > 2500 && !f.chasing) { fishes.splice(i, 1); }
   }
 
-  // Bubbles
-  if (Math.random() < .3) bubbles.push(makeBubble());
+  // Bubbles — cap to prevent unbounded growth
+  if (Math.random() < .3 && bubbles.length < 80) bubbles.push(makeBubble());
   for (let i = bubbles.length - 1; i >= 0; i--) {
     const b = bubbles[i];
     b.y -= b.speed;
