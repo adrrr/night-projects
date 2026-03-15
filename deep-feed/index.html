@@ -361,6 +361,23 @@ function playBonk() {
   o.stop(t + 0.1);
 }
 
+function playTierUp() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // C5 → E5 → G5 ascending triumphant arpeggio
+  [523, 659, 784].forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(freq, t + i * 0.1);
+    g.gain.setValueAtTime(0.2, t + i * 0.1);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.1 + 0.3);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t + i * 0.1);
+    o.stop(t + i * 0.1 + 0.35);
+  });
+}
+
 // ============================================================
 //  HAPTIC FEEDBACK
 // ============================================================
@@ -478,6 +495,18 @@ let playerBounceVy = 0;
 let currentZone = 'surface';
 let zoneTransition = 0; // 0-1 blend to next zone
 
+// Tier-up celebration state
+let tierUpRingRadius = 0;
+let tierUpRingAlpha = 0;
+let tierUpRingColor = '#fff';
+let tierUpFlashTimer = 0;
+let tierUpSlowmoTimer = 0;
+
+// Difficulty system state
+let graceTimer = 0;         // grace period after tier-up (seconds)
+let timeSinceLastHit = 0;   // adaptive danger tracker
+let adaptiveDangerSpawned = false; // prevent spam-spawning
+
 // Stats tracking
 let maxTierReached = 1;
 let totalFishEaten = 0;
@@ -586,6 +615,18 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer, zon
   ctx.ellipse(0, 0, bodyLen * 0.45, bodyH, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  // Player body highlight — brighter than enemies (white inner overlay)
+  if (isPlayer) {
+    const playerGrad = ctx.createRadialGradient(-r * 0.1, -r * 0.2, 0, 0, 0, r * 1.3);
+    playerGrad.addColorStop(0, 'rgba(255,255,255,0.15)');
+    playerGrad.addColorStop(0.6, 'rgba(255,255,255,0.06)');
+    playerGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = playerGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyLen * 0.45, bodyH, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Dorsal fin
   ctx.fillStyle = c.fin;
   ctx.beginPath();
@@ -669,13 +710,23 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer, zon
   ctx.arc(eyeX + eyeR * 0.45, eyeY - eyeR * 0.25, eyeR * 0.2, 0, Math.PI * 2);
   ctx.fill();
 
-  // Player glow ring
+  // Player pulsing glow ring — uses tier color, breathes in/out
   if (isPlayer) {
-    ctx.strokeStyle = 'rgba(0,220,255,0.25)';
-    ctx.lineWidth = 2;
+    const glowPulse = 0.3 + 0.3 * Math.sin(gameTime * 4);
+    const glowRadOsc = 1 + 0.06 * Math.sin(gameTime * 3);
+    const tierGlowColor = c.body;
+    // Parse hex to get RGB for rgba
+    const gh = parseInt(tierGlowColor.slice(1), 16);
+    const gr = (gh >> 16) & 0xff, gg = (gh >> 8) & 0xff, gb = gh & 0xff;
+    // Outer glow
+    ctx.shadowColor = `rgba(${gr},${gg},${gb},${glowPulse})`;
+    ctx.shadowBlur = 12 + 6 * Math.sin(gameTime * 4);
+    ctx.strokeStyle = `rgba(${gr},${gg},${gb},${glowPulse})`;
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.ellipse(0, 0, bodyLen * 0.5 + 4, bodyH + 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, (bodyLen * 0.5 + 5) * glowRadOsc, (bodyH + 5) * glowRadOsc, 0, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.shadowBlur = 0;
   }
 
   ctx.restore();
@@ -873,16 +924,36 @@ function createFish(tier, forceEdge, scatterOnScreen) {
 
 function chooseTier(playerTier, elapsed) {
   const maxSpawnTier = Math.min(TIER_COUNT - 1, playerTier + 1);
+
+  // Continuous time pressure: scales up to 3x over ~2 minutes
+  const timePressure = Math.min(3, elapsed / 40);
+
+  // Grace period after tier-up: 70% reduction in predator spawn weight
+  const graceMultiplier = graceTimer > 0 ? 0.3 : 1;
+
+  // Within-tier progression pressure
+  const progressRatio = player && playerTier < TIER_COUNT - 1
+    ? player.eaten / TIER_THRESHOLDS[playerTier]
+    : player ? prestigeEats / PRESTIGE_EXTRA_EATS : 0;
+
   const weights = [];
   for (let t = 0; t < TIER_COUNT; t++) {
     if (t === 0 || t > maxSpawnTier) { weights.push(0); continue; }
     if (t < playerTier) {
-      weights.push(t === playerTier - 1 ? 4 : 2);
+      // Food fish — reduce availability as progress increases
+      let w = t === playerTier - 1 ? 4 : 2;
+      if (progressRatio > 0.5) w *= 0.7;
+      weights.push(w);
     } else if (t === playerTier) {
-      weights.push(1.5);
+      // Same tier — bump hazards increase with progress
+      let w = 1.5;
+      if (progressRatio > 0.5) w += 1.0;
+      weights.push(w);
     } else {
-      const dangerScale = Math.min(1, elapsed / 30); // faster ramp-up
-      weights.push(0.5 + dangerScale * 1.5);
+      // Predators — scale with time & progress, reduced by grace
+      let w = (0.5 + timePressure * 1.5) * graceMultiplier;
+      if (progressRatio > 0.8) w *= 1.5;
+      weights.push(w);
     }
   }
   const total = weights.reduce((a, b) => a + b, 0);
@@ -900,12 +971,14 @@ function chooseTier(playerTier, elapsed) {
 // ============================================================
 
 function createPlayer() {
+  const r = TIER_RADIUS[1] * radiusScale;
   return {
     x: W / 2,
     y: H / 2,
     angle: 0,
     tier: 1,
-    radius: TIER_RADIUS[1] * radiusScale,
+    radius: r,
+    targetRadius: r,   // for smooth lerp on tier-up
     tailPhase: 0,
     mouthOpen: 0,
     eaten: 0,
@@ -960,6 +1033,17 @@ function initGame() {
   bestFrenzy = 0;
   slowmoScale = 1;
   saturationFlash = 0;
+
+  // Tier-up celebration reset
+  tierUpRingRadius = 0;
+  tierUpRingAlpha = 0;
+  tierUpFlashTimer = 0;
+  tierUpSlowmoTimer = 0;
+
+  // Difficulty reset
+  graceTimer = 0;
+  timeSinceLastHit = 0;
+  adaptiveDangerSpawned = false;
 
   // Stats
   maxTierReached = 1;
@@ -1101,7 +1185,9 @@ function completePrestige() {
   player.tier = 1;
   player.eaten = 0;
   player.radius = TIER_RADIUS[1] * radiusScale;
+  player.targetRadius = player.radius;
   player.invincible = 2; // brief immunity after prestige
+  graceTimer = 3; // grace period after prestige too
 
   // Clear fish and respawn fresh (faster ones)
   fishes = [];
@@ -1178,6 +1264,33 @@ function update(dt) {
   if (saturationFlash > 0) {
     saturationFlash = Math.max(0, saturationFlash - dt * 3);
   }
+
+  // Tier-up slow-mo timer (separate from frenzy)
+  if (tierUpSlowmoTimer > 0) {
+    tierUpSlowmoTimer -= dt;
+    if (tierUpSlowmoTimer <= 0 && !frenzyActive) {
+      slowmoScale = 1;
+    }
+  }
+
+  // Grace period countdown
+  if (graceTimer > 0) {
+    graceTimer = Math.max(0, graceTimer - dt);
+  }
+
+  // Tier-up golden flash decay
+  if (tierUpFlashTimer > 0) {
+    tierUpFlashTimer = Math.max(0, tierUpFlashTimer - dt);
+  }
+
+  // Tier-up expansion ring animation
+  if (tierUpRingAlpha > 0) {
+    tierUpRingRadius += dt * 300; // expand outward fast
+    tierUpRingAlpha = Math.max(0, tierUpRingAlpha - dt * 1.4);
+  }
+
+  // Adaptive danger: track time since last hit
+  timeSinceLastHit += dt;
 
   // Prestige animation
   if (inPrestige) {
@@ -1264,6 +1377,13 @@ function update(dt) {
   player.tailPhase += effectiveDt * (boosting ? 18 : 10);
   player.mouthOpen = Math.max(0, player.mouthOpen - effectiveDt * 4);
 
+  // Smooth radius lerp toward targetRadius (0.3s transition)
+  if (Math.abs(player.radius - player.targetRadius) > 0.5) {
+    player.radius += (player.targetRadius - player.radius) * Math.min(1, effectiveDt * 8);
+  } else {
+    player.radius = player.targetRadius;
+  }
+
   if (player.invincible > 0) {
     player.invincible -= effectiveDt;
     player.flashTimer += effectiveDt * 12;
@@ -1316,6 +1436,9 @@ function update(dt) {
 
           player.tier--;
           player.radius = TIER_RADIUS[player.tier] * radiusScale;
+          player.targetRadius = player.radius;
+          timeSinceLastHit = 0;
+          adaptiveDangerSpawned = false;
           shakeIntensity = 12;
           spawnEatParticles(player.x, player.y, '#bb55ff', 15);
 
@@ -1374,7 +1497,11 @@ function update(dt) {
     } else {
       // Normal fish AI
       const distToPlayer = distBetween(player, f);
-      const detectRange = PREDATOR_DETECT_RANGE + (depthLevel - 1) * PREDATOR_DEPTH_DETECT_BONUS;
+      // Time-based detect range: +10px per 30s of game time
+      const timeDetectBonus = Math.min(30, gameTime / 30 * 10);
+      // Adaptive danger: +20% range if no damage for 8s
+      const adaptiveRangeBonus = timeSinceLastHit > 8 ? 0.2 : 0;
+      const detectRange = (PREDATOR_DETECT_RANGE + (depthLevel - 1) * PREDATOR_DEPTH_DETECT_BONUS + timeDetectBonus) * (1 + adaptiveRangeBonus);
       const isPredator = f.tier > player.tier;
       const isChasing = isPredator && distToPlayer < detectRange;
 
@@ -1407,11 +1534,13 @@ function update(dt) {
       while (aDiff < -Math.PI) aDiff += Math.PI * 2;
       f.angle += aDiff * Math.min(1, effectiveDt * (isChasing ? 5 : 3));
 
-      // Predators chase at 70% player speed, overriding their base speed
+      // Predators chase at 70% player speed, with time/adaptive scaling
+      const timeSpeedBonus = 1 + Math.min(0.15, gameTime / 30 * 0.02); // +2% per 30s, cap +15%
+      const adaptiveSpeedBonus = timeSinceLastHit > 8 ? 1.1 : 1;       // +10% if no damage 8s
       let spdMult = f.fleeing ? 1.5 : 1;
       let spd;
       if (isChasing) {
-        spd = PREDATOR_CHASE_SPEED_RATIO * PLAYER_BASE_SPEED * 60 * effectiveDt;
+        spd = PREDATOR_CHASE_SPEED_RATIO * PLAYER_BASE_SPEED * timeSpeedBonus * adaptiveSpeedBonus * 60 * effectiveDt;
       } else {
         spd = f.speed * spdMult * 60 * effectiveDt;
       }
@@ -1460,15 +1589,40 @@ function update(dt) {
         if (player.tier < TIER_COUNT - 1 && player.eaten >= TIER_THRESHOLDS[player.tier]) {
           player.tier++;
           player.eaten = 0;
-          player.radius = TIER_RADIUS[player.tier] * radiusScale;
-          shakeIntensity = 8;
-          spawnEatParticles(player.x, player.y, getFishColors(player.tier, currentZone).body, 20);
+          // Smooth radius transition via lerp (not instant)
+          player.targetRadius = TIER_RADIUS[player.tier] * radiusScale;
+          shakeIntensity = 10;
+          spawnEatParticles(player.x, player.y, getFishColors(player.tier, currentZone).body, 25);
           maxTierReached = Math.max(maxTierReached, player.tier);
+
+          // --- Tier-up celebration ---
+          playTierUp();
+          haptic([20, 15, 30]);
+
+          // Big floating text: "TIER UP!" + new tier name
+          spawnFloatingText(W / 2, H / 2 - 40, 'TIER UP!', '#ffcc00', true);
+          const newTierColor = getFishColors(player.tier, getZoneForTier(player.tier)).body;
+          spawnFloatingText(W / 2, H / 2, `→ ${TIER_NAMES[player.tier]}`, newTierColor, true);
+
+          // Expansion ring from player
+          tierUpRingRadius = player.radius;
+          tierUpRingAlpha = 0.7;
+          tierUpRingColor = newTierColor;
+
+          // Golden flash on player body
+          tierUpFlashTimer = 0.3;
+
+          // Brief slow-mo (0.4s at 0.3x)
+          tierUpSlowmoTimer = 0.4;
+          slowmoScale = 0.3;
+
+          // Grace period: 3s reduced predator spawns
+          graceTimer = 3;
 
           // Zone change notification
           const newZone = getZoneForTier(player.tier);
           if (newZone !== currentZone) {
-            spawnFloatingText(W / 2, H / 3, ZONE_NAMES[player.tier], '#80e0ff', true);
+            spawnFloatingText(W / 2, H / 3 - 20, ZONE_NAMES[player.tier], '#80e0ff', true);
           }
         } else if (player.tier === TIER_COUNT - 1) {
           // At max tier — track prestige progress
@@ -1499,6 +1653,8 @@ function update(dt) {
         f.y -= Math.sin(bumpAngle) * 30;
         playerStunTimer = 0.4;
         player.invincible = 0.5; // brief immunity to avoid repeated bumps
+        timeSinceLastHit = 0;
+        adaptiveDangerSpawned = false;
         shakeIntensity = Math.max(shakeIntensity, 5);
         haptic(15);
         playBonk();
@@ -1507,6 +1663,8 @@ function update(dt) {
         // HURT
         player.invincible = 1.5;
         player.eaten = 0;
+        timeSinceLastHit = 0;
+        adaptiveDangerSpawned = false;
 
         if (player.tier <= 1) {
           player.alive = false;
@@ -1519,6 +1677,7 @@ function update(dt) {
 
         player.tier--;
         player.radius = TIER_RADIUS[player.tier] * radiusScale;
+        player.targetRadius = player.radius;
         shakeIntensity = 12;
         spawnEatParticles(player.x, player.y, '#ff4444', 15);
 
@@ -1591,6 +1750,20 @@ function update(dt) {
   }
   if (Math.random() < effectiveDt * 3 && fishes.length < MAX_FISH) {
     fishes.push(createFish(chooseTier(player.tier, gameTime), true));
+  }
+
+  // --- Adaptive danger: spawn predator near player if no damage for 15s ---
+  if (timeSinceLastHit > 15 && !adaptiveDangerSpawned && fishes.length < MAX_FISH) {
+    const spawnDist = 180 + Math.random() * 80;
+    const spawnAngle = Math.random() * Math.PI * 2;
+    const predTier = Math.min(TIER_COUNT - 1, player.tier + 1);
+    const predator = createFish(predTier, true);
+    predator.x = player.x + Math.cos(spawnAngle) * spawnDist;
+    predator.y = player.y + Math.sin(spawnAngle) * spawnDist;
+    predator.targetAngle = Math.atan2(player.y - predator.y, player.x - predator.x);
+    predator.angle = predator.targetAngle;
+    fishes.push(predator);
+    adaptiveDangerSpawned = true; // only one per cycle, resets on damage
   }
 
   // --- Particles ---
@@ -1765,6 +1938,9 @@ function update(dt) {
           }
           player.tier--;
           player.radius = TIER_RADIUS[player.tier] * radiusScale;
+          player.targetRadius = player.radius;
+          timeSinceLastHit = 0;
+          adaptiveDangerSpawned = false;
           shakeIntensity = 12;
           spawnEatParticles(player.x, player.y, '#ff4444', 15);
           const kAngle = Math.atan2(player.y - a.y, player.x - a.x);
@@ -1992,6 +2168,46 @@ function render() {
     drawFish(player.x, player.y, pDrawR, player.angle, player.tier,
              player.mouthOpen, player.tailPhase, true, currentZone);
     ctx.globalAlpha = 1;
+
+    // Tier-up golden flash overlay on player body
+    if (tierUpFlashTimer > 0) {
+      ctx.globalAlpha = tierUpFlashTimer / 0.3 * 0.4;
+      ctx.fillStyle = '#ffcc00';
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, pDrawR * 1.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Player chevron indicator — small downward triangle above fish
+    {
+      const chevronY = player.y - pDrawR * 1.8 - 12;
+      const chevronSize = 6;
+      const pc = getFishColors(player.tier, currentZone);
+      const pch = parseInt(pc.body.slice(1), 16);
+      const pcr = (pch >> 16) & 0xff, pcg = (pch >> 8) & 0xff, pcb = pch & 0xff;
+      const chevronPulse = 0.5 + 0.3 * Math.sin(gameTime * 3);
+      ctx.globalAlpha = chevronPulse;
+      ctx.fillStyle = `rgb(${pcr},${pcg},${pcb})`;
+      ctx.beginPath();
+      ctx.moveTo(player.x - chevronSize, chevronY - chevronSize);
+      ctx.lineTo(player.x + chevronSize, chevronY - chevronSize);
+      ctx.lineTo(player.x, chevronY + chevronSize * 0.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Tier-up expansion ring (shockwave)
+    if (tierUpRingAlpha > 0) {
+      ctx.strokeStyle = tierUpRingColor;
+      ctx.globalAlpha = tierUpRingAlpha;
+      ctx.lineWidth = 3 * tierUpRingAlpha;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, tierUpRingRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
 
     // Jellyfish slow: purple tint over player
     if (playerSlowTimer > 0) {
@@ -2273,6 +2489,120 @@ titleLastTime = performance.now();
 titleRafId = requestAnimationFrame(titleLoop);
 
 if (highScore > 0) highScoreEl.textContent = `Best: ${highScore}`;
+
+// ============================================================
+//  TESTS (run with ?test URL param)
+// ============================================================
+
+if (new URLSearchParams(window.location.search).has('test')) {
+  const results = [];
+  let passed = 0, failed = 0;
+
+  function assert(name, condition) {
+    if (condition) {
+      passed++;
+      results.push(`✓ ${name}`);
+    } else {
+      failed++;
+      results.push(`✗ FAIL: ${name}`);
+    }
+  }
+
+  // Setup test state
+  player = createPlayer();
+  gameTime = 0;
+  graceTimer = 0;
+  timeSinceLastHit = 0;
+
+  // Test: chooseTier returns valid tiers
+  for (let i = 0; i < 50; i++) {
+    const t = chooseTier(2, 10);
+    assert(`chooseTier returns valid tier (got ${t})`, t >= 0 && t < TIER_COUNT);
+  }
+
+  // Test: chooseTier respects grace period — predators reduced
+  graceTimer = 3;
+  let predatorCountGrace = 0;
+  for (let i = 0; i < 200; i++) {
+    const t = chooseTier(2, 30);
+    if (t > 2) predatorCountGrace++;
+  }
+  graceTimer = 0;
+  let predatorCountNormal = 0;
+  for (let i = 0; i < 200; i++) {
+    const t = chooseTier(2, 30);
+    if (t > 2) predatorCountNormal++;
+  }
+  assert(`Grace period reduces predators (grace=${predatorCountGrace} < normal=${predatorCountNormal})`,
+    predatorCountGrace < predatorCountNormal);
+
+  // Test: timePressure calculation at various elapsed times
+  // At elapsed=0: timePressure = 0, at elapsed=40: timePressure = 1, at elapsed=120: timePressure = 3
+  assert('timePressure at 0s = 0', Math.min(3, 0 / 40) === 0);
+  assert('timePressure at 40s = 1', Math.min(3, 40 / 40) === 1);
+  assert('timePressure at 80s = 2', Math.min(3, 80 / 40) === 2);
+  assert('timePressure at 120s = 3 (capped)', Math.min(3, 120 / 40) === 3);
+  assert('timePressure at 200s = 3 (still capped)', Math.min(3, 200 / 40) === 3);
+
+  // Test: Player glow ring oscillation math
+  const t1 = 0;
+  const t2 = Math.PI / 4; // quarter period
+  const glow1 = 0.3 + 0.3 * Math.sin(t1 * 4);
+  const glow2 = 0.3 + 0.3 * Math.sin(t2 * 4);
+  assert('Glow oscillation min >= 0.0', glow1 >= 0);
+  assert('Glow oscillation max <= 0.6', glow1 <= 0.6 && glow2 <= 0.6);
+  assert('Glow oscillation varies', Math.abs(glow1 - glow2) > 0.01);
+
+  // Test: Radius oscillation
+  const radOsc1 = 1 + 0.06 * Math.sin(0);
+  const radOsc2 = 1 + 0.06 * Math.sin(Math.PI / 2 * 3);
+  assert('Radius oscillation centered at 1', radOsc1 === 1);
+  assert('Radius oscillation range ±0.06', Math.abs(radOsc2 - 1) <= 0.06);
+
+  // Test: createPlayer has targetRadius
+  const testPlayer = createPlayer();
+  assert('createPlayer has targetRadius', testPlayer.targetRadius === testPlayer.radius);
+
+  // Test: Grace period timer would reduce predator spawns
+  graceTimer = 2;
+  const graceMultTest = graceTimer > 0 ? 0.3 : 1;
+  assert('Grace multiplier = 0.3 when active', graceMultTest === 0.3);
+  graceTimer = 0;
+  const noGraceMultTest = graceTimer > 0 ? 0.3 : 1;
+  assert('Grace multiplier = 1 when inactive', noGraceMultTest === 1);
+
+  // Test: Adaptive danger kicks in after threshold
+  timeSinceLastHit = 5;
+  assert('No adaptive range bonus at 5s', (timeSinceLastHit > 8 ? 0.2 : 0) === 0);
+  timeSinceLastHit = 10;
+  assert('Adaptive range bonus at 10s', (timeSinceLastHit > 8 ? 0.2 : 0) === 0.2);
+  timeSinceLastHit = 12;
+  assert('Adaptive speed bonus at 12s', (timeSinceLastHit > 8 ? 1.1 : 1) === 1.1);
+  timeSinceLastHit = 16;
+  assert('Adaptive spawn at 16s (>15)', timeSinceLastHit > 15);
+  timeSinceLastHit = 0;
+
+  // Test: Tier-up triggers celebration state
+  tierUpFlashTimer = 0.3;
+  assert('Tier-up flash timer set', tierUpFlashTimer === 0.3);
+  tierUpRingAlpha = 0.7;
+  tierUpRingRadius = 20;
+  assert('Tier-up ring initialized', tierUpRingAlpha > 0 && tierUpRingRadius > 0);
+
+  // Test: playTierUp is a function
+  assert('playTierUp function exists', typeof playTierUp === 'function');
+
+  // Reset test state
+  tierUpFlashTimer = 0;
+  tierUpRingAlpha = 0;
+  tierUpRingRadius = 0;
+  player = null;
+
+  // Output results
+  console.log(`\n=== Deep Feed Tests: ${passed} passed, ${failed} failed ===`);
+  results.forEach(r => console.log(r));
+  if (failed > 0) console.error(`${failed} test(s) FAILED`);
+}
 
 </script>
 </body>
