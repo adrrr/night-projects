@@ -61,26 +61,36 @@ canvas{display:block;width:100%;height:100%}
 //  CONSTANTS & CONFIG
 // ============================================================
 
-const TIER_COUNT = 5;
-const TIER_NAMES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge'];
+const TIER_COUNT = 6;
+const TIER_NAMES = ['Plancton', 'Fry', 'Small', 'Medium', 'Large', 'Huge'];
 const TIER_COLORS = [
-  { body: '#66ee66', fin: '#44cc44', eye: '#fff' },  // 1 green
+  { body: '#88ffff', fin: '#88ffff', eye: '#fff' },  // 0 plancton (cyan glow)
+  { body: '#66ee66', fin: '#44cc44', eye: '#fff' },  // 1 fry green
   { body: '#44aaff', fin: '#2288dd', eye: '#fff' },  // 2 blue
   { body: '#ff9933', fin: '#dd7711', eye: '#fff' },  // 3 orange
   { body: '#ff4444', fin: '#cc2222', eye: '#fff' },  // 4 red
   { body: '#bb55ff', fin: '#9933dd', eye: '#ff0' },  // 5 purple boss
 ];
 // Base radius per tier (player radius at that tier)
-const TIER_RADIUS = [14, 22, 34, 50, 72];
+const TIER_RADIUS = [7, 14, 22, 34, 50, 72];
 // How many fish eaten to advance from tier i to tier i+1
-const TIER_THRESHOLDS = [5, 10, 18, 30];
+const TIER_THRESHOLDS = [8, 5, 10, 18, 30];
 // Enemy speed multiplier per tier (player is always faster)
-const ENEMY_SPEED = [0.7, 0.65, 0.55, 0.5, 0.4];
+const ENEMY_SPEED = [0.5, 0.7, 0.65, 0.55, 0.5, 0.4];
+
+// Plancton config
+const PLANCTON_TARGET_COUNT = 12; // keep 10-15 on screen
+const MAX_PLANCTON = 20;
 
 const MAX_FISH = 50;
 const MAX_PARTICLES = 120;
 const MAX_BUBBLES = 40;
 const MIN_VISIBLE = 18;
+
+// Fish-fish eating config
+const FISH_EAT_CHECK_INTERVAL = 10; // check every N frames
+const FISH_EAT_GLOBAL_COOLDOWN = 1.0; // max 1 eat per second globally
+const FISH_EAT_PER_FISH_COOLDOWN = 4; // seconds after eating
 
 const PLAYER_BASE_SPEED = 4.5;
 const BOOST_MULT = 1.7;
@@ -204,6 +214,11 @@ let boostFuel = BOOST_MAX;
 
 // Camera shake
 let shakeX = 0, shakeY = 0, shakeIntensity = 0;
+
+// Fish-fish eating state
+let frameCount = 0;
+let lastFishEatTime = 0; // gameTime of last fish-fish eat
+let pendingRespawns = []; // {tier, delay} entries
 
 // ============================================================
 //  RESIZE
@@ -329,6 +344,31 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer) {
 }
 
 // ============================================================
+//  PLANCTON DRAWING — bioluminescent dots, NOT fish
+// ============================================================
+
+function drawPlancton(x, y, radius, phase) {
+  const pulse = 0.7 + 0.3 * Math.sin(phase);
+  const glowR = radius * 2.5 * pulse;
+
+  // Outer glow
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, glowR);
+  grad.addColorStop(0, 'rgba(140,255,255,0.5)');
+  grad.addColorStop(0.4, 'rgba(100,220,255,0.2)');
+  grad.addColorStop(1, 'rgba(60,180,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, glowR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Bright core
+  ctx.fillStyle = `rgba(220,255,255,${0.6 + 0.4 * pulse})`;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * pulse, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ============================================================
 //  PARTICLE & BUBBLE
 // ============================================================
 
@@ -364,11 +404,16 @@ function spawnBubble(x, y) {
 //  ENEMY FISH
 // ============================================================
 
-function createFish(tier, forceEdge) {
+function createFish(tier, forceEdge, scatterOnScreen) {
   const r = TIER_RADIUS[tier] * (0.85 + Math.random() * 0.3);
   let x, y, angle;
 
-  if (forceEdge || !player) {
+  if (scatterOnScreen) {
+    // Spawn anywhere on screen (for initial population)
+    x = r + Math.random() * (W - r * 2);
+    y = r + Math.random() * (H - r * 2);
+    angle = Math.random() * Math.PI * 2;
+  } else if (forceEdge || !player) {
     // Spawn from screen edges
     const side = Math.floor(Math.random() * 4);
     const margin = r * 2;
@@ -403,17 +448,19 @@ function createFish(tier, forceEdge) {
     // Fleeing state
     fleeing: false,
     fleeTimer: 0,
+    // Fish-fish eating cooldown
+    eatCooldown: 0,
+    // Temporary size boost after eating (cosmetic)
+    sizeBoost: 0,
   };
 }
 
 function chooseTier(playerTier, elapsed) {
-  // Weight distribution based on player tier and time
-  // Early game: mostly tiny, some small
-  // As player grows: bigger fish appear
+  // Plancton (tier 0) is spawned separately — chooseTier only picks tier 1+
   const maxSpawnTier = Math.min(TIER_COUNT - 1, playerTier + 1);
   const weights = [];
   for (let t = 0; t < TIER_COUNT; t++) {
-    if (t > maxSpawnTier) { weights.push(0); continue; }
+    if (t === 0 || t > maxSpawnTier) { weights.push(0); continue; }
     if (t < playerTier) {
       // Food fish — always plenty
       weights.push(t === playerTier - 1 ? 4 : 2);
@@ -427,12 +474,13 @@ function chooseTier(playerTier, elapsed) {
     }
   }
   const total = weights.reduce((a, b) => a + b, 0);
+  if (total <= 0) return 1; // fallback
   let r = Math.random() * total;
   for (let t = 0; t < TIER_COUNT; t++) {
     r -= weights[t];
     if (r <= 0) return t;
   }
-  return 0;
+  return 1;
 }
 
 // ============================================================
@@ -444,8 +492,8 @@ function createPlayer() {
     x: W / 2,
     y: H / 2,
     angle: 0,
-    tier: 0,
-    radius: TIER_RADIUS[0],
+    tier: 1,              // start as Fry (tier 1)
+    radius: TIER_RADIUS[1],
     tailPhase: 0,
     mouthOpen: 0,
     eaten: 0,          // fish eaten in current tier
@@ -469,11 +517,24 @@ function initGame() {
   gameTime = 0;
   boostFuel = BOOST_MAX;
   shakeIntensity = 0;
+  frameCount = 0;
+  lastFishEatTime = 0;
+  pendingRespawns = [];
 
-  // Spawn initial fish — lots of small ones
-  for (let i = 0; i < 25; i++) {
-    const tier = Math.random() < 0.8 ? 0 : 1;
-    fishes.push(createFish(tier, true));
+  // Spawn initial plancton (10-15) scattered on screen
+  const planctonCount = 10 + Math.floor(Math.random() * 6);
+  for (let i = 0; i < planctonCount; i++) {
+    fishes.push(createFish(0, false, true));
+  }
+  // Spawn tier 1 Fry (5-8) from edges
+  const fryCount = 5 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < fryCount; i++) {
+    fishes.push(createFish(1, true));
+  }
+  // Spawn tier 2 Small (2-3) from edges
+  const smallCount = 2 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < smallCount; i++) {
+    fishes.push(createFish(2, true));
   }
 
   updateHUD();
@@ -612,62 +673,100 @@ function update(dt) {
     player.flashTimer += dt * 12;
   }
 
+  frameCount++;
+
   // --- Enemy fish AI ---
   for (let i = fishes.length - 1; i >= 0; i--) {
     const f = fishes[i];
     if (!f.alive) { fishes.splice(i, 1); continue; }
 
-    // Movement
+    // Timers
+    if (f.eatCooldown > 0) f.eatCooldown -= dt;
+    if (f.sizeBoost > 0) f.sizeBoost -= dt;
+    f.mouthOpen = Math.max(0, f.mouthOpen - dt * 4);
+
+    // Movement & animation
     f.tailPhase += dt * (8 + f.speed * 3);
 
-    // Turn timer — change direction periodically
-    f.turnTimer -= dt;
-    if (f.turnTimer <= 0) {
-      f.turnTimer = 2 + Math.random() * 4;
-      // Some fish flee from player if player is bigger
-      if (player.tier > f.tier && distBetween(player, f) < 250) {
-        f.fleeing = true;
-        f.fleeTimer = 1.5 + Math.random();
-        f.targetAngle = Math.atan2(f.y - player.y, f.x - player.x);
-      } else if (player.tier < f.tier && distBetween(player, f) < 300) {
-        // Chase player if bigger
-        f.targetAngle = Math.atan2(player.y - f.y, player.x - f.x);
-      } else {
-        f.targetAngle = f.angle + (Math.random() - 0.5) * 1.5;
+    // Plancton: simple drift, no complex AI
+    if (f.tier === 0) {
+      f.turnTimer -= dt;
+      if (f.turnTimer <= 0) {
+        f.turnTimer = 3 + Math.random() * 4;
+        f.targetAngle = f.angle + (Math.random() - 0.5) * 2;
       }
+      let aDiff = f.targetAngle - f.angle;
+      while (aDiff > Math.PI) aDiff -= Math.PI * 2;
+      while (aDiff < -Math.PI) aDiff += Math.PI * 2;
+      f.angle += aDiff * Math.min(1, dt * 1.5);
+
+      const spd = f.speed * 0.5 * 60 * dt; // slow drift
+      f.x += Math.cos(f.angle) * spd;
+      f.y += Math.sin(f.angle) * spd;
+
+      // Keep on screen (soft bounce)
+      if (f.x < 20) f.targetAngle = 0;
+      if (f.x > W - 20) f.targetAngle = Math.PI;
+      if (f.y < 20) f.targetAngle = Math.PI / 2;
+      if (f.y > H - 20) f.targetAngle = -Math.PI / 2;
+
+      // Remove if way off screen
+      const margin = 150;
+      if (f.x < -margin || f.x > W + margin || f.y < -margin || f.y > H + margin) {
+        fishes.splice(i, 1);
+        continue;
+      }
+    } else {
+      // Normal fish AI
+      f.turnTimer -= dt;
+      if (f.turnTimer <= 0) {
+        f.turnTimer = 2 + Math.random() * 4;
+        if (player.tier > f.tier && distBetween(player, f) < 250) {
+          f.fleeing = true;
+          f.fleeTimer = 1.5 + Math.random();
+          f.targetAngle = Math.atan2(f.y - player.y, f.x - player.x);
+        } else if (player.tier < f.tier && distBetween(player, f) < 300) {
+          f.targetAngle = Math.atan2(player.y - f.y, player.x - f.x);
+        } else {
+          f.targetAngle = f.angle + (Math.random() - 0.5) * 1.5;
+        }
+      }
+
+      if (f.fleeing) {
+        f.fleeTimer -= dt;
+        if (f.fleeTimer <= 0) f.fleeing = false;
+        f.targetAngle = Math.atan2(f.y - player.y, f.x - player.x);
+      }
+
+      let aDiff = f.targetAngle - f.angle;
+      while (aDiff > Math.PI) aDiff -= Math.PI * 2;
+      while (aDiff < -Math.PI) aDiff += Math.PI * 2;
+      f.angle += aDiff * Math.min(1, dt * 3);
+
+      const spd = f.speed * (f.fleeing ? 1.5 : 1) * 60 * dt;
+      f.x += Math.cos(f.angle) * spd;
+      f.y += Math.sin(f.angle) * spd;
+
+      // Remove if way off screen
+      const margin = f.radius * 4 + 100;
+      if (f.x < -margin || f.x > W + margin || f.y < -margin || f.y > H + margin) {
+        fishes.splice(i, 1);
+        continue;
+      }
+
+      // Bounce off edges gently
+      if (f.x < f.radius) f.targetAngle = 0;
+      if (f.x > W - f.radius) f.targetAngle = Math.PI;
+      if (f.y < f.radius) f.targetAngle = Math.PI / 2;
+      if (f.y > H - f.radius) f.targetAngle = -Math.PI / 2;
     }
-
-    if (f.fleeing) {
-      f.fleeTimer -= dt;
-      if (f.fleeTimer <= 0) f.fleeing = false;
-      f.targetAngle = Math.atan2(f.y - player.y, f.x - player.x);
-    }
-
-    // Smooth angle
-    let aDiff = f.targetAngle - f.angle;
-    while (aDiff > Math.PI) aDiff -= Math.PI * 2;
-    while (aDiff < -Math.PI) aDiff += Math.PI * 2;
-    f.angle += aDiff * Math.min(1, dt * 3);
-
-    const spd = f.speed * (f.fleeing ? 1.5 : 1) * 60 * dt;
-    f.x += Math.cos(f.angle) * spd;
-    f.y += Math.sin(f.angle) * spd;
-
-    // Remove if way off screen
-    const margin = f.radius * 4 + 100;
-    if (f.x < -margin || f.x > W + margin || f.y < -margin || f.y > H + margin) {
-      fishes.splice(i, 1);
-      continue;
-    }
-
-    // Bounce off edges gently
-    if (f.x < f.radius) f.targetAngle = 0;
-    if (f.x > W - f.radius) f.targetAngle = Math.PI;
-    if (f.y < f.radius) f.targetAngle = Math.PI / 2;
-    if (f.y > H - f.radius) f.targetAngle = -Math.PI / 2;
 
     // --- Collision with player ---
-    if (circlesOverlap(player.x, player.y, player.radius, f.x, f.y, f.radius)) {
+    // Plancton: easier to eat (just pass over, use full radius sum)
+    const overlapFactor = f.tier === 0 ? 0.9 : 0.7;
+    const dx = player.x - f.x, dy = player.y - f.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < (player.radius + f.radius) * overlapFactor) {
       if (f.tier < player.tier) {
         // EAT!
         f.alive = false;
@@ -682,14 +781,14 @@ function update(dt) {
           player.eaten = 0;
           player.radius = TIER_RADIUS[player.tier];
           shakeIntensity = 8;
-          // Extra particles for level up
           spawnEatParticles(player.x, player.y, TIER_COLORS[player.tier].body, 20);
         }
 
-        // Particles + bubble
-        spawnEatParticles(f.x, f.y, TIER_COLORS[f.tier].body, 6);
-        spawnBubble(f.x, f.y);
-        shakeIntensity = Math.max(shakeIntensity, 3);
+        // Particles + bubble (smaller for plancton)
+        const pCount = f.tier === 0 ? 3 : 6;
+        spawnEatParticles(f.x, f.y, TIER_COLORS[f.tier].body, pCount);
+        if (f.tier > 0) spawnBubble(f.x, f.y);
+        shakeIntensity = Math.max(shakeIntensity, f.tier === 0 ? 1 : 3);
 
         playEat();
       } else if (f.tier > player.tier && player.invincible <= 0) {
@@ -697,8 +796,8 @@ function update(dt) {
         player.invincible = 1.5;
         player.eaten = 0;
 
-        if (player.tier <= 0) {
-          // Game over
+        if (player.tier <= 1) {
+          // Game over (tier 1 is the lowest playable tier)
           player.alive = false;
           running = false;
           playGameOver();
@@ -711,7 +810,6 @@ function update(dt) {
         shakeIntensity = 12;
         spawnEatParticles(player.x, player.y, '#ff4444', 15);
 
-        // Knockback
         const kAngle = Math.atan2(player.y - f.y, player.x - f.x);
         player.x += Math.cos(kAngle) * 40;
         player.y += Math.sin(kAngle) * 40;
@@ -720,16 +818,69 @@ function update(dt) {
         vignetteEl.style.opacity = '1';
         setTimeout(() => vignetteEl.style.opacity = '0', 200);
       }
-      // Same tier = nothing (pass through)
+    }
+  }
+
+  // --- Fish-fish eating (throttled: every N frames) ---
+  if (frameCount % FISH_EAT_CHECK_INTERVAL === 0 && gameTime - lastFishEatTime >= FISH_EAT_GLOBAL_COOLDOWN) {
+    fishFishEating:
+    for (let i = 0; i < fishes.length; i++) {
+      const a = fishes[i];
+      if (!a.alive || a.tier <= 0 || a.eatCooldown > 0) continue;
+      for (let j = 0; j < fishes.length; j++) {
+        if (i === j) continue;
+        const b = fishes[j];
+        if (!b.alive || b.tier >= a.tier) continue;
+        // Check proximity
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < (a.radius + b.radius) * 0.7) {
+          // a eats b
+          b.alive = false;
+          a.mouthOpen = 1;
+          a.eatCooldown = FISH_EAT_PER_FISH_COOLDOWN;
+          a.sizeBoost = 1.5; // cosmetic size bump for 1.5s
+          lastFishEatTime = gameTime;
+
+          // Particles
+          spawnEatParticles(b.x, b.y, TIER_COLORS[b.tier].body, 5);
+          spawnBubble(b.x, b.y);
+
+          // Schedule compensatory respawn (same tier as eaten fish)
+          const respawnTier = b.tier;
+          const respawnDelay = 2 + Math.random();
+          pendingRespawns.push({ tier: respawnTier, time: gameTime + respawnDelay });
+
+          break fishFishEating; // max 1 per check
+        }
+      }
+    }
+  }
+
+  // --- Process pending respawns ---
+  for (let i = pendingRespawns.length - 1; i >= 0; i--) {
+    if (gameTime >= pendingRespawns[i].time && fishes.length < MAX_FISH) {
+      fishes.push(createFish(pendingRespawns[i].tier, true));
+      pendingRespawns.splice(i, 1);
     }
   }
 
   // --- Spawn new fish ---
-  // Count visible fish
+  // Count visible fish and plancton separately
   let visibleCount = 0;
+  let planctonCount = 0;
   for (const f of fishes) {
+    if (f.tier === 0) { planctonCount++; continue; }
     if (f.x > -50 && f.x < W + 50 && f.y > -50 && f.y < H + 50) visibleCount++;
   }
+
+  // Maintain plancton population
+  while (planctonCount < PLANCTON_TARGET_COUNT && fishes.length < MAX_FISH) {
+    fishes.push(createFish(0, true));
+    planctonCount++;
+  }
+
+  // Maintain regular fish population
   while (visibleCount < MIN_VISIBLE && fishes.length < MAX_FISH) {
     const tier = chooseTier(player.tier, gameTime);
     fishes.push(createFish(tier, true));
@@ -835,10 +986,15 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // Enemy fish
+  // Enemy fish & plancton
   for (const f of fishes) {
     if (!f.alive) continue;
-    drawFish(f.x, f.y, f.radius, f.angle, f.tier, f.mouthOpen, f.tailPhase, false);
+    if (f.tier === 0) {
+      drawPlancton(f.x, f.y, f.radius, f.tailPhase);
+    } else {
+      const r = f.sizeBoost > 0 ? f.radius * (1 + 0.08 * f.sizeBoost) : f.radius;
+      drawFish(f.x, f.y, r, f.angle, f.tier, f.mouthOpen, f.tailPhase, false);
+    }
   }
 
   // Player
