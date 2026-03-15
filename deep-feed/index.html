@@ -346,6 +346,21 @@ function playPrestige() {
   o.stop(t + 1.0);
 }
 
+function playBonk() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'square';
+  o.frequency.setValueAtTime(120, t);
+  o.frequency.exponentialRampToValueAtTime(60, t + 0.08);
+  g.gain.setValueAtTime(0.12, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.1);
+}
+
 // ============================================================
 //  HAPTIC FEEDBACK
 // ============================================================
@@ -448,6 +463,16 @@ let reefCurrents = [];
 
 // Abyss ambush predators
 let ambushFish = [];
+
+// Bump stun (same-tier collision)
+let playerStunTimer = 0;
+
+// Jellyfish slow
+let playerSlowTimer = 0;
+
+// Soft bounce velocity
+let playerBounceVx = 0;
+let playerBounceVy = 0;
 
 // Current zone (computed from player tier)
 let currentZone = 'surface';
@@ -914,6 +939,10 @@ function initGame() {
   oxygen = OXYGEN_MAX;
   reefCurrents = [];
   ambushFish = [];
+  playerStunTimer = 0;
+  playerSlowTimer = 0;
+  playerBounceVx = 0;
+  playerBounceVy = 0;
 
   // Prestige reset
   depthLevel = 1;
@@ -1165,6 +1194,10 @@ function update(dt) {
   // Track max tier
   maxTierReached = Math.max(maxTierReached, player.tier);
 
+  // --- Stun & slow timers ---
+  if (playerStunTimer > 0) playerStunTimer = Math.max(0, playerStunTimer - effectiveDt);
+  if (playerSlowTimer > 0) playerSlowTimer = Math.max(0, playerSlowTimer - effectiveDt);
+
   // --- Player movement ---
   if (pointer.active) {
     const dx = pointer.x - player.x;
@@ -1183,6 +1216,11 @@ function update(dt) {
         speed *= BOOST_MULT;
         boostFuel = Math.max(0, boostFuel - BOOST_DRAIN);
       }
+      // Apply stun slow (60% speed)
+      if (playerStunTimer > 0) speed *= 0.6;
+      // Apply jellyfish slow (60% speed)
+      if (playerSlowTimer > 0) speed *= 0.6;
+
       const move = Math.min(dist, speed * (60 * effectiveDt));
       player.x += (dx / dist) * move;
       player.y += (dy / dist) * move;
@@ -1193,10 +1231,34 @@ function update(dt) {
     boostFuel = Math.min(BOOST_MAX, boostFuel + BOOST_REGEN);
   }
 
-  // Keep player on screen
+  // --- Apply bounce velocity ---
+  player.x += playerBounceVx;
+  player.y += playerBounceVy;
+  playerBounceVx *= 0.85;
+  playerBounceVy *= 0.85;
+  if (Math.abs(playerBounceVx) < 0.1) playerBounceVx = 0;
+  if (Math.abs(playerBounceVy) < 0.1) playerBounceVy = 0;
+
+  // --- Soft bounce screen edges ---
   const pr = player.radius;
-  player.x = Math.max(pr, Math.min(W - pr, player.x));
-  player.y = Math.max(pr, Math.min(H - pr, player.y));
+  if (player.x < pr) {
+    player.x = pr;
+    playerBounceVx = 5 + Math.random() * 5;
+    haptic(5);
+  } else if (player.x > W - pr) {
+    player.x = W - pr;
+    playerBounceVx = -(5 + Math.random() * 5);
+    haptic(5);
+  }
+  if (player.y < pr) {
+    player.y = pr;
+    playerBounceVy = 5 + Math.random() * 5;
+    haptic(5);
+  } else if (player.y > H - pr) {
+    player.y = H - pr;
+    playerBounceVy = -(5 + Math.random() * 5);
+    haptic(5);
+  }
 
   // Player animation
   player.tailPhase += effectiveDt * (boosting ? 18 : 10);
@@ -1232,11 +1294,14 @@ function update(dt) {
       // Remove if way off screen
       if (j.y < -100 || j.y > H + 100) { jellyfish.splice(i, 1); continue; }
 
-      // Collision with player — damage
+      // Collision with player — damage + slow
       if (player.invincible <= 0) {
         const jdx = player.x - j.x, jdy = player.y - j.y;
         const jdist = Math.sqrt(jdx * jdx + jdy * jdy);
         if (jdist < player.radius + j.radius * 0.6) {
+          // Jellyfish slow: 60% speed for 0.5s
+          playerSlowTimer = 0.5;
+
           player.invincible = 1.5;
           player.eaten = Math.max(0, player.eaten - 2);
 
@@ -1425,6 +1490,19 @@ function update(dt) {
         haptic(10);
         playEat();
 
+      } else if (f.tier === player.tier && player.invincible <= 0) {
+        // BUMP — same tier: knockback, stun, no damage
+        const bumpAngle = Math.atan2(player.y - f.y, player.x - f.x);
+        player.x += Math.cos(bumpAngle) * 30;
+        player.y += Math.sin(bumpAngle) * 30;
+        f.x -= Math.cos(bumpAngle) * 30;
+        f.y -= Math.sin(bumpAngle) * 30;
+        playerStunTimer = 0.4;
+        player.invincible = 0.5; // brief immunity to avoid repeated bumps
+        shakeIntensity = Math.max(shakeIntensity, 5);
+        haptic(15);
+        playBonk();
+
       } else if (f.tier > player.tier && player.invincible <= 0) {
         // HURT
         player.invincible = 1.5;
@@ -1582,19 +1660,28 @@ function update(dt) {
     for (let i = reefCurrents.length - 1; i >= 0; i--) {
       const c = reefCurrents[i];
       c.x += c.dir * c.speed * 60 * effectiveDt;
-      // Push player if within current band
-      const inBandY = Math.abs(player.y - c.y) < 40;
+      // Push player if within current band (80px wide)
+      const inBandY = Math.abs(player.y - c.y) < 80;
       const inBandX = player.x > c.x - c.width / 2 && player.x < c.x + c.width / 2;
       if (inBandY && inBandX) {
-        player.x += c.dir * c.speed * 0.4 * 60 * effectiveDt;
+        // Stronger base push
+        player.x += c.dir * c.speed * 0.7 * 60 * effectiveDt;
+        // Direction-aware: swimming with current = speed boost, against = slow
+        const playerDirX = Math.cos(player.angle);
+        const alignment = playerDirX * c.dir; // +1 = same dir, -1 = against
+        if (alignment > 0.3) {
+          // Swimming WITH current — 30% speed boost via position push
+          player.x += c.dir * c.speed * 0.3 * 60 * effectiveDt;
+        }
+        // Against current: the base push already slows effective movement
       }
-      // Push fish too
+      // Push fish too (wider band)
       for (const f of fishes) {
         if (f.tier === 0) continue;
-        const fInY = Math.abs(f.y - c.y) < 40;
+        const fInY = Math.abs(f.y - c.y) < 80;
         const fInX = f.x > c.x - c.width / 2 && f.x < c.x + c.width / 2;
         if (fInY && fInX) {
-          f.x += c.dir * c.speed * 0.3 * 60 * effectiveDt;
+          f.x += c.dir * c.speed * 0.5 * 60 * effectiveDt;
         }
       }
       // Remove when off screen
@@ -1624,6 +1711,8 @@ function update(dt) {
         tailPhase: Math.random() * Math.PI * 2,
         mouthOpen: 0,
         activated: false,
+        warning: false,       // warning flash phase
+        warningTimer: 0,      // 0.3s countdown before activation
         opacity: 0.06, // nearly invisible
         life: 15 + Math.random() * 10, // despawn timer
       });
@@ -1635,9 +1724,20 @@ function update(dt) {
       if (a.life <= 0) { ambushFish.splice(i, 1); continue; }
 
       const dToPlayer = Math.sqrt((a.x - player.x) ** 2 + (a.y - player.y) ** 2);
-      if (!a.activated && dToPlayer < 100) {
-        a.activated = true;
-        shakeIntensity = Math.max(shakeIntensity, 5);
+
+      // Warning phase: eyes glow 0.3s before activation (range 150px)
+      if (!a.activated && !a.warning && dToPlayer < 150) {
+        a.warning = true;
+        a.warningTimer = 0.3;
+      }
+      if (a.warning && !a.activated) {
+        a.warningTimer -= effectiveDt;
+        // Pulse opacity for warning (eyes visible)
+        a.opacity = 0.06 + 0.3 * Math.abs(Math.sin(gameTime * 20));
+        if (a.warningTimer <= 0) {
+          a.activated = true;
+          shakeIntensity = Math.max(shakeIntensity, 5);
+        }
       }
       if (a.activated) {
         a.opacity = Math.min(1, a.opacity + effectiveDt * 3);
@@ -1758,8 +1858,8 @@ function render() {
       ctx.strokeStyle = '#66ccbb';
       ctx.lineWidth = 2;
       const halfW = c.width / 2;
-      for (let s = -2; s <= 2; s++) {
-        const sy = c.y + s * 12;
+      for (let s = -3; s <= 3; s++) {
+        const sy = c.y + s * 18;
         ctx.beginPath();
         ctx.moveTo(c.x - halfW, sy);
         ctx.bezierCurveTo(c.x - halfW * 0.3, sy - 5, c.x + halfW * 0.3, sy + 5, c.x + halfW, sy);
@@ -1834,10 +1934,28 @@ function render() {
     }
   }
 
-  // Abyss ambush predators (drawn with variable opacity)
+  // Abyss ambush predators (drawn with variable opacity + warning eye glow)
   for (const a of ambushFish) {
     ctx.globalAlpha = a.opacity;
     drawFish(a.x, a.y, a.radius, a.angle, a.tier, a.mouthOpen, a.tailPhase, false, 'abyss');
+
+    // Warning phase: bioluminescent eye glow before activation
+    if (a.warning && !a.activated) {
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(gameTime * 25);
+      const eyeOffX = Math.cos(a.angle) * a.radius * 0.4;
+      const eyeOffY = Math.sin(a.angle) * a.radius * 0.4;
+      const eyeGlow = ctx.createRadialGradient(
+        a.x + eyeOffX, a.y + eyeOffY, 0,
+        a.x + eyeOffX, a.y + eyeOffY, a.radius * 0.8
+      );
+      eyeGlow.addColorStop(0, 'rgba(255,50,50,0.8)');
+      eyeGlow.addColorStop(0.5, 'rgba(255,50,50,0.2)');
+      eyeGlow.addColorStop(1, 'rgba(255,0,0,0)');
+      ctx.fillStyle = eyeGlow;
+      ctx.beginPath();
+      ctx.arc(a.x + eyeOffX, a.y + eyeOffY, a.radius * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
 
@@ -1874,6 +1992,16 @@ function render() {
     drawFish(player.x, player.y, pDrawR, player.angle, player.tier,
              player.mouthOpen, player.tailPhase, true, currentZone);
     ctx.globalAlpha = 1;
+
+    // Jellyfish slow: purple tint over player
+    if (playerSlowTimer > 0) {
+      ctx.globalAlpha = 0.25 * (playerSlowTimer / 0.5);
+      ctx.fillStyle = '#9944ff';
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, pDrawR * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
 
     // Boost trail
     if (boosting && boostFuel > 0) {
