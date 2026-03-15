@@ -506,6 +506,7 @@ let tierUpSlowmoTimer = 0;
 let graceTimer = 0;         // grace period after tier-up (seconds)
 let timeSinceLastHit = 0;   // adaptive danger tracker
 let adaptiveDangerSpawned = false; // prevent spam-spawning
+let difficultyWave = 1;     // oscillates 0.7–1.0 for spawn pressure rhythm
 
 // Stats tracking
 let maxTierReached = 1;
@@ -919,6 +920,8 @@ function createFish(tier, forceEdge, scatterOnScreen) {
     fleeTimer: 0,
     eatCooldown: 0,
     sizeBoost: 0,
+    chaseTimer: 0,
+    chaseCooldown: 0,
   };
 }
 
@@ -950,8 +953,8 @@ function chooseTier(playerTier, elapsed) {
       if (progressRatio > 0.5) w += 1.0;
       weights.push(w);
     } else {
-      // Predators — scale with time & progress, reduced by grace
-      let w = (0.5 + timePressure * 1.5) * graceMultiplier;
+      // Predators — scale with time & progress, reduced by grace & wave
+      let w = (0.5 + timePressure * 1.5) * graceMultiplier * difficultyWave;
       if (progressRatio > 0.8) w *= 1.5;
       weights.push(w);
     }
@@ -1044,6 +1047,7 @@ function initGame() {
   graceTimer = 0;
   timeSinceLastHit = 0;
   adaptiveDangerSpawned = false;
+  difficultyWave = 1;
 
   // Stats
   maxTierReached = 1;
@@ -1100,6 +1104,7 @@ function onPointerMove(e) {
 function onPointerUp(e) {
   e.preventDefault();
   boosting = false;
+  pointer.active = false;
 }
 
 canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
@@ -1111,7 +1116,7 @@ canvas.addEventListener('touchmove', onPointerMove, { passive: false });
 canvas.addEventListener('touchend', onPointerUp, { passive: false });
 canvas.addEventListener('touchcancel', onPointerUp, { passive: false });
 canvas.addEventListener('mousedown', (e) => { isTouch = false; ensureAudio(); pointer.active = true; boosting = true; });
-canvas.addEventListener('mouseup', () => { boosting = false; });
+canvas.addEventListener('mouseup', () => { boosting = false; pointer.active = false; });
 canvas.addEventListener('mousemove', (e) => { isTouch = false; pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true; });
 
 // ============================================================
@@ -1292,6 +1297,9 @@ function update(dt) {
   // Adaptive danger: track time since last hit
   timeSinceLastHit += dt;
 
+  // Difficulty wave oscillator (~42s period)
+  difficultyWave = 0.7 + 0.3 * Math.sin(gameTime * 0.15);
+
   // Prestige animation
   if (inPrestige) {
     prestigeTimer -= dt;
@@ -1338,6 +1346,35 @@ function update(dt) {
       player.x += (dx / dist) * move;
       player.y += (dy / dist) * move;
     }
+  } else {
+    // Idle auto-swim: drift forward at 40% speed
+    let idleSpeed = PLAYER_BASE_SPEED * 0.4;
+    if (playerStunTimer > 0) idleSpeed *= 0.6;
+    if (playerSlowTimer > 0) idleSpeed *= 0.6;
+
+    // Auto-dodge: nudge angle away from nearby predators
+    let dodgeAngleX = 0, dodgeAngleY = 0;
+    for (const f of fishes) {
+      if (!f.alive || f.tier <= player.tier) continue;
+      const ddx = player.x - f.x, ddy = player.y - f.y;
+      const dd = Math.sqrt(ddx * ddx + ddy * ddy);
+      if (dd < 120 && dd > 0) {
+        const strength = (120 - dd) / 120;
+        dodgeAngleX += (ddx / dd) * strength;
+        dodgeAngleY += (ddy / dd) * strength;
+      }
+    }
+    if (dodgeAngleX !== 0 || dodgeAngleY !== 0) {
+      const dodgeTarget = Math.atan2(dodgeAngleY, dodgeAngleX);
+      let daDiff = dodgeTarget - player.angle;
+      while (daDiff > Math.PI) daDiff -= Math.PI * 2;
+      while (daDiff < -Math.PI) daDiff += Math.PI * 2;
+      player.angle += daDiff * Math.min(1, effectiveDt * 3);
+    }
+
+    const idleMove = idleSpeed * (60 * effectiveDt);
+    player.x += Math.cos(player.angle) * idleMove;
+    player.y += Math.sin(player.angle) * idleMove;
   }
 
   if (!boosting) {
@@ -1458,6 +1495,10 @@ function update(dt) {
     jellyfish = [];
   }
 
+  // --- Count active chasers for max chaser cap ---
+  let activeChaserCount = 0;
+  const MAX_CHASERS = 3;
+
   // --- Enemy fish AI ---
   for (let i = fishes.length - 1; i >= 0; i--) {
     const f = fishes[i];
@@ -1465,6 +1506,7 @@ function update(dt) {
 
     if (f.eatCooldown > 0) f.eatCooldown -= effectiveDt;
     if (f.sizeBoost > 0) f.sizeBoost -= effectiveDt;
+    if (f.chaseCooldown > 0) f.chaseCooldown -= effectiveDt;
     f.mouthOpen = Math.max(0, f.mouthOpen - effectiveDt * 4);
     f.tailPhase += effectiveDt * (8 + f.speed * 3);
 
@@ -1499,11 +1541,31 @@ function update(dt) {
       const distToPlayer = distBetween(player, f);
       // Time-based detect range: +10px per 30s of game time
       const timeDetectBonus = Math.min(30, gameTime / 30 * 10);
-      // Adaptive danger: +20% range if no damage for 8s
-      const adaptiveRangeBonus = timeSinceLastHit > 8 ? 0.2 : 0;
+      // Adaptive danger: +20% range if no damage for 20s
+      const adaptiveRangeBonus = timeSinceLastHit > 20 ? 0.2 : 0;
       const detectRange = (PREDATOR_DETECT_RANGE + (depthLevel - 1) * PREDATOR_DEPTH_DETECT_BONUS + timeDetectBonus) * (1 + adaptiveRangeBonus);
       const isPredator = f.tier > player.tier;
-      const isChasing = isPredator && distToPlayer < detectRange;
+
+      // Chase with timer, cooldown, and max chaser cap
+      let isChasing = false;
+      if (isPredator && f.chaseCooldown <= 0 && distToPlayer < detectRange) {
+        if (f.chaseTimer > 0 || activeChaserCount < MAX_CHASERS) {
+          isChasing = true;
+          if (f.chaseTimer <= 0) f.chaseTimer = 4; // start new chase
+          f.chaseTimer -= effectiveDt;
+          activeChaserCount++;
+          if (f.chaseTimer <= 0) {
+            // Chase expired — lose interest
+            isChasing = false;
+            f.chaseTimer = 0;
+            f.chaseCooldown = 3;
+            f.targetAngle = f.angle + (Math.random() - 0.5) * 3;
+          }
+        }
+      } else if (f.chaseTimer > 0 && (!isPredator || distToPlayer >= detectRange)) {
+        // Lost sight — reset chase
+        f.chaseTimer = 0;
+      }
 
       // Active predator chase — continuous, bypasses turnTimer
       if (isChasing) {
@@ -1536,7 +1598,7 @@ function update(dt) {
 
       // Predators chase at 70% player speed, with time/adaptive scaling
       const timeSpeedBonus = 1 + Math.min(0.15, gameTime / 30 * 0.02); // +2% per 30s, cap +15%
-      const adaptiveSpeedBonus = timeSinceLastHit > 8 ? 1.1 : 1;       // +10% if no damage 8s
+      const adaptiveSpeedBonus = timeSinceLastHit > 20 ? 1.1 : 1;      // +10% if no damage 20s
       let spdMult = f.fleeing ? 1.5 : 1;
       let spd;
       if (isChasing) {
@@ -1643,6 +1705,17 @@ function update(dt) {
         playerScaleBump = 0.15;
         haptic(10);
         playEat();
+
+        // Post-eat breathing pulse: push nearby predators back ~30px
+        for (const pf of fishes) {
+          if (!pf.alive || pf.tier <= player.tier) continue;
+          const pdx = pf.x - player.x, pdy = pf.y - player.y;
+          const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
+          if (pdist < 120 && pdist > 0) {
+            pf.x += (pdx / pdist) * 30;
+            pf.y += (pdy / pdist) * 30;
+          }
+        }
 
       } else if (f.tier === player.tier && player.invincible <= 0) {
         // BUMP — same tier: knockback, stun, no damage
@@ -1752,8 +1825,8 @@ function update(dt) {
     fishes.push(createFish(chooseTier(player.tier, gameTime), true));
   }
 
-  // --- Adaptive danger: spawn predator near player if no damage for 15s ---
-  if (timeSinceLastHit > 15 && !adaptiveDangerSpawned && fishes.length < MAX_FISH) {
+  // --- Adaptive danger: spawn predator near player if no damage for 30s ---
+  if (timeSinceLastHit > 30 && !adaptiveDangerSpawned && fishes.length < MAX_FISH) {
     const spawnDist = 180 + Math.random() * 80;
     const spawnAngle = Math.random() * Math.PI * 2;
     const predTier = Math.min(TIER_COUNT - 1, player.tier + 1);
@@ -2571,15 +2644,15 @@ if (new URLSearchParams(window.location.search).has('test')) {
   const noGraceMultTest = graceTimer > 0 ? 0.3 : 1;
   assert('Grace multiplier = 1 when inactive', noGraceMultTest === 1);
 
-  // Test: Adaptive danger kicks in after threshold
-  timeSinceLastHit = 5;
-  assert('No adaptive range bonus at 5s', (timeSinceLastHit > 8 ? 0.2 : 0) === 0);
-  timeSinceLastHit = 10;
-  assert('Adaptive range bonus at 10s', (timeSinceLastHit > 8 ? 0.2 : 0) === 0.2);
-  timeSinceLastHit = 12;
-  assert('Adaptive speed bonus at 12s', (timeSinceLastHit > 8 ? 1.1 : 1) === 1.1);
-  timeSinceLastHit = 16;
-  assert('Adaptive spawn at 16s (>15)', timeSinceLastHit > 15);
+  // Test: Adaptive danger kicks in after threshold (toned down)
+  timeSinceLastHit = 15;
+  assert('No adaptive range bonus at 15s', (timeSinceLastHit > 20 ? 0.2 : 0) === 0);
+  timeSinceLastHit = 25;
+  assert('Adaptive range bonus at 25s', (timeSinceLastHit > 20 ? 0.2 : 0) === 0.2);
+  timeSinceLastHit = 25;
+  assert('Adaptive speed bonus at 25s', (timeSinceLastHit > 20 ? 1.1 : 1) === 1.1);
+  timeSinceLastHit = 35;
+  assert('Adaptive spawn at 35s (>30)', timeSinceLastHit > 30);
   timeSinceLastHit = 0;
 
   // Test: Tier-up triggers celebration state
@@ -2591,6 +2664,85 @@ if (new URLSearchParams(window.location.search).has('test')) {
 
   // Test: playTierUp is a function
   assert('playTierUp function exists', typeof playTierUp === 'function');
+
+  // Test: Idle drift moves player when pointer inactive
+  {
+    const tp = createPlayer();
+    player = tp;
+    pointer.active = false;
+    const startX = tp.x, startY = tp.y;
+    tp.angle = 0; // facing right
+    // Simulate idle drift
+    const idleSpeed = PLAYER_BASE_SPEED * 0.4;
+    const idleMove = idleSpeed * (60 * 0.016); // ~1 frame
+    tp.x += Math.cos(tp.angle) * idleMove;
+    tp.y += Math.sin(tp.angle) * idleMove;
+    assert('Idle drift moves player X', tp.x > startX);
+    assert('Idle drift Y unchanged when angle=0', Math.abs(tp.y - startY) < 0.01);
+  }
+
+  // Test: Chase timer expires and predator stops chasing
+  {
+    const predator = createFish(3, true);
+    predator.chaseTimer = 0.1; // almost expired
+    predator.chaseTimer -= 0.15; // simulate dt
+    assert('Chase timer expires below 0', predator.chaseTimer <= 0);
+    predator.chaseCooldown = 3;
+    assert('Chase cooldown set after timeout', predator.chaseCooldown === 3);
+  }
+
+  // Test: Max chaser cap works (max 3)
+  {
+    let chaserCount = 0;
+    const maxChasers = 3;
+    const testPredators = [1, 2, 3, 4, 5];
+    const chasing = [];
+    for (const p of testPredators) {
+      if (chaserCount < maxChasers) {
+        chasing.push(p);
+        chaserCount++;
+      }
+    }
+    assert('Max chaser cap limits to 3', chasing.length === 3);
+    assert('4th predator not chasing', !chasing.includes(4));
+  }
+
+  // Test: Difficulty wave oscillates between 0.7 and 1.0
+  {
+    const samples = [];
+    for (let t = 0; t < 100; t += 0.5) {
+      samples.push(0.7 + 0.3 * Math.sin(t * 0.15));
+    }
+    const minWave = Math.min(...samples);
+    const maxWave = Math.max(...samples);
+    assert('Difficulty wave min >= 0.4 (0.7-0.3)', minWave >= 0.39);
+    assert('Difficulty wave max <= 1.0', maxWave <= 1.001);
+    assert('Difficulty wave varies', maxWave - minWave > 0.5);
+  }
+
+  // Test: Post-eat pulse pushes nearby predators
+  {
+    player = createPlayer();
+    player.tier = 2;
+    player.x = 200; player.y = 200;
+    const nearPred = { x: 250, y: 200, alive: true, tier: 3, radius: 30 };
+    const farPred = { x: 500, y: 200, alive: true, tier: 3, radius: 30 };
+    const origNearX = nearPred.x;
+    const origFarX = farPred.x;
+    // Simulate pulse
+    const testFishes = [nearPred, farPred];
+    for (const pf of testFishes) {
+      if (!pf.alive || pf.tier <= player.tier) continue;
+      const pdx = pf.x - player.x, pdy = pf.y - player.y;
+      const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
+      if (pdist < 120 && pdist > 0) {
+        pf.x += (pdx / pdist) * 30;
+        pf.y += (pdy / pdist) * 30;
+      }
+    }
+    assert('Post-eat pulse pushes near predator', nearPred.x > origNearX);
+    assert('Post-eat pulse does not affect far predator', farPred.x === origFarX);
+  }
 
   // Reset test state
   tierUpFlashTimer = 0;
