@@ -572,7 +572,8 @@ function drawFish(f, t) {
 
 function drawBubble(b) {
   const sx = b.x - cam.x, sy = b.y - cam.y;
-  if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) return;
+  const vW = W / camZoom, vH = H / camZoom;
+  if (sx < -20 || sx > vW + 20 || sy < -20 || sy > vH + 20) return;
   ctx.strokeStyle = `rgba(150,220,255,${b.opacity})`;
   ctx.lineWidth = .5;
   ctx.beginPath();
@@ -587,7 +588,7 @@ function drawBubble(b) {
 function drawSeaweed(sw, t) {
   const baseX = sw.x - cam.x;
   const baseY = WORLD_H - cam.y;
-  if (baseX < -60 || baseX > W + 60) return;
+  if (baseX < -60 || baseX > W / camZoom + 60) return;
   const segH = sw.h / sw.segments;
   ctx.strokeStyle = sw.color;
   ctx.lineWidth = 3;
@@ -628,7 +629,8 @@ function drawParticle(p) {
 
 function drawPowerup(p, t) {
   const sx = p.x - cam.x, sy = p.y - cam.y + Math.sin(t * 3 + p.bobPhase) * 6;
-  if (sx < -30 || sx > W + 30 || sy < -30 || sy > H + 30) return;
+  const vW = W / camZoom, vH = H / camZoom;
+  if (sx < -30 || sx > vW + 30 || sy < -30 || sy > vH + 30) return;
 
   // Glow
   const grd = ctx.createRadialGradient(sx, sy, 2, sx, sy, 25);
@@ -940,8 +942,8 @@ function update(dt) {
     if (f.flash > 0) f.flash -= dt * 3;
     if (!f.chasing) f.mouthOpen *= .9;
 
-    // Collision with player — generous hitbox matching visual body size
-    const eatDist = (player.size + f.size) * 1.1;
+    // Collision with player — generous hitbox for mobile
+    const eatDist = (player.size + f.size) * 1.3;
     if (fdist < eatDist) {
       if (playerCanEat) {
         // Player eats fish — grow +1 unit
