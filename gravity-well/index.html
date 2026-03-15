@@ -18,6 +18,8 @@ html, body {
 canvas {
   display: block;
   width: 100%; height: 100%;
+  touch-action: none;
+  -webkit-touch-callout: none;
 }
 #ui {
   position: absolute; top: 0; left: 0; right: 0;
@@ -185,10 +187,19 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// Audio
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+// Audio — created lazily so iOS Safari doesn't block/crash before user gesture
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch(e) { return false; }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return true;
+}
 
 function playSound(freq, dur, vol = 0.15, type = 'sine') {
+  if (!ensureAudio()) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = type;
@@ -670,7 +681,7 @@ function gameOver() {
 }
 
 function startGame() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+  ensureAudio();
   initGame();
   state = 'playing';
   startScreen.style.display = 'none';
@@ -692,6 +703,12 @@ canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   handleInput(e.clientX, e.clientY);
 });
+// Fallback for in-app browsers (Telegram, Instagram) where pointerdown may not fire
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  if (t) handleInput(t.clientX, t.clientY);
+}, { passive: false });
 
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.code === 'Enter') {
@@ -706,25 +723,20 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-startBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  startGame();
-});
-startBtn.addEventListener('touchend', (e) => {
+// Use a guard to prevent double-fires from touch + click on same tap
+let startGuard = 0;
+function guardedStart(e) {
   e.preventDefault();
   e.stopPropagation();
+  const now = Date.now();
+  if (now - startGuard < 400) return;
+  startGuard = now;
   startGame();
-});
-
-restartBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  startGame();
-});
-restartBtn.addEventListener('touchend', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  startGame();
-});
+}
+startBtn.addEventListener('click', guardedStart);
+startBtn.addEventListener('touchend', guardedStart);
+restartBtn.addEventListener('click', guardedStart);
+restartBtn.addEventListener('touchend', guardedStart);
 
 // Game loop — robust: uses performance.now() for timing,
 // restarts rAF on visibility change, and has setInterval safety net
