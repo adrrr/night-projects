@@ -9,7 +9,7 @@
 html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 canvas{display:block;width:100%;height:100%}
 #ui{position:absolute;top:0;left:0;width:100%;pointer-events:none;padding:12px;font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
-#score{font-size:18px;text-shadow:0 0 8px rgba(0,180,255,.6)}
+#score{font-size:24px;font-weight:bold;text-shadow:0 0 8px rgba(0,180,255,.6)}
 #highscore{font-size:13px;opacity:.7;margin-top:2px;text-shadow:0 0 6px rgba(0,180,255,.4)}
 #combo{font-size:14px;color:#ff0;opacity:0;margin-top:4px;text-shadow:0 0 8px rgba(255,200,0,.6);transition:opacity .2s}
 #size-bar-wrap{margin-top:8px;width:140px;height:8px;background:rgba(255,255,255,.15);border-radius:4px;overflow:hidden}
@@ -38,7 +38,7 @@ canvas{display:block;width:100%;height:100%}
 <div id="warning"></div>
 <div id="overlay">
   <h1>Deep Feed</h1>
-  <div class="sub">Eat smaller fish. Avoid bigger ones.</div>
+  <div class="sub">Eat smaller fish to grow. Bigger fish shrink you!</div>
   <div class="stats" id="end-stats"></div>
   <button id="play-btn">Dive In</button>
   <div class="mobile-hint" id="hint"></div>
@@ -124,6 +124,8 @@ function startAmbient() {
 // Game state
 let running = false, gameOver = false;
 let score = 0, highScore = parseInt(localStorage.getItem('deepfeed_hi') || '0');
+const PLAYER_MIN_SIZE = 6; // game over at this size
+const PLAYER_START_SIZE = 14;
 let player, fishes, bubbles, seaweeds, particles, powerups, floatingTexts, cam;
 let mouseX, mouseY, boosting = false, boostFuel = 1;
 let difficulty = 1, warnTimer = 0, lastWarn = 0;
@@ -131,6 +133,7 @@ let fishEaten = 0, maxSize = 0;
 let comboCount = 0, comboTimer = 0;
 let dashCooldown = 0, isDashing = false, dashTimer = 0;
 let gracePeriod = 0; // invincibility at start
+let gameTime = 0; // seconds since game start
 let lastTapTime = 0;
 highEl.textContent = 'Best: ' + highScore;
 
@@ -178,6 +181,7 @@ const WORLD_W = 3000, WORLD_H = 2200;
 function init() {
   score = 0; fishEaten = 0; difficulty = 1; boostFuel = 1; warnTimer = 0;
   comboCount = 0; comboTimer = 0; dashCooldown = 0; isDashing = false; dashTimer = 0;
+  gameTime = 0;
   gracePeriod = 2.5; // 2.5s invincibility at start
   cam = { x: 0, y: 0 };
   player = makeFish(WORLD_W / 2, WORLD_H / 2, 14, SPECIES[4], true);
@@ -192,8 +196,8 @@ function init() {
   seaweeds = [];
   maxSize = player.size;
 
-  // Spawn initial fish — heavily favor small/edible fish at start
-  for (let i = 0; i < 55; i++) spawnFish(true);
+  // Spawn initial fish — flood with tiny edible fish for a powerful start
+  for (let i = 0; i < 70; i++) spawnFish(true);
   // Seaweed
   for (let i = 0; i < 30; i++) {
     seaweeds.push({
@@ -215,18 +219,20 @@ function spawnFish(initialSpawn) {
   const r = Math.random();
 
   if (initialSpawn) {
-    // At game start: 70% tiny fish the player can eat right away
-    if (r < .70) size = 4 + Math.random() * 8;
-    else if (r < .90) size = 8 + Math.random() * 10;
-    else size = 14 + Math.random() * 12;
+    // At game start: 85% tiny fish, almost no big ones — feel powerful!
+    if (r < .85) size = 3 + Math.random() * 7;      // tiny, easy prey
+    else if (r < .97) size = 7 + Math.random() * 5;  // small, still edible
+    else size = 14 + Math.random() * 6;               // rare medium fish
   } else {
-    // During game: scale with player size so there's always something to eat
-    const ps = player ? player.size : 14;
-    if (r < .45) size = ps * (.2 + Math.random() * .6); // clearly edible
-    else if (r < .70) size = ps * (.5 + Math.random() * .5); // slightly smaller
-    else if (r < .85) size = ps * (.8 + Math.random() * .4); // similar size
-    else if (r < .95) size = ps * (1.3 + Math.random() * .7); // somewhat bigger
-    else size = ps * (1.8 + Math.random() * 1.2 * Math.min(difficulty, 3)); // dangerous
+    // During game: progressively more big fish as difficulty ramps
+    const ps = player ? player.size : PLAYER_START_SIZE;
+    const dangerChance = Math.min(0.20, difficulty * 0.03); // starts ~3%, caps 20%
+    const bigChance = Math.min(0.15, difficulty * 0.025);
+    if (r < .50 - dangerChance) size = ps * (.15 + Math.random() * .5);       // clearly edible
+    else if (r < .75 - dangerChance) size = ps * (.4 + Math.random() * .5);   // small-ish
+    else if (r < 1 - bigChance - dangerChance) size = ps * (.7 + Math.random() * .4); // similar
+    else if (r < 1 - dangerChance) size = ps * (1.2 + Math.random() * .6);    // bigger
+    else size = ps * (1.5 + Math.random() * Math.min(difficulty, 3));          // dangerous
   }
 
   // Spawn outside camera view + safety zone from player
@@ -642,11 +648,13 @@ function spawnParticles(x, y, color, count) {
 }
 
 // Size-based speed: bigger fish are SLOWER (key game design fix)
+// gameTime-based ramp: enemies start at 50% speed, reach full speed around 60s
+function enemySpeedRamp() {
+  return Math.min(1, 0.5 + gameTime / 120);
+}
 function fishSpeedForSize(size, speciesSpeed) {
-  // Inverse relationship: small fish are fast, big fish are lumbering
-  // Base speed decreases as size increases
   const sizeSpeedFactor = Math.max(0.35, 1.2 - size * 0.015);
-  return 20 * speciesSpeed * sizeSpeedFactor;
+  return 20 * speciesSpeed * sizeSpeedFactor * enemySpeedRamp();
 }
 
 // Update
@@ -654,8 +662,10 @@ function update(dt) {
   if (!running || gameOver) return;
   const t = performance.now() / 1000;
 
-  // Difficulty ramp — much gentler
-  difficulty = 1 + score / 2000;
+  // Time tracking & difficulty ramp
+  gameTime += dt;
+  // Difficulty ramps with both time and score
+  difficulty = 1 + gameTime / 120 + score / 100; // slow ramp over ~2 min
 
   // Grace period countdown
   if (gracePeriod > 0) gracePeriod -= dt;
@@ -695,7 +705,7 @@ function update(dt) {
   let angleDiff = targetAngle - player.angle;
   while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
   while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-  player.angle += angleDiff * Math.min(1, 8 * dt);
+  player.angle += angleDiff * Math.min(1, 14 * dt);
 
   // Player speed: starts fast, slows gently with growth, but always feels responsive
   let baseSpeed = 140 - player.size * 0.4;
@@ -720,14 +730,19 @@ function update(dt) {
   boostBar.style.width = (boostFuel * 100) + '%';
 
   if (dist > 5) {
-    const moveSpeed = Math.min(speed, dist * 3) * dt;
-    player.vx += (Math.cos(player.angle) * moveSpeed - player.vx * .1);
-    player.vy += (Math.sin(player.angle) * moveSpeed - player.vy * .1);
+    // Direct movement — player fish goes where you point, minimal drift
+    const moveAmt = Math.min(speed, dist * 4) * dt;
+    const targetVx = Math.cos(player.angle) * moveAmt;
+    const targetVy = Math.sin(player.angle) * moveAmt;
+    // High lerp factor = snappy, responsive controls
+    player.vx += (targetVx - player.vx) * .45;
+    player.vy += (targetVy - player.vy) * .45;
   }
-  player.x += player.vx * dt * 35;
-  player.y += player.vy * dt * 35;
-  player.vx *= .92;
-  player.vy *= .92;
+  player.x += player.vx * dt * 40;
+  player.y += player.vy * dt * 40;
+  // Much less drift — stops quickly when you stop moving
+  player.vx *= .75;
+  player.vy *= .75;
 
   // Clamp to world
   player.x = Math.max(player.size, Math.min(WORLD_W - player.size, player.x));
@@ -783,9 +798,9 @@ function update(dt) {
       // Slower turning for big fish
       const turnRate = Math.max(2, 5 - f.size * 0.04);
       f.angle += ad * turnRate * dt;
-      // Speed inversely proportional to size
+      // Speed inversely proportional to size, ramps with game time
       const sizeSlowdown = Math.max(0.3, 1.1 - f.size * 0.012);
-      const spd = (25 + f.size * .2) * f.species.speed * sizeSlowdown * (1 + Math.min(difficulty, 2) * .03);
+      const spd = (25 + f.size * .2) * f.species.speed * sizeSlowdown * enemySpeedRamp();
       f.vx += Math.cos(f.angle) * spd * dt;
       f.vy += Math.sin(f.angle) * spd * dt;
       f.mouthOpen = .5 + Math.sin(t * 8) * .3;
@@ -841,25 +856,20 @@ function update(dt) {
     const eatDist = (player.size + f.size) * .6;
     if (fdist < eatDist) {
       if (playerCanEat) {
-        // Player eats fish
+        // Player eats fish — grow +1 unit
         f.alive = false;
-        // More generous size gain, with diminishing returns on very small fish
-        const relativeSize = f.size / player.size;
-        const sizeGain = f.size * (.12 + relativeSize * .06);
-        player.size += sizeGain;
+        player.size += 1;
         maxSize = Math.max(maxSize, player.size);
+
+        // Score = total fish eaten
+        score++;
+        fishEaten++;
 
         // Combo system
         comboCount++;
-        comboTimer = 2.5; // reset combo window
-        const comboMultiplier = Math.min(5, 1 + (comboCount - 1) * 0.5);
-        const pts = Math.ceil(f.size * (1 + player.size / 20) * comboMultiplier);
-        score += pts;
-        fishEaten++;
-
-        // Floating score text
+        comboTimer = 2.5;
         const comboText = comboCount > 1 ? ` x${comboCount}` : '';
-        addFloatingText(f.x, f.y, `+${pts}${comboText}`, comboCount > 2 ? '#ff0' : '#fff');
+        addFloatingText(f.x, f.y, `+1${comboText}`, comboCount > 2 ? '#ff0' : '#fff');
 
         if (comboCount > 1) {
           comboEl.textContent = `Combo x${comboCount}!`;
@@ -873,17 +883,31 @@ function update(dt) {
         bubblePop();
         setTimeout(() => { if (player) player.mouthOpen = 0; }, 200);
       } else if (canEatPlayer && gracePeriod <= 0) {
-        // Shield blocks death
+        // Shield blocks hit
         if (player.activeEffects.shield > 0) {
           delete player.activeEffects.shield;
           spawnParticles(player.x, player.y, '#0ff', 20);
-          addFloatingText(player.x, player.y - 30, 'Shield blocked!', '#0ff');
-          // Push the attacker away
+          addFloatingText(player.x, player.y - 30, 'Shield!', '#0ff');
           f.vx -= fdx * .05;
           f.vy -= fdy * .05;
         } else {
-          die();
-          return;
+          // Shrink -1 unit, NOT instant death
+          player.size -= 1;
+          spawnParticles(player.x, player.y, '#ff4444', 12);
+          addFloatingText(player.x, player.y - 20, '-1', '#f44');
+          warnSound();
+          player.flash = 1;
+          // Brief invincibility after hit
+          gracePeriod = 1.0;
+          // Push player away from attacker
+          const pushAngle = Math.atan2(-fdy, -fdx);
+          player.vx += Math.cos(pushAngle) * 8;
+          player.vy += Math.sin(pushAngle) * 8;
+
+          if (player.size <= PLAYER_MIN_SIZE) {
+            die();
+            return;
+          }
         }
       }
     }
@@ -960,9 +984,17 @@ function update(dt) {
   }
 
   // UI
-  scoreEl.textContent = 'Score: ' + score;
-  const sizePercent = Math.min(100, ((player.size - 14) / 80) * 100);
+  scoreEl.textContent = '🐟 ' + score;
+  // Size bar shows how far from min size (danger) to max growth
+  const sizeRange = maxSize > PLAYER_START_SIZE ? maxSize * 1.5 : 50;
+  const sizePercent = Math.max(0, Math.min(100, ((player.size - PLAYER_MIN_SIZE) / (sizeRange - PLAYER_MIN_SIZE)) * 100));
   sizeBar.style.width = sizePercent + '%';
+  // Color shifts to red when small
+  if (player.size < PLAYER_START_SIZE * 0.7) {
+    sizeBar.style.background = 'linear-gradient(90deg,#f44,#f80)';
+  } else {
+    sizeBar.style.background = 'linear-gradient(90deg,#0ff,#0f0)';
+  }
 }
 
 function die() {
@@ -976,7 +1008,7 @@ function die() {
     localStorage.setItem('deepfeed_hi', highScore);
     highEl.textContent = 'Best: ' + highScore;
   }
-  endStats.innerHTML = `Score: ${score} &nbsp;|&nbsp; Fish eaten: ${fishEaten} &nbsp;|&nbsp; Max size: ${maxSize.toFixed(1)}`;
+  endStats.innerHTML = `Fish eaten: ${score} &nbsp;|&nbsp; Max size: ${maxSize.toFixed(0)} &nbsp;|&nbsp; Time: ${Math.floor(gameTime)}s`;
   overlay.querySelector('h1').textContent = 'Eaten!';
   overlay.querySelector('.sub').textContent = 'The deep ocean claims another...';
   playBtn.textContent = 'Try Again';
