@@ -50,11 +50,6 @@ canvas{display:block;width:100%;height:100%}
 #orient-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:rgba(255,255,255,.6);background:rgba(0,30,60,.7);padding:8px 16px;border-radius:20px;pointer-events:none;opacity:0;transition:opacity .4s;z-index:6;white-space:nowrap}
 #orient-hint.visible{opacity:1}
 
-/* Joystick */
-#joystick-base{position:absolute;display:none;pointer-events:none;z-index:7}
-#joystick-outer{position:relative;width:120px;height:120px;border-radius:50%;border:2px solid rgba(0,180,255,.25);background:radial-gradient(circle,rgba(0,40,80,.3),rgba(0,20,50,.15));backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
-#joystick-thumb{position:absolute;width:48px;height:48px;border-radius:50%;background:radial-gradient(circle,rgba(100,220,255,.5),rgba(0,120,200,.3));border:2px solid rgba(0,200,255,.4);top:50%;left:50%;transform:translate(-50%,-50%);box-shadow:0 0 15px rgba(0,180,255,.3);transition:box-shadow .1s}
-
 /* Boost button */
 #boost-btn{position:absolute;bottom:44px;right:24px;width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,200,0,.35);background:radial-gradient(circle,rgba(255,180,0,.2),rgba(200,100,0,.1));backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:7;display:none;pointer-events:all;touch-action:none;-webkit-touch-callout:none}
 #boost-btn::after{content:'⚡';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;pointer-events:none}
@@ -94,7 +89,6 @@ canvas{display:block;width:100%;height:100%}
 <div id="prestige-flash"></div>
 <div id="orient-hint">Rotate to portrait for a better experience</div>
 
-<div id="joystick-base"><div id="joystick-outer"><div id="joystick-thumb"></div></div></div>
 <div id="boost-btn"></div>
 
 <div id="overlay">
@@ -102,7 +96,7 @@ canvas{display:block;width:100%;height:100%}
   <div class="sub">Eat smaller fish to grow bigger. Avoid the big ones!</div>
   <div class="stats" id="end-stats"></div>
   <button class="play-btn" id="play-btn">Dive In</button>
-  <div class="hint" id="control-hint">Swipe to move &bull; Tap ⚡ to boost</div>
+  <div class="hint" id="control-hint">Touch &amp; drag to move &bull; Tap ⚡ to boost</div>
 </div>
 
 <script>
@@ -169,7 +163,7 @@ const ZONE_PALETTES = {
 };
 
 // Base radius per tier
-const TIER_RADIUS = [7, 14, 22, 34, 50, 72];
+const TIER_RADIUS = [10, 14, 22, 34, 50, 72];
 
 // V3: faster progression — target 60-90s runs
 const TIER_THRESHOLDS = [5, 3, 6, 10, 15];
@@ -268,8 +262,6 @@ const endStatsEl = document.getElementById('end-stats');
 const oxygenBarEl = document.getElementById('oxygen-bar');
 const orientHintEl = document.getElementById('orient-hint');
 const prestigeFlashEl = document.getElementById('prestige-flash');
-const joystickBaseEl = document.getElementById('joystick-base');
-const joystickThumbEl = document.getElementById('joystick-thumb');
 const boostBtnEl = document.getElementById('boost-btn');
 const sizeGroupEl = document.getElementById('size-group');
 const boostGroupEl = document.getElementById('boost-group');
@@ -292,29 +284,44 @@ function ensureAudio() {
 function playEat() {
   if (!audioCtx) return;
   const t = audioCtx.currentTime;
+  // Deep bass 'gulp' — satisfying pop
   const o = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   o.type = 'sine';
-  o.frequency.setValueAtTime(400, t);
-  o.frequency.exponentialRampToValueAtTime(800, t + 0.06);
-  o.frequency.exponentialRampToValueAtTime(500, t + 0.12);
-  g.gain.setValueAtTime(0.18, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  o.frequency.setValueAtTime(250, t);
+  o.frequency.exponentialRampToValueAtTime(120, t + 0.08);
+  o.frequency.exponentialRampToValueAtTime(200, t + 0.15);
+  o.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+  g.gain.setValueAtTime(0.22, t);
+  g.gain.linearRampToValueAtTime(0.18, t + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
   o.connect(g).connect(audioCtx.destination);
   o.start(t);
-  o.stop(t + 0.15);
-  const bufSize = audioCtx.sampleRate * 0.04;
+  o.stop(t + 0.2);
+  // Higher harmonic 'pop' layer
+  const o2 = audioCtx.createOscillator();
+  const g2 = audioCtx.createGain();
+  o2.type = 'sine';
+  o2.frequency.setValueAtTime(500, t);
+  o2.frequency.exponentialRampToValueAtTime(300, t + 0.06);
+  g2.gain.setValueAtTime(0.1, t);
+  g2.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  o2.connect(g2).connect(audioCtx.destination);
+  o2.start(t);
+  o2.stop(t + 0.1);
+  // Soft noise burst for texture
+  const bufSize = audioCtx.sampleRate * 0.05;
   const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
   const data = buf.getChannelData(0);
-  for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * 0.3 * (1 - i / bufSize);
+  for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * 0.2 * (1 - i / bufSize);
   const noise = audioCtx.createBufferSource();
   noise.buffer = buf;
   const ng = audioCtx.createGain();
-  ng.gain.setValueAtTime(0.15, t);
-  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+  ng.gain.setValueAtTime(0.1, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
   noise.connect(ng).connect(audioCtx.destination);
   noise.start(t);
-  noise.stop(t + 0.06);
+  noise.stop(t + 0.05);
 }
 
 function playHurt() {
@@ -538,20 +545,26 @@ let tierUpRingColor = '#fff';
 let tierUpFlashTimer = 0;
 let tierUpSlowmoTimer = 0;
 
-// Joystick state (mobile only)
-let joystick = { active: false, originX: 0, originY: 0, currentX: 0, currentY: 0, angle: 0, magnitude: 0, touchId: -1 };
 let boostTouchId = -1;
+let moveTouchId = -1;
 
 // HUD progressive reveal
 let hasEverEaten = false;
 let hasEverBoosted = false;
 let hasEverLowOxygen = false;
 
+// Death animation state
+let deathAnimTimer = 0;
+let deathAnimActive = false;
+
 // Difficulty system state
 let graceTimer = 0;         // grace period after tier-up (seconds)
 let timeSinceLastHit = 0;   // adaptive danger tracker
 let adaptiveDangerSpawned = false; // prevent spam-spawning
 let difficultyWave = 1;     // oscillates 0.7–1.0 for spawn pressure rhythm
+
+// First tier-up flag (controls when tier 2 fish start spawning)
+let hasFirstTierUp = false;
 
 // Stats tracking
 let maxTierReached = 1;
@@ -569,7 +582,7 @@ function resize() {
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  radiusScale = Math.max(0.45, Math.min(1, Math.min(W, H) / REF_SCREEN));
+  radiusScale = Math.max(0.6, Math.min(1, Math.min(W, H) / REF_SCREEN));
 
   if (orientHintEl) {
     const isMobileSize = Math.min(W, H) < 500;
@@ -993,7 +1006,8 @@ function createFish(tier, forceEdge, scatterOnScreen) {
 }
 
 function chooseTier(playerTier, elapsed) {
-  const maxSpawnTier = Math.min(TIER_COUNT - 1, playerTier + 1);
+  // Don't spawn tier 2+ until the player has had their first tier-up
+  const maxSpawnTier = !hasFirstTierUp ? 1 : Math.min(TIER_COUNT - 1, playerTier + 1);
 
   // Continuous time pressure: scales up to 3x over ~2 minutes
   const timePressure = Math.min(3, elapsed / 40);
@@ -1118,12 +1132,14 @@ function initGame() {
   boostGroupEl.classList.remove('revealed');
   oxygenGroupEl.classList.remove('revealed');
 
-  // Joystick reset
-  joystick.active = false;
-  joystick.touchId = -1;
-  joystick.magnitude = 0;
-  joystickBaseEl.style.display = 'none';
+  // Touch reset
+  moveTouchId = -1;
   boosting = false;
+
+  // Death anim reset
+  deathAnimActive = false;
+  deathAnimTimer = 0;
+  slowmoScale = 1;
 
   // Difficulty reset
   graceTimer = 0;
@@ -1132,13 +1148,14 @@ function initGame() {
   difficultyWave = 1;
 
   // Stats
+  hasFirstTierUp = false;
   maxTierReached = 1;
   totalFishEaten = 0;
   startTime = performance.now();
 
   currentZone = 'surface';
 
-  // Spawn initial population
+  // Spawn initial population — only plancton + fry (tier 2 unlocks after first tier-up)
   const planctonCount = 12 + Math.floor(Math.random() * 6);
   for (let i = 0; i < planctonCount; i++) {
     fishes.push(createFish(0, false, true));
@@ -1146,10 +1163,6 @@ function initGame() {
   const fryCount = 6 + Math.floor(Math.random() * 5);
   for (let i = 0; i < fryCount; i++) {
     fishes.push(createFish(1, true));
-  }
-  const smallCount = 3 + Math.floor(Math.random() * 3);
-  for (let i = 0; i < smallCount; i++) {
-    fishes.push(createFish(2, true));
   }
 
   updateHUD();
@@ -1159,31 +1172,19 @@ function initGame() {
 //  INPUT HANDLING
 // ============================================================
 
-const JOYSTICK_MAX_RADIUS = 50;
-const JOYSTICK_DEAD_ZONE = 8;
-
-// --- Mobile: virtual joystick via touch events ---
+// --- Mobile: drag-to-move via touch events ---
 
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (!running) return;
   ensureAudio();
   for (const touch of e.changedTouches) {
-    // Create joystick where the finger lands (no active joystick yet)
-    if (joystick.touchId === -1) {
+    if (moveTouchId === -1) {
       isTouch = true;
-      joystick.touchId = touch.identifier;
-      joystick.originX = touch.clientX;
-      joystick.originY = touch.clientY;
-      joystick.currentX = touch.clientX;
-      joystick.currentY = touch.clientY;
-      joystick.active = true;
-      joystick.magnitude = 0;
-      // Show joystick at touch position
-      joystickBaseEl.style.display = 'block';
-      joystickBaseEl.style.left = (touch.clientX - 60) + 'px';
-      joystickBaseEl.style.top = (touch.clientY - 60) + 'px';
-      joystickThumbEl.style.transform = 'translate(-50%,-50%)';
+      moveTouchId = touch.identifier;
+      pointer.x = touch.clientX;
+      pointer.y = touch.clientY - TOUCH_OFFSET_Y;
+      pointer.active = true;
     }
   }
 }, { passive: false });
@@ -1191,46 +1192,28 @@ canvas.addEventListener('touchstart', (e) => {
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
   for (const touch of e.changedTouches) {
-    if (touch.identifier === joystick.touchId) {
-      joystick.currentX = touch.clientX;
-      joystick.currentY = touch.clientY;
-      const dx = joystick.currentX - joystick.originX;
-      const dy = joystick.currentY - joystick.originY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > JOYSTICK_DEAD_ZONE) {
-        joystick.angle = Math.atan2(dy, dx);
-        joystick.magnitude = Math.min(1, dist / JOYSTICK_MAX_RADIUS);
-      } else {
-        joystick.magnitude = 0;
-      }
-      // Update thumb visual (clamped)
-      const clampedDist = Math.min(dist, JOYSTICK_MAX_RADIUS);
-      const nx = dist > 0 ? dx / dist : 0;
-      const ny = dist > 0 ? dy / dist : 0;
-      const thumbX = nx * clampedDist;
-      const thumbY = ny * clampedDist;
-      joystickThumbEl.style.transform = `translate(calc(-50% + ${thumbX}px), calc(-50% + ${thumbY}px))`;
+    if (touch.identifier === moveTouchId) {
+      pointer.x = touch.clientX;
+      pointer.y = touch.clientY - TOUCH_OFFSET_Y;
+      pointer.active = true;
     }
   }
 }, { passive: false });
 
-function releaseJoystick() {
-  joystick.active = false;
-  joystick.touchId = -1;
-  joystick.magnitude = 0;
-  joystickBaseEl.style.display = 'none';
-}
-
 canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
   for (const touch of e.changedTouches) {
-    if (touch.identifier === joystick.touchId) releaseJoystick();
+    if (touch.identifier === moveTouchId) {
+      moveTouchId = -1;
+      pointer.active = false;
+    }
   }
 }, { passive: false });
 
 canvas.addEventListener('touchcancel', (e) => {
   e.preventDefault();
-  releaseJoystick();
+  moveTouchId = -1;
+  pointer.active = false;
 }, { passive: false });
 
 // --- Mobile: boost button ---
@@ -1284,7 +1267,7 @@ canvas.addEventListener('mousemove', (e) => {
 // Show boost button on touch-capable devices
 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
   boostBtnEl.style.display = 'block';
-  if (controlHintEl) controlHintEl.textContent = 'Swipe to move \u2022 Tap \u26A1 to boost';
+  if (controlHintEl) controlHintEl.textContent = 'Touch & drag to move \u2022 Tap \u26A1 to boost';
 } else {
   if (controlHintEl) controlHintEl.textContent = 'Move mouse \u2022 Click to boost';
 }
@@ -1389,7 +1372,7 @@ function completePrestige() {
   player.invincible = 2; // brief immunity after prestige
   graceTimer = 3; // grace period after prestige too
 
-  // Clear fish and respawn fresh (faster ones)
+  // Clear fish and respawn fresh (faster ones) — no tier 2 at start
   fishes = [];
   jellyfish = [];
   ambushFish = [];
@@ -1401,10 +1384,6 @@ function completePrestige() {
   const fryCount = 6 + Math.floor(Math.random() * 5);
   for (let i = 0; i < fryCount; i++) {
     fishes.push(createFish(1, true));
-  }
-  const smallCount = 3 + Math.floor(Math.random() * 3);
-  for (let i = 0; i < smallCount; i++) {
-    fishes.push(createFish(2, true));
   }
 
   currentZone = 'surface';
@@ -1442,11 +1421,52 @@ function checkFrenzy() {
 }
 
 // ============================================================
+//  DEATH ANIMATION
+// ============================================================
+
+function triggerDeathAnim() {
+  deathAnimActive = true;
+  deathAnimTimer = 0.5; // 0.5s slow-mo before game over
+  slowmoScale = 0.2;
+  shakeIntensity = 15;
+  haptic([30, 20, 60]);
+  playHurt();
+  // Burst particles from player
+  if (player) {
+    const c = getFishColors(player.tier, currentZone);
+    spawnEatParticles(player.x, player.y, c.body, 30);
+    spawnEatParticles(player.x, player.y, '#ff4444', 20);
+  }
+  // Intense red flash
+  vignetteEl.style.opacity = '1';
+}
+
+// ============================================================
 //  UPDATE
 // ============================================================
 
 function update(dt) {
   if (!running || !player) return;
+
+  // Death animation countdown
+  if (deathAnimActive) {
+    deathAnimTimer -= dt; // real time
+    if (deathAnimTimer <= 0) {
+      deathAnimActive = false;
+      slowmoScale = 1;
+      player.alive = false;
+      running = false;
+      playGameOver();
+      vignetteEl.style.opacity = '0';
+      gameOver();
+      return;
+    }
+    // Keep rendering but don't process game logic
+    gameTime += dt * 0.2;
+    // Fade player opacity via flash
+    player.flashTimer += dt * 15;
+    return;
+  }
 
   // Apply slow-mo
   const effectiveDt = dt * slowmoScale;
@@ -1514,32 +1534,11 @@ function update(dt) {
   if (playerStunTimer > 0) playerStunTimer = Math.max(0, playerStunTimer - effectiveDt);
   if (playerSlowTimer > 0) playerSlowTimer = Math.max(0, playerSlowTimer - effectiveDt);
 
-  // --- Player movement ---
+  // --- Player movement (unified pointer for both touch and desktop) ---
   let hasDirectionalInput = false;
+  let playerActualSpeed = 0;
 
-  if (isTouch && joystick.active && joystick.magnitude > 0) {
-    // Mobile joystick: direction-based movement
-    hasDirectionalInput = true;
-    let angleDiff = joystick.angle - player.angle;
-    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    player.angle += angleDiff * Math.min(1, effectiveDt * 12);
-
-    let speed = PLAYER_BASE_SPEED * joystick.magnitude;
-    if (boosting && boostFuel > 0) {
-      speed *= BOOST_MULT;
-      boostFuel = Math.max(0, boostFuel - BOOST_DRAIN);
-      if (!hasEverBoosted) { hasEverBoosted = true; revealBoostBar(); }
-    }
-    if (playerStunTimer > 0) speed *= 0.6;
-    if (playerSlowTimer > 0) speed *= 0.6;
-
-    const move = speed * (60 * effectiveDt);
-    player.x += Math.cos(player.angle) * move;
-    player.y += Math.sin(player.angle) * move;
-
-  } else if (!isTouch && pointer.active) {
-    // Desktop mouse: move toward pointer (original behavior)
+  if (pointer.active) {
     const dx = pointer.x - player.x;
     const dy = pointer.y - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1564,6 +1563,7 @@ function update(dt) {
       const move = Math.min(dist, speed * (60 * effectiveDt));
       player.x += (dx / dist) * move;
       player.y += (dy / dist) * move;
+      playerActualSpeed = move / (60 * effectiveDt);
     }
   }
 
@@ -1631,9 +1631,10 @@ function update(dt) {
     haptic(5);
   }
 
-  // Player animation
-  player.tailPhase += effectiveDt * (boosting ? 18 : 10);
-  player.mouthOpen = Math.max(0, player.mouthOpen - effectiveDt * 4);
+  // Player animation — tail speed proportional to actual movement speed
+  const tailSpeedMult = hasDirectionalInput ? (0.8 + (playerActualSpeed / PLAYER_BASE_SPEED) * 1.5) : 0.5;
+  player.tailPhase += effectiveDt * 10 * tailSpeedMult;
+  player.mouthOpen = Math.max(0, player.mouthOpen - effectiveDt * 2);
 
   // Smooth radius lerp toward targetRadius (0.3s transition)
   if (Math.abs(player.radius - player.targetRadius) > 0.5) {
@@ -1684,11 +1685,7 @@ function update(dt) {
           player.eaten = Math.max(0, player.eaten - 2);
 
           if (player.tier <= 1) {
-            player.alive = false;
-            running = false;
-            haptic([30, 20, 60]);
-            playGameOver();
-            gameOver();
+            triggerDeathAnim();
             return;
           }
 
@@ -1842,12 +1839,17 @@ function update(dt) {
       if (f.y > H - f.radius) f.targetAngle = -Math.PI / 2;
     }
 
-    // --- Collision with player ---
-    const overlapFactor = f.tier === 0 ? 0.9 : 0.7;
+    // --- Collision with player (asymmetric hitbox: easy to eat, hard to die) ---
     const dx = player.x - f.x, dy = player.y - f.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < (player.radius + f.radius) * overlapFactor) {
-      if (f.tier < player.tier) {
+    // Generous hitbox for eating (0.8), tight hitbox for predators (0.55)
+    const eatOverlap = f.tier === 0 ? 0.9 : 0.8;
+    const hurtOverlap = 0.55;
+    const canEat = f.tier < player.tier && dist < (player.radius + f.radius) * eatOverlap;
+    const canHurt = f.tier > player.tier && dist < (player.radius + f.radius) * hurtOverlap;
+    const canBump = f.tier === player.tier && dist < (player.radius + f.radius) * 0.65;
+    if (canEat || canHurt || canBump) {
+      if (canEat) {
         // EAT!
         f.alive = false;
 
@@ -1875,6 +1877,7 @@ function update(dt) {
         if (player.tier < TIER_COUNT - 1 && player.eaten >= TIER_THRESHOLDS[player.tier]) {
           player.tier++;
           player.eaten = 0;
+          hasFirstTierUp = true;
           // Smooth radius transition via lerp (not instant)
           player.targetRadius = TIER_RADIUS[player.tier] * radiusScale;
           shakeIntensity = 10;
@@ -1926,7 +1929,7 @@ function update(dt) {
         const scoreText = frenzyActive ? `+${pointValue}!` : `+${pointValue}`;
         const bigText = pointValue >= 10;
         spawnFloatingText(f.x, f.y, scoreText, frenzyActive ? '#ffcc00' : getFishColors(f.tier, currentZone).body, bigText);
-        playerScaleBump = 0.15;
+        playerScaleBump = 0.2;
         haptic(10);
         playEat();
 
@@ -1941,7 +1944,7 @@ function update(dt) {
           }
         }
 
-      } else if (f.tier === player.tier && player.invincible <= 0) {
+      } else if (canBump && player.invincible <= 0) {
         // BUMP — same tier: knockback, stun, no damage
         const bumpAngle = Math.atan2(player.y - f.y, player.x - f.x);
         player.x += Math.cos(bumpAngle) * 30;
@@ -1956,7 +1959,7 @@ function update(dt) {
         haptic(15);
         playBonk();
 
-      } else if (f.tier > player.tier && player.invincible <= 0) {
+      } else if (canHurt && player.invincible <= 0) {
         // HURT
         player.invincible = 1.5;
         player.eaten = 0;
@@ -1964,11 +1967,8 @@ function update(dt) {
         adaptiveDangerSpawned = false;
 
         if (player.tier <= 1) {
-          player.alive = false;
-          running = false;
-          haptic([30, 20, 60]);
-          playGameOver();
-          gameOver();
+          // Dramatic death: slow-mo + particles, then game over
+          triggerDeathAnim();
           return;
         }
 
@@ -2095,23 +2095,23 @@ function update(dt) {
     if (ft.life <= 0) floatingTexts.splice(i, 1);
   }
 
-  // --- Player scale bump decay ---
+  // --- Player scale bump decay (visible ~0.3s) ---
   if (playerScaleBump > 0) {
-    playerScaleBump = Math.max(0, playerScaleBump - effectiveDt * 0.75);
+    playerScaleBump = Math.max(0, playerScaleBump - effectiveDt * 0.5);
   }
 
-  // --- Oxygen drain ---
-  const oxygenDrain = OXYGEN_DRAIN_RATE * (1 + (depthLevel - 1) * OXYGEN_DEPTH_DRAIN_MULT);
-  oxygen = Math.max(0, oxygen - oxygenDrain * effectiveDt);
-  oxygenBarEl.style.width = (oxygen / OXYGEN_MAX * 100) + '%';
-  if (oxygen < OXYGEN_MAX * 0.92 && !hasEverLowOxygen) { hasEverLowOxygen = true; revealOxygenBar(); }
-  if (oxygen <= 0) {
-    player.alive = false;
-    running = false;
-    haptic([30, 20, 60]);
-    playGameOver();
-    gameOver();
-    return;
+  // --- Oxygen drain (only at depth >= 2) ---
+  if (depthLevel >= 2) {
+    const oxygenDrain = OXYGEN_DRAIN_RATE * (1 + (depthLevel - 1) * OXYGEN_DEPTH_DRAIN_MULT);
+    oxygen = Math.max(0, oxygen - oxygenDrain * effectiveDt);
+    oxygenBarEl.style.width = (oxygen / OXYGEN_MAX * 100) + '%';
+    if (oxygen < OXYGEN_MAX * 0.92 && !hasEverLowOxygen) { hasEverLowOxygen = true; revealOxygenBar(); }
+    if (oxygen <= 0) {
+      triggerDeathAnim();
+      return;
+    }
+  } else {
+    oxygen = OXYGEN_MAX;
   }
 
   // --- Reef currents ---
@@ -2223,15 +2223,11 @@ function update(dt) {
         a.y += Math.sin(a.angle) * aSpd;
 
         // Collision with player — same as predator hit
-        if (player.invincible <= 0 && dToPlayer < (player.radius + a.radius) * 0.7) {
+        if (player.invincible <= 0 && dToPlayer < (player.radius + a.radius) * 0.55) {
           player.invincible = 1.5;
           player.eaten = 0;
           if (player.tier <= 1) {
-            player.alive = false;
-            running = false;
-            haptic([30, 20, 60]);
-            playGameOver();
-            gameOver();
+            triggerDeathAnim();
             return;
           }
           player.tier--;
@@ -2397,13 +2393,38 @@ function render() {
     drawJellyfish(j);
   }
 
-  // Enemy fish & plancton
+  // Enemy fish & plancton (with onboarding halos)
   for (const f of fishes) {
     if (!f.alive) continue;
     if (f.tier === 0) {
       drawPlancton(f.x, f.y, f.radius, f.tailPhase, currentZone);
     } else {
       const r = f.sizeBoost > 0 ? f.radius * (1 + 0.08 * f.sizeBoost) : f.radius;
+
+      // Onboarding halo: green = edible, red = danger, none = same tier
+      if (player && player.alive) {
+        if (f.tier < player.tier) {
+          // Subtle green halo — edible
+          const haloGrad = ctx.createRadialGradient(f.x, f.y, r * 0.6, f.x, f.y, r * 2);
+          haloGrad.addColorStop(0, 'rgba(80,255,80,0.12)');
+          haloGrad.addColorStop(1, 'rgba(80,255,80,0)');
+          ctx.fillStyle = haloGrad;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, r * 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (f.tier > player.tier) {
+          // Subtle red halo with micro pulsation — danger
+          const dangerPulse = 0.08 + 0.04 * Math.sin(gameTime * 6 + f.x);
+          const haloGrad = ctx.createRadialGradient(f.x, f.y, r * 0.6, f.x, f.y, r * 2.2);
+          haloGrad.addColorStop(0, `rgba(255,60,60,${dangerPulse})`);
+          haloGrad.addColorStop(1, 'rgba(255,60,60,0)');
+          ctx.fillStyle = haloGrad;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, r * 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
       drawFish(f.x, f.y, r, f.angle, f.tier, f.mouthOpen, f.tailPhase, false, currentZone);
     }
   }
@@ -2664,9 +2685,31 @@ function gameOver() {
   if (bestFrenzy > 0) addStat('Meilleur Frenzy', `x${bestFrenzy}`, false);
   addStat('Temps', `${timeSurvived}s`, false);
 
+  // Motivational message
+  let motivMsg = '';
   if (isNewRecord) {
-    statsHTML = `<div style="color:#ffcc00;font-weight:700;margin-bottom:8px;font-size:16px;text-shadow:0 0 12px rgba(255,200,0,.4)">NOUVEAU RECORD!</div>` + statsHTML;
+    motivMsg = `<div style="color:#ffcc00;font-weight:700;margin-bottom:8px;font-size:16px;text-shadow:0 0 12px rgba(255,200,0,.4)">🏆 Nouveau record !</div>`;
+  } else if (player && player.tier < TIER_COUNT - 1) {
+    const remaining = TIER_THRESHOLDS[player.tier] - player.eaten;
+    if (remaining <= 3 && remaining > 0) {
+      motivMsg = `<div style="color:#80e0ff;font-weight:600;margin-bottom:8px;font-size:14px">${remaining} poisson${remaining > 1 ? 's' : ''} de plus et tu montais de tier !</div>`;
+    }
   }
+  if (maxTierReached > 1 && !motivMsg) {
+    const prevMax = parseInt(localStorage.getItem('deepfeed_maxTier') || '1', 10);
+    if (maxTierReached > prevMax) {
+      motivMsg = `<div style="color:#80e0ff;font-weight:600;margin-bottom:8px;font-size:14px">Tu as débloqué : ${ZONE_NAMES[maxTierReached]} !</div>`;
+    }
+  }
+  if (!motivMsg) {
+    const msgs = ['Presque ! Encore un essai ?', 'Tu t\'améliores !', 'La prochaine sera la bonne !', 'Plus profond, plus fort !'];
+    motivMsg = `<div style="color:rgba(255,255,255,.6);font-weight:500;margin-bottom:8px;font-size:13px">${msgs[Math.floor(Math.random() * msgs.length)]}</div>`;
+  }
+  // Save max tier for future comparison
+  const prevMaxTier = parseInt(localStorage.getItem('deepfeed_maxTier') || '1', 10);
+  if (maxTierReached > prevMaxTier) localStorage.setItem('deepfeed_maxTier', String(maxTierReached));
+
+  statsHTML = motivMsg + statsHTML;
 
   endStatsEl.innerHTML = statsHTML;
   playBtn.textContent = 'Replonger';
