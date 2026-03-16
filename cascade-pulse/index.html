@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>CASCADE PULSE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0a0a0f;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  font-family: 'Courier New', monospace;
+}
+canvas {
+  display: block;
+  width: 100%; height: 100%;
+}
+#ui {
+  position: absolute; top: 0; left: 0; right: 0;
+  pointer-events: none;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 16px 20px;
+  z-index: 10;
+}
+#ui > div { color: #fff; font-size: 14px; letter-spacing: 1px; }
+#score-area { text-align: left; }
+#level-area { text-align: center; flex: 1; }
+#taps-area { text-align: right; }
+.label { color: #666; font-size: 10px; text-transform: uppercase; margin-bottom: 2px; }
+.value { font-size: 22px; font-weight: bold; }
+.value.glow { text-shadow: 0 0 12px currentColor; }
+
+#overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 20;
+  background: rgba(10,10,15,0.85);
+  transition: opacity 0.3s;
+}
+#overlay.hidden { opacity: 0; pointer-events: none; }
+#overlay h1 {
+  font-size: clamp(28px, 7vw, 52px);
+  color: #fff;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+  text-shadow: 0 0 30px #ff006640, 0 0 60px #00ffff20;
+}
+#overlay .subtitle {
+  color: #888;
+  font-size: clamp(12px, 3vw, 16px);
+  margin-bottom: 32px;
+  text-align: center;
+  line-height: 1.6;
+  max-width: 320px;
+  padding: 0 20px;
+}
+#overlay .btn {
+  pointer-events: all;
+  background: transparent;
+  border: 1px solid #ff006680;
+  color: #ff0066;
+  padding: 14px 40px;
+  font-size: 16px;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 3px;
+  cursor: pointer;
+  min-width: 200px;
+  min-height: 52px;
+  text-transform: uppercase;
+  transition: all 0.2s;
+}
+#overlay .btn:hover, #overlay .btn:active {
+  background: #ff006620;
+  border-color: #ff0066;
+  box-shadow: 0 0 20px #ff006640;
+}
+#overlay .stats {
+  color: #aaa;
+  font-size: 13px;
+  margin-top: 24px;
+  text-align: center;
+  line-height: 2;
+}
+#overlay .stats .highlight { color: #00ffff; font-size: 18px; font-weight: bold; }
+#overlay .high-score { color: #ff006688; font-size: 11px; margin-top: 16px; }
+
+#combo-display {
+  position: absolute;
+  left: 50%; top: 40%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 15;
+  font-size: 60px;
+  font-weight: bold;
+  color: #fff;
+  opacity: 0;
+  transition: none;
+  text-shadow: 0 0 40px currentColor;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <div id="score-area">
+    <div class="label">Score</div>
+    <div class="value glow" id="score-val" style="color:#00ffff">0</div>
+  </div>
+  <div id="level-area">
+    <div class="label">Level</div>
+    <div class="value" id="level-val">1</div>
+  </div>
+  <div id="taps-area">
+    <div class="label">Taps Left</div>
+    <div class="value glow" id="taps-val" style="color:#ff0066">3</div>
+  </div>
+</div>
+
+<div id="overlay">
+  <h1>CASCADE PULSE</h1>
+  <div class="subtitle">
+    Orbs pulse between dim and bright.<br>
+    Tap one at peak brightness to ignite it.<br>
+    Explosions chain to nearby bright orbs.<br>
+    <strong>Ignite them ALL. Use fewer taps.</strong>
+  </div>
+  <button class="btn" id="start-btn">START</button>
+  <div class="high-score" id="hs-display"></div>
+</div>
+
+<div id="combo-display"></div>
+
+<script>
+// ─── CANVAS SETUP ───
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── AUDIO ENGINE ───
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playIgnite(pitch = 1) {
+  if (!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.value = 220 * pitch;
+  o.frequency.exponentialRampToValueAtTime(440 * pitch, audioCtx.currentTime + 0.08);
+  g.gain.value = 0.15;
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+  o.connect(g).connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime + 0.3);
+}
+
+function playChain(depth) {
+  if (!audioCtx) return;
+  const pitch = 1 + depth * 0.15;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'triangle';
+  o.frequency.value = 330 * pitch;
+  o.frequency.exponentialRampToValueAtTime(660 * pitch, audioCtx.currentTime + 0.06);
+  g.gain.value = 0.12;
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+  o.connect(g).connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime + 0.25);
+}
+
+function playFail() {
+  if (!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sawtooth';
+  o.frequency.value = 150;
+  o.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.4);
+  g.gain.value = 0.1;
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  o.connect(g).connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime + 0.4);
+}
+
+function playLevelComplete() {
+  if (!audioCtx) return;
+  [0, 0.1, 0.2, 0.35].forEach((delay, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    const freqs = [440, 554, 659, 880];
+    o.frequency.value = freqs[i];
+    g.gain.value = 0;
+    g.gain.linearRampToValueAtTime(0.12, audioCtx.currentTime + delay + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + 0.4);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(audioCtx.currentTime + delay);
+    o.stop(audioCtx.currentTime + delay + 0.4);
+  });
+}
+
+// ─── GAME STATE ───
+const STATE = { MENU: 0, PLAYING: 1, CHAIN_ACTIVE: 2, LEVEL_END: 3, GAME_OVER: 4 };
+let state = STATE.MENU;
+let orbs = [];
+let particles = [];
+let shockwaves = [];
+let level = 1;
+let score = 0;
+let tapsLeft = 0;
+let totalTapsUsed = 0;
+let orbsIgnited = 0;
+let totalOrbs = 0;
+let chainDepth = 0;
+let chainCount = 0;
+let shakeAmount = 0;
+let shakeDecay = 0.9;
+let comboTimer = 0;
+let highScore = parseInt(localStorage.getItem('cascade-pulse-hs') || '0');
+let pendingChains = [];
+let levelTransitionTimer = 0;
+let flashAlpha = 0;
+let bgPulse = 0;
+
+// ─── LEVEL CONFIG ───
+function getLevelConfig(lvl) {
+  const orbCount = Math.min(6 + lvl * 2, 40);
+  const maxTaps = Math.max(1, Math.ceil(orbCount / (3 + Math.floor(lvl / 3))));
+  // repulsors start appearing at level 4
+  const repulsors = lvl >= 4 ? Math.min(Math.floor((lvl - 3) / 2), 5) : 0;
+  return { orbCount, maxTaps, repulsors };
+}
+
+// ─── ORB CLASS ───
+class Orb {
+  constructor(x, y, radius) {
+    this.x = x;
+    this.y = y;
+    this.r = radius || 18;
+    this.vx = (Math.random() - 0.5) * 0.6;
+    this.vy = (Math.random() - 0.5) * 0.6;
+    this.phase = Math.random() * Math.PI * 2;
+    this.freq = 0.8 + Math.random() * 1.2; // pulse frequency
+    this.alive = true;
+    this.ignited = false;
+    this.igniteTime = 0;
+    this.igniteProgress = 0;
+    this.brightness = 0;
+    this.hue = 180 + Math.random() * 60; // cyan to blue-ish
+    this.trail = [];
+  }
+
+  get pulseValue() {
+    // 0 to 1, where 1 = peak brightness
+    return (Math.sin(this.phase) + 1) / 2;
+  }
+
+  get isPeak() {
+    return this.pulseValue > 0.75;
+  }
+
+  update(dt, t) {
+    if (this.ignited) {
+      this.igniteProgress += dt * 3;
+      if (this.igniteProgress >= 1) {
+        this.alive = false;
+      }
+      return;
+    }
+
+    this.phase += dt * this.freq * Math.PI * 2 * 0.3;
+    this.brightness = this.pulseValue;
+
+    // Drift
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Apply repulsor forces
+    for (const rep of repulsors) {
+      const dx = this.x - rep.x;
+      const dy = this.y - rep.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < rep.radius && dist > 1) {
+        const force = (rep.radius - dist) / rep.radius * 0.8;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.995;
+    this.vy *= 0.995;
+
+    // Bounce off walls with padding
+    const pad = this.r + 10;
+    if (this.x < pad) { this.x = pad; this.vx = Math.abs(this.vx) * 0.8; }
+    if (this.x > W - pad) { this.x = W - pad; this.vx = -Math.abs(this.vx) * 0.8; }
+    if (this.y < pad + 50) { this.y = pad + 50; this.vy = Math.abs(this.vy) * 0.8; }
+    if (this.y > H - pad) { this.y = H - pad; this.vy = -Math.abs(this.vy) * 0.8; }
+
+    // Store trail
+    this.trail.push({ x: this.x, y: this.y, a: this.brightness });
+    if (this.trail.length > 8) this.trail.shift();
+  }
+
+  ignite(depth) {
+    if (this.ignited) return;
+    this.ignited = true;
+    this.igniteTime = performance.now();
+    this.igniteProgress = 0;
+    chainDepth = Math.max(chainDepth, depth);
+    chainCount++;
+    orbsIgnited++;
+
+    // Spawn particles
+    const count = 12 + depth * 3;
+    const hue = this.isPeak ? this.hue : 0;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;
+      const speed = 2 + Math.random() * 4;
+      particles.push({
+        x: this.x, y: this.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: 0.015 + Math.random() * 0.02,
+        r: 2 + Math.random() * 3,
+        hue: this.hue + Math.random() * 40 - 20,
+        sat: 100,
+        light: 60 + depth * 5
+      });
+    }
+
+    // Shockwave
+    shockwaves.push({
+      x: this.x, y: this.y,
+      radius: 0,
+      maxRadius: 80 + depth * 15,
+      life: 1,
+      hue: this.hue
+    });
+
+    // Screen shake
+    shakeAmount = Math.min(shakeAmount + 2 + depth, 15);
+
+    // Schedule chain propagation
+    const chainRadius = 100 + depth * 10;
+    for (const other of orbs) {
+      if (other === this || other.ignited || !other.alive) continue;
+      const dx = other.x - this.x;
+      const dy = other.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < chainRadius && other.isPeak) {
+        const delay = dist / 300; // slight delay based on distance
+        pendingChains.push({ orb: other, depth: depth + 1, delay });
+      }
+    }
+
+    playChain(depth);
+  }
+
+  draw(ctx) {
+    if (!this.alive) return;
+
+    if (this.ignited) {
+      // Exploding animation
+      const p = this.igniteProgress;
+      const expandR = this.r * (1 + p * 3);
+      const alpha = 1 - p;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, expandR, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${this.hue}, 100%, 80%, ${alpha * 0.6})`;
+      ctx.fill();
+      // Inner flash
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, expandR * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${this.hue}, 100%, 95%, ${alpha})`;
+      ctx.fill();
+      return;
+    }
+
+    const b = this.brightness;
+    const glowR = this.r + b * 12;
+
+    // Trail
+    for (let i = 0; i < this.trail.length; i++) {
+      const t = this.trail[i];
+      const ta = (i / this.trail.length) * 0.15 * t.a;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, this.r * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${this.hue}, 80%, 50%, ${ta})`;
+      ctx.fill();
+    }
+
+    // Outer glow
+    const gradient = ctx.createRadialGradient(this.x, this.y, this.r * 0.5, this.x, this.y, glowR);
+    gradient.addColorStop(0, `hsla(${this.hue}, 100%, ${50 + b * 30}%, ${0.3 + b * 0.5})`);
+    gradient.addColorStop(0.6, `hsla(${this.hue}, 100%, ${40 + b * 20}%, ${0.1 + b * 0.2})`);
+    gradient.addColorStop(1, `hsla(${this.hue}, 100%, 30%, 0)`);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glowR, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Core orb
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    const coreLight = 20 + b * 60;
+    const coreSat = 60 + b * 40;
+    ctx.fillStyle = `hsla(${this.hue}, ${coreSat}%, ${coreLight}%, ${0.4 + b * 0.6})`;
+    ctx.fill();
+
+    // Inner bright core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue}, 80%, ${60 + b * 35}%, ${0.5 + b * 0.5})`;
+    ctx.fill();
+
+    // Peak indicator ring
+    if (this.isPeak) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r + 4 + Math.sin(performance.now() * 0.01) * 2, 0, Math.PI * 2);
+      ctx.strokeStyle = `hsla(${this.hue}, 100%, 80%, ${0.5 + b * 0.3})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+}
+
+// ─── REPULSORS ───
+let repulsors = [];
+
+class Repulsor {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 70;
+    this.phase = Math.random() * Math.PI * 2;
+  }
+
+  update(dt) {
+    this.phase += dt * 2;
+  }
+
+  draw(ctx) {
+    const pulse = 0.8 + Math.sin(this.phase) * 0.2;
+    const r = this.radius * pulse;
+
+    // Warning zone
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r);
+    grad.addColorStop(0, 'hsla(350, 100%, 40%, 0.12)');
+    grad.addColorStop(0.7, 'hsla(350, 100%, 30%, 0.06)');
+    grad.addColorStop(1, 'hsla(350, 100%, 20%, 0)');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(350, 100%, 50%, ${0.5 + pulse * 0.3})`;
+    ctx.fill();
+
+    // X mark
+    const s = 10;
+    ctx.strokeStyle = `hsla(350, 80%, 50%, 0.6)`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(this.x - s, this.y - s);
+    ctx.lineTo(this.x + s, this.y + s);
+    ctx.moveTo(this.x + s, this.y - s);
+    ctx.lineTo(this.x - s, this.y + s);
+    ctx.stroke();
+  }
+}
+
+// ─── LEVEL SETUP ───
+function startLevel(lvl) {
+  const config = getLevelConfig(lvl);
+  orbs = [];
+  repulsors = [];
+  particles = [];
+  shockwaves = [];
+  pendingChains = [];
+  chainDepth = 0;
+  chainCount = 0;
+  orbsIgnited = 0;
+  totalOrbs = config.orbCount;
+  tapsLeft = config.maxTaps;
+  totalTapsUsed = 0;
+  levelTransitionTimer = 0;
+
+  // Place orbs with spacing
+  const margin = 60;
+  const minDist = 50;
+  for (let i = 0; i < config.orbCount; i++) {
+    let x, y, valid, attempts = 0;
+    do {
+      x = margin + Math.random() * (W - margin * 2);
+      y = margin + 50 + Math.random() * (H - margin * 2 - 50);
+      valid = true;
+      for (const o of orbs) {
+        const dx = o.x - x;
+        const dy = o.y - y;
+        if (Math.sqrt(dx * dx + dy * dy) < minDist) { valid = false; break; }
+      }
+      attempts++;
+    } while (!valid && attempts < 50);
+    orbs.push(new Orb(x, y));
+  }
+
+  // Place repulsors away from orbs
+  for (let i = 0; i < config.repulsors; i++) {
+    let x, y, attempts = 0;
+    do {
+      x = margin + 40 + Math.random() * (W - margin * 2 - 80);
+      y = margin + 90 + Math.random() * (H - margin * 2 - 80);
+      attempts++;
+    } while (attempts < 30);
+    repulsors.push(new Repulsor(x, y));
+  }
+
+  updateUI();
+  state = STATE.PLAYING;
+}
+
+// ─── UI UPDATE ───
+const scoreEl = document.getElementById('score-val');
+const levelEl = document.getElementById('level-val');
+const tapsEl = document.getElementById('taps-val');
+const overlay = document.getElementById('overlay');
+const hsDisplay = document.getElementById('hs-display');
+const comboEl = document.getElementById('combo-display');
+
+function updateUI() {
+  scoreEl.textContent = score;
+  levelEl.textContent = level;
+  tapsEl.textContent = tapsLeft;
+  tapsEl.style.color = tapsLeft <= 1 ? '#ff3366' : '#ff0066';
+}
+
+function showCombo(text, color) {
+  comboEl.textContent = text;
+  comboEl.style.color = color || '#fff';
+  comboEl.style.opacity = 1;
+  comboEl.style.transform = 'translate(-50%, -50%) scale(1.2)';
+  comboTimer = 1.5;
+}
+
+// ─── OVERLAY SCREENS ───
+function showMenu() {
+  state = STATE.MENU;
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <h1>CASCADE PULSE</h1>
+    <div class="subtitle">
+      Orbs pulse dim ↔ bright.<br>
+      Tap one at peak brightness to ignite.<br>
+      Explosions chain to nearby bright orbs.<br>
+      <strong>Clear all orbs. Fewer taps = more points.</strong>
+    </div>
+    <button class="btn" id="start-btn">START</button>
+    ${highScore > 0 ? `<div class="high-score">HIGH SCORE: ${highScore}</div>` : ''}
+  `;
+  document.getElementById('start-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    ensureAudio();
+    level = 1;
+    score = 0;
+    overlay.classList.add('hidden');
+    startLevel(level);
+  });
+  document.getElementById('start-btn').addEventListener('touchend', (e) => {
+    e.preventDefault();
+  });
+}
+
+function showLevelComplete(bonus) {
+  state = STATE.LEVEL_END;
+  levelTransitionTimer = 0;
+  playLevelComplete();
+
+  setTimeout(() => {
+    overlay.classList.remove('hidden');
+    overlay.innerHTML = `
+      <h1>LEVEL ${level} CLEAR</h1>
+      <div class="stats">
+        Chain: <span class="highlight">${chainCount}</span> orbs<br>
+        Taps used: <span class="highlight">${totalTapsUsed}</span> / ${totalTapsUsed + tapsLeft}<br>
+        Bonus: <span class="highlight">+${bonus}</span>
+      </div>
+      <button class="btn" id="next-btn">NEXT LEVEL</button>
+    `;
+    document.getElementById('next-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      level++;
+      overlay.classList.add('hidden');
+      startLevel(level);
+    });
+    document.getElementById('next-btn').addEventListener('touchend', (e) => {
+      e.preventDefault();
+    });
+  }, 600);
+}
+
+function showGameOver() {
+  state = STATE.GAME_OVER;
+  playFail();
+  const isNew = score > highScore;
+  if (isNew) {
+    highScore = score;
+    localStorage.setItem('cascade-pulse-hs', highScore.toString());
+  }
+
+  setTimeout(() => {
+    overlay.classList.remove('hidden');
+    overlay.innerHTML = `
+      <h1>GAME OVER</h1>
+      <div class="stats">
+        Score: <span class="highlight">${score}</span><br>
+        Level reached: <span class="highlight">${level}</span><br>
+        ${isNew ? '<br><span style="color:#ff0066;font-size:16px">NEW HIGH SCORE!</span>' : `Best: <span class="highlight">${highScore}</span>`}
+      </div>
+      <button class="btn" id="retry-btn">RETRY</button>
+    `;
+    document.getElementById('retry-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      level = 1;
+      score = 0;
+      overlay.classList.add('hidden');
+      startLevel(level);
+    });
+    document.getElementById('retry-btn').addEventListener('touchend', (e) => {
+      e.preventDefault();
+    });
+  }, 800);
+}
+
+// ─── INPUT ───
+function handleTap(px, py) {
+  if (state !== STATE.PLAYING) return;
+  if (tapsLeft <= 0) return;
+
+  // Find nearest orb that is at peak and within tap range
+  let best = null;
+  let bestDist = Infinity;
+  const tapRadius = 44; // generous tap target
+
+  for (const orb of orbs) {
+    if (orb.ignited || !orb.alive) continue;
+    const dx = orb.x - px;
+    const dy = orb.y - py;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < tapRadius + orb.r && dist < bestDist) {
+      best = orb;
+      bestDist = dist;
+    }
+  }
+
+  if (best) {
+    if (best.isPeak) {
+      tapsLeft--;
+      totalTapsUsed++;
+      best.ignite(0);
+      playIgnite();
+      state = STATE.CHAIN_ACTIVE;
+      flashAlpha = 0.15;
+      updateUI();
+    } else {
+      // Tapped but not at peak — visual feedback
+      shakeAmount = 3;
+      playFail();
+      // Flash the orb red briefly
+      const origHue = best.hue;
+      best.hue = 0;
+      setTimeout(() => { if (best.alive) best.hue = origHue; }, 200);
+    }
+  }
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const py = e.clientY - rect.top;
+  handleTap(px, py);
+});
+
+// ─── MAIN LOOP ───
+let lastTime = 0;
+
+function update(dt) {
+  const t = performance.now() * 0.001;
+
+  // Update orbs
+  for (const orb of orbs) {
+    orb.update(dt, t);
+  }
+
+  // Update repulsors
+  for (const rep of repulsors) {
+    rep.update(dt);
+  }
+
+  // Process pending chains
+  for (let i = pendingChains.length - 1; i >= 0; i--) {
+    const pc = pendingChains[i];
+    pc.delay -= dt;
+    if (pc.delay <= 0) {
+      if (pc.orb.alive && !pc.orb.ignited && pc.orb.isPeak) {
+        pc.orb.ignite(pc.depth);
+      }
+      pendingChains.splice(i, 1);
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.97;
+    p.vy *= 0.97;
+    p.vy += 0.05; // slight gravity
+    p.life -= p.decay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Update shockwaves
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    const sw = shockwaves[i];
+    sw.radius += dt * 200;
+    sw.life -= dt * 2;
+    if (sw.life <= 0) shockwaves.splice(i, 1);
+  }
+
+  // Screen shake decay
+  shakeAmount *= shakeDecay;
+  if (shakeAmount < 0.1) shakeAmount = 0;
+
+  // Flash decay
+  flashAlpha *= 0.92;
+
+  // Combo display decay
+  if (comboTimer > 0) {
+    comboTimer -= dt;
+    if (comboTimer <= 0) {
+      comboEl.style.opacity = 0;
+    } else {
+      comboEl.style.opacity = Math.min(1, comboTimer * 2);
+    }
+  }
+
+  // Bg pulse
+  bgPulse = Math.sin(t * 0.5) * 0.5 + 0.5;
+
+  // Check chain completion
+  if (state === STATE.CHAIN_ACTIVE) {
+    const anyIgniting = orbs.some(o => o.ignited && o.alive);
+    const anyPending = pendingChains.length > 0;
+
+    if (!anyIgniting && !anyPending) {
+      // Chain finished — remove dead orbs
+      orbs = orbs.filter(o => o.alive);
+
+      if (orbs.length === 0) {
+        // Level complete!
+        const tapsBonus = tapsLeft * 100 * level;
+        const chainBonus = chainCount * 10 * level;
+        const bonus = tapsBonus + chainBonus;
+        score += bonus;
+        updateUI();
+        showCombo(`+${bonus}`, '#00ffff');
+        showLevelComplete(bonus);
+      } else if (tapsLeft > 0) {
+        // Still have taps
+        state = STATE.PLAYING;
+        if (chainCount >= 3) {
+          showCombo(`${chainCount}x CHAIN!`, `hsl(${180 + chainCount * 10}, 100%, 70%)`);
+          score += chainCount * 5 * level;
+          updateUI();
+        }
+        chainDepth = 0;
+        chainCount = 0;
+      } else {
+        // No taps left, orbs remain — game over
+        showGameOver();
+      }
+    }
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  const bgGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+  bgGrad.addColorStop(0, `hsla(240, 30%, ${4 + bgPulse * 2}%, 1)`);
+  bgGrad.addColorStop(1, '#0a0a0f');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Apply screen shake
+  if (shakeAmount > 0) {
+    const sx = (Math.random() - 0.5) * shakeAmount * 2;
+    const sy = (Math.random() - 0.5) * shakeAmount * 2;
+    ctx.save();
+    ctx.translate(sx, sy);
+  }
+
+  // Draw repulsors
+  for (const rep of repulsors) {
+    rep.draw(ctx);
+  }
+
+  // Draw connection hints between nearby orbs
+  for (let i = 0; i < orbs.length; i++) {
+    const a = orbs[i];
+    if (a.ignited) continue;
+    for (let j = i + 1; j < orbs.length; j++) {
+      const b = orbs[j];
+      if (b.ignited) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 120) {
+        const alpha = (1 - dist / 120) * 0.08 * Math.min(a.brightness, b.brightness);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = `hsla(200, 60%, 50%, ${alpha})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Draw shockwaves
+  for (const sw of shockwaves) {
+    ctx.beginPath();
+    ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = `hsla(${sw.hue}, 100%, 70%, ${sw.life * 0.4})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // Draw orbs
+  for (const orb of orbs) {
+    orb.draw(ctx);
+  }
+
+  // Draw particles
+  for (const p of particles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${p.hue}, ${p.sat}%, ${p.light}%, ${p.life * 0.8})`;
+    ctx.fill();
+  }
+
+  // Screen flash
+  if (flashAlpha > 0.01) {
+    ctx.fillStyle = `rgba(100, 200, 255, ${flashAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  if (shakeAmount > 0) {
+    ctx.restore();
+  }
+}
+
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  if (state === STATE.PLAYING || state === STATE.CHAIN_ACTIVE) {
+    update(dt);
+  } else if (state === STATE.MENU || state === STATE.GAME_OVER || state === STATE.LEVEL_END) {
+    // Ambient particle drift in menu
+    bgPulse = Math.sin(now * 0.001 * 0.5) * 0.5 + 0.5;
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+    for (const sw of shockwaves) {
+      sw.radius += dt * 200;
+      sw.life -= dt * 2;
+    }
+    shockwaves = shockwaves.filter(s => s.life > 0);
+    shakeAmount *= shakeDecay;
+  }
+
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ─── INIT ───
+showMenu();
+requestAnimationFrame((now) => {
+  lastTime = now;
+  loop(now);
+});
+
+// Prevent double-tap zoom on mobile
+document.addEventListener('dblclick', (e) => e.preventDefault());
+</script>
+</body>
+</html>
