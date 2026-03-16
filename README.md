@@ -264,3 +264,8 @@ Jeu aquatique eat-to-grow — tu contrôles un petit poisson bioluminescent dans
 Jeu gravitationnel addictif — tu contrôles un trou noir au centre de l'écran. Tap/clic pour pulser ton champ gravitationnel et attirer les astéroïdes vers toi. La matière bleue score des points et te fait grossir. L'antimatière rouge te rétrécit — trop d'antimatière et tu t'effondres ! Système de combos (3+ absorptions rapides = bonus), physique satisfaisante avec gravité passive + pulse, effets visuels soignés (disque d'accrétion animé, particules, screen shake, vagues de pulse), sons Web Audio. Difficulté progressive avec plus d'objets et plus d'antimatière. High score localStorage.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/gravity-well/)
+
+### 💫 **[Cascade Pulse](https://adrrr.github.io/night-projects/cascade-pulse/)**
+Puzzle de timing addictif — des orbes flottent à l'écran, pulsant entre dim et bright à des rythmes différents. Tap une orbe à son pic de luminosité pour l'enflammer — l'explosion se propage en chaîne aux orbes voisines aussi au pic ! Élimine toutes les orbes avec le minimum de taps pour maximiser ton score. Réactions en chaîne satisfaisantes avec shockwaves, particules, screen shake. Répulseurs dès le level 4. Web Audio synth, high score localStorage, esthétique dark/neon cyan.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/cascade-pulse/)
