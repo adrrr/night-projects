@@ -14,7 +14,7 @@ canvas{display:block;width:100%;height:100%}
 #score{font-size:22px;font-weight:700;text-shadow:0 2px 8px rgba(0,160,255,.5)}
 #highscore{font-size:12px;opacity:.6;margin-top:2px}
 #depth-info{font-size:13px;opacity:.7;margin-top:2px;color:#80e0ff}
-#size-info{margin-top:8px;font-size:13px;opacity:.8}
+#size-info{font-size:13px;opacity:.8}
 #size-bar-wrap{margin-top:4px;width:130px;height:7px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden}
 #size-bar{height:100%;width:0%;border-radius:4px;transition:width .3s ease}
 #boost-wrap{margin-top:5px;width:130px;height:5px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
@@ -49,6 +49,24 @@ canvas{display:block;width:100%;height:100%}
 /* Orientation hint */
 #orient-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:rgba(255,255,255,.6);background:rgba(0,30,60,.7);padding:8px 16px;border-radius:20px;pointer-events:none;opacity:0;transition:opacity .4s;z-index:6;white-space:nowrap}
 #orient-hint.visible{opacity:1}
+
+/* Joystick */
+#joystick-base{position:absolute;display:none;pointer-events:none;z-index:7}
+#joystick-outer{position:relative;width:120px;height:120px;border-radius:50%;border:2px solid rgba(0,180,255,.25);background:radial-gradient(circle,rgba(0,40,80,.3),rgba(0,20,50,.15));backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+#joystick-thumb{position:absolute;width:48px;height:48px;border-radius:50%;background:radial-gradient(circle,rgba(100,220,255,.5),rgba(0,120,200,.3));border:2px solid rgba(0,200,255,.4);top:50%;left:50%;transform:translate(-50%,-50%);box-shadow:0 0 15px rgba(0,180,255,.3);transition:box-shadow .1s}
+
+/* Boost button */
+#boost-btn{position:absolute;bottom:44px;right:24px;width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,200,0,.35);background:radial-gradient(circle,rgba(255,180,0,.2),rgba(200,100,0,.1));backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:7;display:none;pointer-events:all;touch-action:none;-webkit-touch-callout:none}
+#boost-btn::after{content:'⚡';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;pointer-events:none}
+#boost-btn.active{border-color:rgba(255,220,0,.7);background:radial-gradient(circle,rgba(255,200,0,.45),rgba(255,120,0,.25));box-shadow:0 0 20px rgba(255,180,0,.3)}
+
+/* HUD progressive reveal */
+#size-group,#boost-group,#oxygen-group{opacity:0;max-height:0;overflow:hidden;transform:translateX(-20px);transition:opacity .5s ease,transform .5s ease,max-height .5s ease;pointer-events:none}
+#size-group.revealed,#boost-group.revealed,#oxygen-group.revealed{opacity:1;max-height:60px;transform:translateX(0)}
+.bar-label{font-size:12px;opacity:.7;display:flex;align-items:center;gap:4px;margin-top:5px}
+.bar-icon{font-size:14px;line-height:1}
+.bar-label.pulse{animation:labelPulse .8s ease}
+@keyframes labelPulse{0%,100%{opacity:.7;transform:scale(1)}50%{opacity:1;transform:scale(1.15);text-shadow:0 0 8px rgba(255,255,255,.4)}}
 </style>
 </head>
 <body>
@@ -58,22 +76,33 @@ canvas{display:block;width:100%;height:100%}
   <div id="score">Score: 0</div>
   <div id="highscore"></div>
   <div id="depth-info"></div>
-  <div id="size-info">Size: Tiny</div>
-  <div id="size-bar-wrap"><div id="size-bar"></div></div>
-  <div id="boost-wrap"><div id="boost-bar"></div></div>
-  <div id="oxygen-wrap"><div id="oxygen-bar"></div></div>
+  <div id="size-group">
+    <div class="bar-label"><span class="bar-icon">🐟</span> <span id="size-info">Size: Tiny</span></div>
+    <div id="size-bar-wrap"><div id="size-bar"></div></div>
+  </div>
+  <div id="boost-group">
+    <div class="bar-label"><span class="bar-icon">⚡</span> Boost</div>
+    <div id="boost-wrap"><div id="boost-bar"></div></div>
+  </div>
+  <div id="oxygen-group">
+    <div class="bar-label"><span class="bar-icon">🫧</span> O₂</div>
+    <div id="oxygen-wrap"><div id="oxygen-bar"></div></div>
+  </div>
 </div>
 
 <div id="vignette"></div>
 <div id="prestige-flash"></div>
 <div id="orient-hint">Rotate to portrait for a better experience</div>
 
+<div id="joystick-base"><div id="joystick-outer"><div id="joystick-thumb"></div></div></div>
+<div id="boost-btn"></div>
+
 <div id="overlay">
   <h1>Deep Feed</h1>
   <div class="sub">Eat smaller fish to grow bigger. Avoid the big ones!</div>
   <div class="stats" id="end-stats"></div>
   <button class="play-btn" id="play-btn">Dive In</button>
-  <div class="hint">Tap &amp; hold to boost</div>
+  <div class="hint" id="control-hint">Swipe to move &bull; Tap ⚡ to boost</div>
 </div>
 
 <script>
@@ -239,6 +268,13 @@ const endStatsEl = document.getElementById('end-stats');
 const oxygenBarEl = document.getElementById('oxygen-bar');
 const orientHintEl = document.getElementById('orient-hint');
 const prestigeFlashEl = document.getElementById('prestige-flash');
+const joystickBaseEl = document.getElementById('joystick-base');
+const joystickThumbEl = document.getElementById('joystick-thumb');
+const boostBtnEl = document.getElementById('boost-btn');
+const sizeGroupEl = document.getElementById('size-group');
+const boostGroupEl = document.getElementById('boost-group');
+const oxygenGroupEl = document.getElementById('oxygen-group');
+const controlHintEl = document.getElementById('control-hint');
 
 // ============================================================
 //  AUDIO (Web Audio API — lazy init)
@@ -502,6 +538,15 @@ let tierUpRingColor = '#fff';
 let tierUpFlashTimer = 0;
 let tierUpSlowmoTimer = 0;
 
+// Joystick state (mobile only)
+let joystick = { active: false, originX: 0, originY: 0, currentX: 0, currentY: 0, angle: 0, magnitude: 0, touchId: -1 };
+let boostTouchId = -1;
+
+// HUD progressive reveal
+let hasEverEaten = false;
+let hasEverBoosted = false;
+let hasEverLowOxygen = false;
+
 // Difficulty system state
 let graceTimer = 0;         // grace period after tier-up (seconds)
 let timeSinceLastHit = 0;   // adaptive danger tracker
@@ -616,16 +661,32 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer, zon
   ctx.ellipse(0, 0, bodyLen * 0.45, bodyH, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Player body highlight — brighter than enemies (white inner overlay)
+  // Player body highlight — golden shimmer unique to player
   if (isPlayer) {
+    // White inner glow
     const playerGrad = ctx.createRadialGradient(-r * 0.1, -r * 0.2, 0, 0, 0, r * 1.3);
-    playerGrad.addColorStop(0, 'rgba(255,255,255,0.15)');
-    playerGrad.addColorStop(0.6, 'rgba(255,255,255,0.06)');
+    playerGrad.addColorStop(0, 'rgba(255,255,240,0.22)');
+    playerGrad.addColorStop(0.5, 'rgba(255,240,200,0.1)');
     playerGrad.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = playerGrad;
     ctx.beginPath();
     ctx.ellipse(0, 0, bodyLen * 0.45, bodyH, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // Golden shimmer overlay (unique to player — enemies never have this)
+    const shimmerPhase = typeof gameTime !== 'undefined' ? gameTime : 0;
+    const shimmer = 0.06 + 0.04 * Math.sin(shimmerPhase * 5);
+    ctx.fillStyle = `rgba(255,220,100,${shimmer})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyLen * 0.45, bodyH, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White outline stroke (always visible, unique to player)
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyLen * 0.46, bodyH * 1.01, 0, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   // Dorsal fin
@@ -711,21 +772,27 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer, zon
   ctx.arc(eyeX + eyeR * 0.45, eyeY - eyeR * 0.25, eyeR * 0.2, 0, Math.PI * 2);
   ctx.fill();
 
-  // Player pulsing glow ring — uses tier color, breathes in/out
+  // Player PERMANENT bright glow ring — white-gold, always very visible
   if (isPlayer) {
-    const glowPulse = 0.3 + 0.3 * Math.sin(gameTime * 4);
-    const glowRadOsc = 1 + 0.06 * Math.sin(gameTime * 3);
-    const tierGlowColor = c.body;
-    // Parse hex to get RGB for rgba
-    const gh = parseInt(tierGlowColor.slice(1), 16);
-    const gr = (gh >> 16) & 0xff, gg = (gh >> 8) & 0xff, gb = gh & 0xff;
-    // Outer glow
-    ctx.shadowColor = `rgba(${gr},${gg},${gb},${glowPulse})`;
-    ctx.shadowBlur = 12 + 6 * Math.sin(gameTime * 4);
-    ctx.strokeStyle = `rgba(${gr},${gg},${gb},${glowPulse})`;
-    ctx.lineWidth = 2.5;
+    const glowPulse = 0.55 + 0.2 * Math.sin(gameTime * 3);
+    const glowRadOsc = 1 + 0.04 * Math.sin(gameTime * 2.5);
+
+    // Outer golden halo (large, soft)
+    ctx.shadowColor = 'rgba(255,220,100,0.7)';
+    ctx.shadowBlur = 20 + 6 * Math.sin(gameTime * 3);
+    ctx.strokeStyle = `rgba(255,235,180,${glowPulse})`;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.ellipse(0, 0, (bodyLen * 0.5 + 5) * glowRadOsc, (bodyH + 5) * glowRadOsc, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, (bodyLen * 0.52 + 8) * glowRadOsc, (bodyH + 8) * glowRadOsc, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner cyan ring (tighter)
+    ctx.shadowColor = 'rgba(0,200,255,0.4)';
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = `rgba(180,240,255,${glowPulse * 0.5})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, (bodyLen * 0.48 + 4) * glowRadOsc, (bodyH + 4) * glowRadOsc, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
@@ -1043,6 +1110,21 @@ function initGame() {
   tierUpFlashTimer = 0;
   tierUpSlowmoTimer = 0;
 
+  // HUD progressive reveal reset
+  hasEverEaten = false;
+  hasEverBoosted = false;
+  hasEverLowOxygen = false;
+  sizeGroupEl.classList.remove('revealed');
+  boostGroupEl.classList.remove('revealed');
+  oxygenGroupEl.classList.remove('revealed');
+
+  // Joystick reset
+  joystick.active = false;
+  joystick.touchId = -1;
+  joystick.magnitude = 0;
+  joystickBaseEl.style.display = 'none';
+  boosting = false;
+
   // Difficulty reset
   graceTimer = 0;
   timeSinceLastHit = 0;
@@ -1077,47 +1159,160 @@ function initGame() {
 //  INPUT HANDLING
 // ============================================================
 
-function getPointerPos(e) {
-  const touch = e.touches ? e.touches[0] : e;
-  if (!touch) return;
-  if (e.pointerType) {
-    isTouch = e.pointerType === 'touch';
-  } else if (e.type) {
-    if (e.type.startsWith('touch')) isTouch = true;
-    else if (e.type.startsWith('mouse')) isTouch = false;
+const JOYSTICK_MAX_RADIUS = 50;
+const JOYSTICK_DEAD_ZONE = 8;
+
+// --- Mobile: virtual joystick via touch events ---
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (!running) return;
+  ensureAudio();
+  for (const touch of e.changedTouches) {
+    // Create joystick where the finger lands (no active joystick yet)
+    if (joystick.touchId === -1) {
+      isTouch = true;
+      joystick.touchId = touch.identifier;
+      joystick.originX = touch.clientX;
+      joystick.originY = touch.clientY;
+      joystick.currentX = touch.clientX;
+      joystick.currentY = touch.clientY;
+      joystick.active = true;
+      joystick.magnitude = 0;
+      // Show joystick at touch position
+      joystickBaseEl.style.display = 'block';
+      joystickBaseEl.style.left = (touch.clientX - 60) + 'px';
+      joystickBaseEl.style.top = (touch.clientY - 60) + 'px';
+      joystickThumbEl.style.transform = 'translate(-50%,-50%)';
+    }
   }
-  pointer.x = touch.clientX;
-  pointer.y = touch.clientY - (isTouch ? TOUCH_OFFSET_Y : 0);
-  pointer.active = true;
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === joystick.touchId) {
+      joystick.currentX = touch.clientX;
+      joystick.currentY = touch.clientY;
+      const dx = joystick.currentX - joystick.originX;
+      const dy = joystick.currentY - joystick.originY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > JOYSTICK_DEAD_ZONE) {
+        joystick.angle = Math.atan2(dy, dx);
+        joystick.magnitude = Math.min(1, dist / JOYSTICK_MAX_RADIUS);
+      } else {
+        joystick.magnitude = 0;
+      }
+      // Update thumb visual (clamped)
+      const clampedDist = Math.min(dist, JOYSTICK_MAX_RADIUS);
+      const nx = dist > 0 ? dx / dist : 0;
+      const ny = dist > 0 ? dy / dist : 0;
+      const thumbX = nx * clampedDist;
+      const thumbY = ny * clampedDist;
+      joystickThumbEl.style.transform = `translate(calc(-50% + ${thumbX}px), calc(-50% + ${thumbY}px))`;
+    }
+  }
+}, { passive: false });
+
+function releaseJoystick() {
+  joystick.active = false;
+  joystick.touchId = -1;
+  joystick.magnitude = 0;
+  joystickBaseEl.style.display = 'none';
 }
 
-function onPointerDown(e) {
+canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === joystick.touchId) releaseJoystick();
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchcancel', (e) => {
+  e.preventDefault();
+  releaseJoystick();
+}, { passive: false });
+
+// --- Mobile: boost button ---
+
+boostBtnEl.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!running) return;
   ensureAudio();
-  getPointerPos(e);
   boosting = true;
-}
-function onPointerMove(e) {
+  boostTouchId = e.changedTouches[0].identifier;
+  boostBtnEl.classList.add('active');
+}, { passive: false });
+
+boostBtnEl.addEventListener('touchend', (e) => {
   e.preventDefault();
-  getPointerPos(e);
-}
-function onPointerUp(e) {
+  e.stopPropagation();
+  boosting = false;
+  boostTouchId = -1;
+  boostBtnEl.classList.remove('active');
+}, { passive: false });
+
+boostBtnEl.addEventListener('touchcancel', (e) => {
   e.preventDefault();
   boosting = false;
+  boostTouchId = -1;
+  boostBtnEl.classList.remove('active');
+}, { passive: false });
+
+// --- Desktop: mouse controls (unchanged behavior) ---
+
+canvas.addEventListener('mousedown', (e) => {
+  isTouch = false;
+  ensureAudio();
+  pointer.x = e.clientX;
+  pointer.y = e.clientY;
+  pointer.active = true;
+  boosting = true;
+});
+canvas.addEventListener('mouseup', () => {
+  boosting = false;
   pointer.active = false;
+});
+canvas.addEventListener('mousemove', (e) => {
+  isTouch = false;
+  pointer.x = e.clientX;
+  pointer.y = e.clientY;
+  pointer.active = true;
+});
+
+// Show boost button on touch-capable devices
+if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+  boostBtnEl.style.display = 'block';
+  if (controlHintEl) controlHintEl.textContent = 'Swipe to move \u2022 Tap \u26A1 to boost';
+} else {
+  if (controlHintEl) controlHintEl.textContent = 'Move mouse \u2022 Click to boost';
 }
 
-canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
-canvas.addEventListener('pointermove', onPointerMove, { passive: false });
-canvas.addEventListener('pointerup', onPointerUp, { passive: false });
-canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
-canvas.addEventListener('touchstart', onPointerDown, { passive: false });
-canvas.addEventListener('touchmove', onPointerMove, { passive: false });
-canvas.addEventListener('touchend', onPointerUp, { passive: false });
-canvas.addEventListener('touchcancel', onPointerUp, { passive: false });
-canvas.addEventListener('mousedown', (e) => { isTouch = false; ensureAudio(); pointer.active = true; boosting = true; });
-canvas.addEventListener('mouseup', () => { boosting = false; pointer.active = false; });
-canvas.addEventListener('mousemove', (e) => { isTouch = false; pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true; });
+// ============================================================
+//  HUD PROGRESSIVE REVEAL
+// ============================================================
+
+function revealSizeBar() {
+  if (sizeGroupEl.classList.contains('revealed')) return;
+  sizeGroupEl.classList.add('revealed');
+  const label = sizeGroupEl.querySelector('.bar-label');
+  if (label) { label.classList.remove('pulse'); void label.offsetWidth; label.classList.add('pulse'); }
+}
+
+function revealBoostBar() {
+  if (boostGroupEl.classList.contains('revealed')) return;
+  boostGroupEl.classList.add('revealed');
+  const label = boostGroupEl.querySelector('.bar-label');
+  if (label) { label.classList.remove('pulse'); void label.offsetWidth; label.classList.add('pulse'); }
+}
+
+function revealOxygenBar() {
+  if (oxygenGroupEl.classList.contains('revealed')) return;
+  oxygenGroupEl.classList.add('revealed');
+  const label = oxygenGroupEl.querySelector('.bar-label');
+  if (label) { label.classList.remove('pulse'); void label.offsetWidth; label.classList.add('pulse'); }
+}
 
 // ============================================================
 //  HUD UPDATE
@@ -1320,12 +1515,37 @@ function update(dt) {
   if (playerSlowTimer > 0) playerSlowTimer = Math.max(0, playerSlowTimer - effectiveDt);
 
   // --- Player movement ---
-  if (pointer.active) {
+  let hasDirectionalInput = false;
+
+  if (isTouch && joystick.active && joystick.magnitude > 0) {
+    // Mobile joystick: direction-based movement
+    hasDirectionalInput = true;
+    let angleDiff = joystick.angle - player.angle;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    player.angle += angleDiff * Math.min(1, effectiveDt * 12);
+
+    let speed = PLAYER_BASE_SPEED * joystick.magnitude;
+    if (boosting && boostFuel > 0) {
+      speed *= BOOST_MULT;
+      boostFuel = Math.max(0, boostFuel - BOOST_DRAIN);
+      if (!hasEverBoosted) { hasEverBoosted = true; revealBoostBar(); }
+    }
+    if (playerStunTimer > 0) speed *= 0.6;
+    if (playerSlowTimer > 0) speed *= 0.6;
+
+    const move = speed * (60 * effectiveDt);
+    player.x += Math.cos(player.angle) * move;
+    player.y += Math.sin(player.angle) * move;
+
+  } else if (!isTouch && pointer.active) {
+    // Desktop mouse: move toward pointer (original behavior)
     const dx = pointer.x - player.x;
     const dy = pointer.y - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > 2) {
+      hasDirectionalInput = true;
       const targetAngle = Math.atan2(dy, dx);
       let angleDiff = targetAngle - player.angle;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
@@ -1336,17 +1556,18 @@ function update(dt) {
       if (boosting && boostFuel > 0) {
         speed *= BOOST_MULT;
         boostFuel = Math.max(0, boostFuel - BOOST_DRAIN);
+        if (!hasEverBoosted) { hasEverBoosted = true; revealBoostBar(); }
       }
-      // Apply stun slow (60% speed)
       if (playerStunTimer > 0) speed *= 0.6;
-      // Apply jellyfish slow (60% speed)
       if (playerSlowTimer > 0) speed *= 0.6;
 
       const move = Math.min(dist, speed * (60 * effectiveDt));
       player.x += (dx / dist) * move;
       player.y += (dy / dist) * move;
     }
-  } else {
+  }
+
+  if (!hasDirectionalInput) {
     // Idle auto-swim: drift forward at 40% speed
     let idleSpeed = PLAYER_BASE_SPEED * 0.4;
     if (playerStunTimer > 0) idleSpeed *= 0.6;
@@ -1630,6 +1851,9 @@ function update(dt) {
         // EAT!
         f.alive = false;
 
+        // Reveal size bar on first eat
+        if (!hasEverEaten) { hasEverEaten = true; revealSizeBar(); }
+
         // Tier-based scoring with frenzy doubler and depth multiplier
         let pointValue = TIER_POINTS[f.tier] || 1;
         if (frenzyActive) pointValue *= 2;
@@ -1880,6 +2104,7 @@ function update(dt) {
   const oxygenDrain = OXYGEN_DRAIN_RATE * (1 + (depthLevel - 1) * OXYGEN_DEPTH_DRAIN_MULT);
   oxygen = Math.max(0, oxygen - oxygenDrain * effectiveDt);
   oxygenBarEl.style.width = (oxygen / OXYGEN_MAX * 100) + '%';
+  if (oxygen < OXYGEN_MAX * 0.92 && !hasEverLowOxygen) { hasEverLowOxygen = true; revealOxygenBar(); }
   if (oxygen <= 0) {
     player.alive = false;
     running = false;
@@ -2252,22 +2477,64 @@ function render() {
       ctx.globalAlpha = 1;
     }
 
-    // Player chevron indicator — small downward triangle above fish
+    // XP ring — progress toward next tier (agar.io style)
     {
-      const chevronY = player.y - pDrawR * 1.8 - 12;
-      const chevronSize = 6;
-      const pc = getFishColors(player.tier, currentZone);
-      const pch = parseInt(pc.body.slice(1), 16);
-      const pcr = (pch >> 16) & 0xff, pcg = (pch >> 8) & 0xff, pcb = pch & 0xff;
-      const chevronPulse = 0.5 + 0.3 * Math.sin(gameTime * 3);
-      ctx.globalAlpha = chevronPulse;
-      ctx.fillStyle = `rgb(${pcr},${pcg},${pcb})`;
+      const xpRadius = pDrawR * 1.7;
+      let xpProgress, xpColor;
+      if (player.tier < TIER_COUNT - 1) {
+        xpProgress = player.eaten / TIER_THRESHOLDS[player.tier];
+        xpColor = getFishColors(player.tier + 1, currentZone).body;
+      } else {
+        xpProgress = prestigeEats / PRESTIGE_EXTRA_EATS;
+        xpColor = '#ffcc00';
+      }
+      // Background ring
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(player.x - chevronSize, chevronY - chevronSize);
-      ctx.lineTo(player.x + chevronSize, chevronY - chevronSize);
+      ctx.arc(player.x, player.y, xpRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      // Progress arc
+      if (xpProgress > 0) {
+        const startA = -Math.PI / 2;
+        const endA = startA + Math.min(1, xpProgress) * Math.PI * 2;
+        ctx.strokeStyle = xpColor;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = xpColor;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, xpRadius, startA, endA);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // Player chevron — PERMANENT, large, white-gold, always visible
+    {
+      const chevronY = player.y - pDrawR * 1.9 - 16;
+      const chevronSize = 10;
+      // Always visible — slight pulse but NEVER below 0.7
+      const chevronPulse = 0.8 + 0.15 * Math.sin(gameTime * 2.5);
+      ctx.globalAlpha = chevronPulse;
+      ctx.shadowColor = 'rgba(255,220,100,0.6)';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#ffe8a0';
+      ctx.beginPath();
+      ctx.moveTo(player.x - chevronSize, chevronY - chevronSize * 0.6);
+      ctx.lineTo(player.x + chevronSize, chevronY - chevronSize * 0.6);
       ctx.lineTo(player.x, chevronY + chevronSize * 0.5);
       ctx.closePath();
       ctx.fill();
+      // White outline for extra visibility
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(player.x - chevronSize, chevronY - chevronSize * 0.6);
+      ctx.lineTo(player.x + chevronSize, chevronY - chevronSize * 0.6);
+      ctx.lineTo(player.x, chevronY + chevronSize * 0.5);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
     }
 
@@ -2617,20 +2884,20 @@ if (new URLSearchParams(window.location.search).has('test')) {
   assert('timePressure at 120s = 3 (capped)', Math.min(3, 120 / 40) === 3);
   assert('timePressure at 200s = 3 (still capped)', Math.min(3, 200 / 40) === 3);
 
-  // Test: Player glow ring oscillation math
+  // Test: Player glow ring oscillation math (white-gold permanent ring)
   const t1 = 0;
-  const t2 = Math.PI / 4; // quarter period
-  const glow1 = 0.3 + 0.3 * Math.sin(t1 * 4);
-  const glow2 = 0.3 + 0.3 * Math.sin(t2 * 4);
-  assert('Glow oscillation min >= 0.0', glow1 >= 0);
-  assert('Glow oscillation max <= 0.6', glow1 <= 0.6 && glow2 <= 0.6);
+  const t2 = 1; // 1 second offset
+  const glow1 = 0.55 + 0.2 * Math.sin(t1 * 3);
+  const glow2 = 0.55 + 0.2 * Math.sin(t2 * 3);
+  assert('Glow oscillation min >= 0.35', glow1 >= 0.35);
+  assert('Glow oscillation max <= 0.75', glow1 <= 0.75 && glow2 <= 0.75);
   assert('Glow oscillation varies', Math.abs(glow1 - glow2) > 0.01);
 
   // Test: Radius oscillation
-  const radOsc1 = 1 + 0.06 * Math.sin(0);
-  const radOsc2 = 1 + 0.06 * Math.sin(Math.PI / 2 * 3);
+  const radOsc1 = 1 + 0.04 * Math.sin(0);
+  const radOsc2 = 1 + 0.04 * Math.sin(1);
   assert('Radius oscillation centered at 1', radOsc1 === 1);
-  assert('Radius oscillation range ±0.06', Math.abs(radOsc2 - 1) <= 0.06);
+  assert('Radius oscillation range ±0.04', Math.abs(radOsc2 - 1) <= 0.04 + 1e-10);
 
   // Test: createPlayer has targetRadius
   const testPlayer = createPlayer();
