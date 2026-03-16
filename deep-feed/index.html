@@ -11,7 +11,10 @@ canvas{display:block;width:100%;height:100%}
 
 /* HUD */
 #hud{position:absolute;top:0;left:0;width:100%;pointer-events:none;padding:14px 16px;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#fff;z-index:5}
-#score{font-size:22px;font-weight:700;text-shadow:0 2px 8px rgba(0,160,255,.5)}
+#score-center{position:absolute;top:10px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;z-index:6}
+#score{font-size:28px;font-weight:700;text-shadow:0 2px 8px rgba(0,160,255,.5)}
+@keyframes scorePulse{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+#score.pulse{animation:scorePulse .3s ease}
 #highscore{font-size:12px;opacity:.6;margin-top:2px}
 #depth-info{font-size:13px;opacity:.7;margin-top:2px;color:#80e0ff}
 #size-info{font-size:13px;opacity:.8}
@@ -62,17 +65,34 @@ canvas{display:block;width:100%;height:100%}
 .bar-icon{font-size:14px;line-height:1}
 .bar-label.pulse{animation:labelPulse .8s ease}
 @keyframes labelPulse{0%,100%{opacity:.7;transform:scale(1)}50%{opacity:1;transform:scale(1.15);text-shadow:0 0 8px rgba(255,255,255,.4)}}
+
+#zone-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Segoe UI',system-ui,sans-serif;font-size:clamp(28px,6vw,48px);font-weight:700;color:#fff;text-shadow:0 0 30px rgba(0,180,255,.5);pointer-events:none;opacity:0;transition:opacity .6s;z-index:6;text-align:center}
+#zone-text.visible{opacity:1}
+
+#overlay .death-title{font-size:clamp(22px,5vw,36px);margin-bottom:12px;font-weight:700}
+#overlay .final-score{font-size:clamp(36px,8vw,64px);font-weight:800;background:linear-gradient(135deg,#00e0ff,#0080ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+#overlay .final-score.record{background:linear-gradient(135deg,#ffcc00,#ff8800);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#overlay .record-badge{color:#ffcc00;font-size:18px;font-weight:700;text-shadow:0 0 12px rgba(255,200,0,.4);margin-bottom:8px}
+.fish-summary{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin:8px 0 12px}
+.fish-summary-item{display:flex;align-items:center;gap:4px;font-size:14px;font-weight:600}
+.fish-dot{width:14px;height:14px;border-radius:50%;display:inline-block}
+.progress-hint{color:#80e0ff;font-size:14px;font-weight:600;margin-bottom:8px}
+.progress-bar-wrap{width:80%;max-width:200px;height:8px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden;margin:0 auto 12px}
+.progress-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#00e0ff,#0080ff)}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 
-<div id="hud">
-  <div id="score">Score: 0</div>
+<div id="score-center">
+  <div id="score">0</div>
   <div id="highscore"></div>
+</div>
+
+<div id="hud">
   <div id="depth-info"></div>
   <div id="size-group">
-    <div class="bar-label"><span class="bar-icon">🐟</span> <span id="size-info">Size: Tiny</span></div>
+    <div class="bar-label"><span class="bar-icon">🐟</span> <span id="size-info">Taille: Alevin</span></div>
     <div id="size-bar-wrap"><div id="size-bar"></div></div>
   </div>
   <div id="boost-group">
@@ -91,9 +111,11 @@ canvas{display:block;width:100%;height:100%}
 
 <div id="boost-btn"></div>
 
+<div id="zone-text"></div>
+
 <div id="overlay">
   <h1>Deep Feed</h1>
-  <div class="sub">Eat smaller fish to grow bigger. Avoid the big ones!</div>
+  <div class="sub">Mange les poissons plus petits pour grandir. Évite les gros !</div>
   <div class="stats" id="end-stats"></div>
   <button class="play-btn" id="play-btn">Dive In</button>
   <div class="hint" id="control-hint">Touch &amp; drag to move &bull; Tap ⚡ to boost</div>
@@ -107,7 +129,7 @@ canvas{display:block;width:100%;height:100%}
 // ============================================================
 
 const TIER_COUNT = 6;
-const TIER_NAMES = ['Plancton', 'Fry', 'Small', 'Medium', 'Large', 'Huge'];
+const TIER_NAMES = ['Plancton', 'Alevin', 'Petit', 'Moyen', 'Grand', 'Énorme'];
 
 // Zone names for depth display
 const ZONE_NAMES = ['Surface', 'Surface', 'Récif', 'Crépusculaire', 'Abysses', 'Abysses'];
@@ -192,7 +214,7 @@ const OXYGEN_REFILL_PER_TIER = [8, 15, 20, 25, 30, 35]; // refill on eat by tier
 const PRESTIGE_EXTRA_EATS = 8; // eat 8 more after reaching Huge to prestige
 const PRESTIGE_SPEED_BUFF = 0.12; // +12% enemy speed per depth
 
-// Frenzy config
+// Festin (frenzy) config
 const FRENZY_WINDOW = 3.0;    // seconds window
 const FRENZY_THRESHOLD = 5;   // eats needed
 const FRENZY_SLOWMO_DURATION = 0.5;
@@ -267,6 +289,8 @@ const sizeGroupEl = document.getElementById('size-group');
 const boostGroupEl = document.getElementById('boost-group');
 const oxygenGroupEl = document.getElementById('oxygen-group');
 const controlHintEl = document.getElementById('control-hint');
+const zoneTextEl = document.getElementById('zone-text');
+const scoreCenterEl = document.getElementById('score-center');
 
 // ============================================================
 //  AUDIO (Web Audio API — lazy init)
@@ -439,7 +463,7 @@ function spawnFloatingText(x, y, text, color, big) {
     x, y, text,
     color: color || '#fff',
     life: 1,
-    decay: big ? 0.008 : 0.015,
+    decay: big ? 0.006 : 0.012,
     big: big || false,
     glow: big || false,
   });
@@ -571,6 +595,14 @@ let maxTierReached = 1;
 let totalFishEaten = 0;
 let startTime = 0;
 
+let deathReason = 'predator'; // 'predator' or 'oxygen'
+let fishEatenByTier = [0,0,0,0,0,0]; // track per-tier eat count
+let firstFestinTriggered = false;
+let zoneTransitionTimer = 0;
+let zoneTransitionName = '';
+let lastZone = 'surface';
+let zoneDecor = null;
+
 // ============================================================
 //  RESIZE
 // ============================================================
@@ -589,6 +621,7 @@ function resize() {
     const isLandscape = W > H * 1.2;
     orientHintEl.classList.toggle('visible', isMobileSize && isLandscape);
   }
+  if (zoneDecor) generateZoneDecor();
 }
 window.addEventListener('resize', resize);
 resize();
@@ -629,15 +662,20 @@ function lerpColor(a, b, t) {
 //  FISH DRAWING
 // ============================================================
 
-function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer, zone) {
+function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer, zone, bodyRatioW, bodyRatioH) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
 
   const c = getFishColors(tier, zone || currentZone);
   const r = radius;
-  const bodyLen = r * 2.2;
-  const bodyH = r * 1.1;
+  const rawBodyLen = r * 2.2;
+  const rawBodyH = r * 1.1;
+  // Per-fish variation + tier-based elongation
+  const bw = (bodyRatioW || 1) * (tier >= 3 ? 1.1 : 1);
+  const bh = (bodyRatioH || 1) * (tier >= 3 ? 0.95 : 1);
+  const bodyLen = rawBodyLen * bw;
+  const bodyH = rawBodyH * bh;
   const tailWag = Math.sin(tailPhase) * 0.3;
 
   // Shadow beneath
@@ -765,6 +803,16 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer, zon
     const mx = bodyLen * 0.42;
     const mo = mouthOpen * r * 0.35;
     ctx.ellipse(mx, 0, r * 0.15, mo, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Jaw for larger fish (tier 4+)
+  if (tier >= 4 && !isPlayer) {
+    ctx.fillStyle = c.fin;
+    ctx.beginPath();
+    ctx.moveTo(bodyLen * 0.35, bodyH * 0.3);
+    ctx.quadraticCurveTo(bodyLen * 0.5, bodyH * 0.65, bodyLen * 0.3, bodyH * 0.5);
+    ctx.closePath();
     ctx.fill();
   }
 
@@ -1002,6 +1050,8 @@ function createFish(tier, forceEdge, scatterOnScreen) {
     sizeBoost: 0,
     chaseTimer: 0,
     chaseCooldown: 0,
+    bodyRatioW: 1 + (Math.random() - 0.5) * 0.3, // ±15%
+    bodyRatioH: 1 + (Math.random() - 0.5) * 0.3,
   };
 }
 
@@ -1153,6 +1203,14 @@ function initGame() {
   totalFishEaten = 0;
   startTime = performance.now();
 
+  deathReason = 'predator';
+  fishEatenByTier = [0,0,0,0,0,0];
+  firstFestinTriggered = false;
+  zoneTransitionTimer = 0;
+  lastZone = 'surface';
+  if (zoneTextEl) zoneTextEl.classList.remove('visible');
+  generateZoneDecor();
+
   currentZone = 'surface';
 
   // Spawn initial population — only plancton + fry (tier 2 unlocks after first tier-up)
@@ -1302,8 +1360,14 @@ function revealOxygenBar() {
 // ============================================================
 
 function updateHUD() {
-  scoreEl.textContent = `Score: ${score}`;
-  if (highScore > 0) highScoreEl.textContent = `Best: ${highScore}`;
+  const scoreText = String(score);
+  if (scoreEl.textContent !== scoreText) {
+    scoreEl.textContent = scoreText;
+    scoreEl.classList.remove('pulse');
+    void scoreEl.offsetWidth;
+    scoreEl.classList.add('pulse');
+  }
+  if (highScore > 0) highScoreEl.textContent = `Record : ${highScore}`;
 
   if (depthLevel > 1) {
     depthInfoEl.textContent = `Profondeur ${depthLevel} — x${scoreMultiplier}`;
@@ -1322,7 +1386,6 @@ function updateHUD() {
       const c2 = getFishColors(player.tier + 1, currentZone);
       sizeBarEl.style.background = `linear-gradient(90deg, ${c1.body}, ${c2.body})`;
     } else {
-      // At max tier — show prestige progress
       const progress = (prestigeEats / PRESTIGE_EXTRA_EATS) * 100;
       sizeBarEl.style.width = Math.min(100, progress) + '%';
       sizeBarEl.style.background = 'linear-gradient(90deg, #bb55ff, #ffcc00)';
@@ -1414,7 +1477,13 @@ function checkFrenzy() {
 
     playFrenzy();
     haptic([20, 10, 20, 10, 40]);
-    spawnFloatingText(W / 2, H / 3, `FRENZY x${frenzyCount}!`, '#ffcc00', true);
+    if (!firstFestinTriggered) {
+      firstFestinTriggered = true;
+      spawnFloatingText(W / 2, H / 3, 'FESTIN ! Mange vite pour', '#ffcc00', true);
+      spawnFloatingText(W / 2, H / 3 + 36, 'doubler tes points !', '#ffcc00', true);
+    } else {
+      spawnFloatingText(W / 2, H / 3, `FESTIN ×${frenzyCount} 🔥`, '#ffcc00', true);
+    }
     shakeIntensity = 10;
     recentEats = []; // reset window
   }
@@ -1439,6 +1508,88 @@ function triggerDeathAnim() {
   }
   // Intense red flash
   vignetteEl.style.opacity = '1';
+}
+
+function generateZoneDecor() {
+  zoneDecor = {
+    surface: { wavePoints: 20 },
+    reef: { corals: [], anemones: [] },
+    twilight: { snow: [], algae: [] },
+    abyss: { lights: [], vents: [] },
+  };
+  // Reef corals
+  for (let i = 0; i < 14; i++) {
+    const colors = ['#ff6644','#ff8866','#ffaa44','#ff4488','#cc66aa','#44ccaa'];
+    zoneDecor.reef.corals.push({
+      x: (W / 14) * i + Math.random() * (W / 14),
+      type: Math.floor(Math.random() * 3), // 0=branch, 1=mushroom, 2=fan
+      h: 25 + Math.random() * 55,
+      w: 12 + Math.random() * 22,
+      color: colors[Math.floor(Math.random() * colors.length)],
+    });
+  }
+  // Reef anemones
+  for (let i = 0; i < 6; i++) {
+    zoneDecor.reef.anemones.push({
+      x: 40 + Math.random() * (W - 80),
+      y: H - 10 - Math.random() * 20,
+      tentacles: 5 + Math.floor(Math.random() * 4),
+      len: 20 + Math.random() * 25,
+      color: ['#ff66aa','#ff88cc','#aa44ff','#66ddaa'][Math.floor(Math.random() * 4)],
+    });
+  }
+  // Twilight marine snow
+  for (let i = 0; i < 30; i++) {
+    zoneDecor.twilight.snow.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      speed: 0.2 + Math.random() * 0.4,
+      size: 1 + Math.random() * 2,
+      drift: Math.random() * Math.PI * 2,
+    });
+  }
+  // Twilight algae
+  for (let i = 0; i < 8; i++) {
+    zoneDecor.twilight.algae.push({
+      x: 30 + Math.random() * (W - 60),
+      h: 60 + Math.random() * 100,
+      w: 4 + Math.random() * 6,
+    });
+  }
+  // Abyss bioluminescent lights
+  for (let i = 0; i < 20; i++) {
+    zoneDecor.abyss.lights.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      color: ['#00ffcc','#ff00ff','#4488ff','#ffff00','#00aaff'][Math.floor(Math.random() * 5)],
+      phase: Math.random() * Math.PI * 2,
+      size: 1.5 + Math.random() * 2.5,
+    });
+  }
+  // Abyss hydrothermal vents
+  for (let i = 0; i < 3; i++) {
+    zoneDecor.abyss.vents.push({
+      x: W * (0.2 + i * 0.3) + (Math.random() - 0.5) * W * 0.1,
+      w: 20 + Math.random() * 30,
+      h: 40 + Math.random() * 60,
+    });
+  }
+}
+
+// Zone transition display
+const ZONE_DISPLAY_NAMES = {
+  surface: '🌊 Surface',
+  reef: '🐠 Récif corallien',
+  twilight: '🌑 Zone crépusculaire',
+  abyss: '⬛ Abysses',
+};
+
+function triggerZoneTransition(zone) {
+  if (!zoneTextEl) return;
+  zoneTransitionName = ZONE_DISPLAY_NAMES[zone] || zone;
+  zoneTextEl.textContent = zoneTransitionName;
+  zoneTextEl.classList.add('visible');
+  zoneTransitionTimer = 2.5;
 }
 
 // ============================================================
@@ -1514,6 +1665,14 @@ function update(dt) {
 
   // Difficulty wave oscillator (~42s period)
   difficultyWave = 0.7 + 0.3 * Math.sin(gameTime * 0.15);
+
+  // Zone transition text timer
+  if (zoneTransitionTimer > 0) {
+    zoneTransitionTimer -= dt;
+    if (zoneTransitionTimer <= 0 && zoneTextEl) {
+      zoneTextEl.classList.remove('visible');
+    }
+  }
 
   // Prestige animation
   if (inPrestige) {
@@ -1862,6 +2021,7 @@ function update(dt) {
         pointValue *= scoreMultiplier;
         score += pointValue;
         totalFishEaten++;
+        fishEatenByTier[f.tier]++;
         player.totalEaten++;
         player.eaten++;
         player.mouthOpen = 1;
@@ -1888,8 +2048,8 @@ function update(dt) {
           playTierUp();
           haptic([20, 15, 30]);
 
-          // Big floating text: "TIER UP!" + new tier name
-          spawnFloatingText(W / 2, H / 2 - 40, 'TIER UP!', '#ffcc00', true);
+          // Big floating text: tier name
+          spawnFloatingText(W / 2, H / 2 - 40, 'Tu grandis !', '#ffcc00', true);
           const newTierColor = getFishColors(player.tier, getZoneForTier(player.tier)).body;
           spawnFloatingText(W / 2, H / 2, `→ ${TIER_NAMES[player.tier]}`, newTierColor, true);
 
@@ -1911,7 +2071,7 @@ function update(dt) {
           // Zone change notification
           const newZone = getZoneForTier(player.tier);
           if (newZone !== currentZone) {
-            spawnFloatingText(W / 2, H / 3 - 20, ZONE_NAMES[player.tier], '#80e0ff', true);
+            triggerZoneTransition(newZone);
           }
         } else if (player.tier === TIER_COUNT - 1) {
           // At max tier — track prestige progress
@@ -2107,6 +2267,7 @@ function update(dt) {
     oxygenBarEl.style.width = (oxygen / OXYGEN_MAX * 100) + '%';
     if (oxygen < OXYGEN_MAX * 0.92 && !hasEverLowOxygen) { hasEverLowOxygen = true; revealOxygenBar(); }
     if (oxygen <= 0) {
+      deathReason = 'oxygen';
       triggerDeathAnim();
       return;
     }
@@ -2320,6 +2481,68 @@ function render() {
   }
   ctx.restore();
 
+  // Surface zone: animated waves at top
+  if (currentZone === 'surface') {
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.strokeStyle = '#aaddff';
+    ctx.lineWidth = 2;
+    for (let wave = 0; wave < 3; wave++) {
+      const wy = 5 + wave * 12;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 10) {
+        const y = wy + Math.sin(x * 0.02 + gameTime * (1.5 + wave * 0.3)) * (4 + wave * 2);
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // Stronger sun rays overlay
+    ctx.globalAlpha = 0.04;
+    for (let i = 0; i < 3; i++) {
+      const rx = W * (0.25 + i * 0.25) + Math.sin(gameTime * 0.3 + i) * 20;
+      const rw = 60 + i * 15;
+      const grad = ctx.createLinearGradient(rx, 0, rx, H * 0.5);
+      grad.addColorStop(0, '#ffffcc');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(rx - rw / 2, 0);
+      ctx.lineTo(rx - rw * 2, H * 0.5);
+      ctx.lineTo(rx + rw * 2, H * 0.5);
+      ctx.lineTo(rx + rw / 2, 0);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Twilight zone: marine snow and dark algae
+  if (currentZone === 'twilight' && zoneDecor) {
+    ctx.save();
+    // Marine snow (descending particles)
+    ctx.fillStyle = 'rgba(180,200,220,0.3)';
+    for (const s of zoneDecor.twilight.snow) {
+      const sy = (s.y + gameTime * s.speed * 30) % (H + 20) - 10;
+      const sx = s.x + Math.sin(gameTime * 0.5 + s.drift) * 15;
+      ctx.globalAlpha = 0.15 + 0.1 * Math.sin(gameTime + s.drift);
+      ctx.beginPath();
+      ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Dark algae from bottom
+    for (const a of zoneDecor.twilight.algae) {
+      ctx.globalAlpha = 0.12;
+      ctx.strokeStyle = '#334455';
+      ctx.lineWidth = a.w;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(a.x, H);
+      const wave = Math.sin(gameTime * 1.2 + a.x * 0.01) * 15;
+      ctx.quadraticCurveTo(a.x + wave, H - a.h * 0.5, a.x + wave * 1.5, H - a.h);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // Reef zone: visible currents (water streaks)
   if (currentZone === 'reef') {
     ctx.save();
@@ -2339,36 +2562,103 @@ function render() {
     ctx.restore();
   }
 
-  // Reef zone: coral silhouettes at bottom
-  if (currentZone === 'reef') {
+  // Reef zone: detailed corals and anemones
+  if (currentZone === 'reef' && zoneDecor) {
     ctx.save();
-    ctx.globalAlpha = 0.08;
-    ctx.fillStyle = '#44aa88';
-    for (let i = 0; i < 8; i++) {
-      const cx = W * (i / 8 + 0.02);
-      const ch = 30 + Math.sin(i * 2.7) * 25;
-      const cw = 20 + Math.sin(i * 1.3) * 12;
+    // Corals
+    for (const c of zoneDecor.reef.corals) {
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = c.color;
+      if (c.type === 0) {
+        // Branch coral
+        ctx.beginPath();
+        ctx.moveTo(c.x, H);
+        ctx.lineTo(c.x - c.w * 0.3, H - c.h * 0.6);
+        ctx.lineTo(c.x - c.w * 0.5, H - c.h);
+        ctx.lineTo(c.x - c.w * 0.1, H - c.h * 0.7);
+        ctx.lineTo(c.x + c.w * 0.2, H - c.h * 0.9);
+        ctx.lineTo(c.x + c.w * 0.4, H - c.h * 0.5);
+        ctx.lineTo(c.x + c.w * 0.3, H);
+        ctx.fill();
+      } else if (c.type === 1) {
+        // Mushroom coral
+        ctx.beginPath();
+        ctx.moveTo(c.x - c.w * 0.15, H);
+        ctx.lineTo(c.x - c.w * 0.15, H - c.h * 0.6);
+        ctx.ellipse(c.x, H - c.h * 0.6, c.w * 0.5, c.h * 0.4, 0, Math.PI, 0);
+        ctx.lineTo(c.x + c.w * 0.15, H);
+        ctx.fill();
+      } else {
+        // Fan coral
+        ctx.beginPath();
+        ctx.moveTo(c.x, H);
+        ctx.quadraticCurveTo(c.x - c.w * 0.8, H - c.h * 0.5, c.x - c.w * 0.3, H - c.h);
+        ctx.quadraticCurveTo(c.x, H - c.h * 1.1, c.x + c.w * 0.3, H - c.h);
+        ctx.quadraticCurveTo(c.x + c.w * 0.8, H - c.h * 0.5, c.x, H);
+        ctx.fill();
+      }
+    }
+    // Anemones (gentle wave)
+    for (const a of zoneDecor.reef.anemones) {
+      ctx.globalAlpha = 0.2;
+      ctx.strokeStyle = a.color;
+      ctx.lineWidth = 2;
+      for (let t = 0; t < a.tentacles; t++) {
+        const tx = a.x + (t - a.tentacles / 2) * 6;
+        const wave = Math.sin(gameTime * 2 + t * 0.7) * 8;
+        ctx.beginPath();
+        ctx.moveTo(tx, a.y);
+        ctx.quadraticCurveTo(tx + wave, a.y - a.len * 0.6, tx + wave * 1.5, a.y - a.len);
+        ctx.stroke();
+      }
+      // Base
+      ctx.fillStyle = a.color;
+      ctx.globalAlpha = 0.15;
       ctx.beginPath();
-      ctx.ellipse(cx, H - 5, cw, ch, 0, Math.PI, 0);
+      ctx.ellipse(a.x, a.y, a.tentacles * 4, 5, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
   }
 
-  // Abyss zone: scattered bioluminescent particles in background
-  if (currentZone === 'abyss') {
+  // Abyss zone: bioluminescent lights and hydrothermal vents
+  if (currentZone === 'abyss' && zoneDecor) {
     ctx.save();
-    const bioTime = gameTime * 0.5;
-    for (let i = 0; i < 15; i++) {
-      const bx = (W * (0.1 + (i * 0.137) % 0.8) + Math.sin(bioTime + i * 1.7) * 30) % W;
-      const by = (H * (0.1 + (i * 0.191) % 0.8) + Math.cos(bioTime + i * 2.3) * 20) % H;
-      const pulse = 0.3 + 0.7 * Math.sin(bioTime * 2 + i * 0.9);
-      ctx.globalAlpha = pulse * 0.15;
-      const colors = ['#00ffcc', '#ff00ff', '#4488ff', '#ffff00'];
-      ctx.fillStyle = colors[i % colors.length];
+    // Bioluminescent particles
+    for (const l of zoneDecor.abyss.lights) {
+      const pulse = 0.3 + 0.7 * Math.sin(gameTime * 0.8 + l.phase);
+      ctx.globalAlpha = pulse * 0.2;
+      ctx.fillStyle = l.color;
       ctx.beginPath();
-      ctx.arc(bx, by, 2 + pulse * 2, 0, Math.PI * 2);
+      ctx.arc(l.x, l.y, l.size + pulse * 2, 0, Math.PI * 2);
       ctx.fill();
+      // Soft glow
+      ctx.globalAlpha = pulse * 0.06;
+      ctx.beginPath();
+      ctx.arc(l.x, l.y, l.size * 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Hydrothermal vents at bottom
+    for (const v of zoneDecor.abyss.vents) {
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = '#222';
+      // Vent silhouette
+      ctx.beginPath();
+      ctx.moveTo(v.x - v.w / 2, H);
+      ctx.lineTo(v.x - v.w * 0.3, H - v.h);
+      ctx.quadraticCurveTo(v.x, H - v.h - 10, v.x + v.w * 0.3, H - v.h);
+      ctx.lineTo(v.x + v.w / 2, H);
+      ctx.fill();
+      // Rising heat bubbles from vent
+      ctx.globalAlpha = 0.12;
+      for (let b = 0; b < 4; b++) {
+        const by = H - v.h - ((gameTime * 20 + b * 30) % (v.h + 40));
+        const bx = v.x + Math.sin(gameTime * 2 + b * 1.5) * 8;
+        ctx.fillStyle = 'rgba(200,200,200,0.3)';
+        ctx.beginPath();
+        ctx.arc(bx, by, 2 + 0.3 * Math.sin(gameTime + b), 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.restore();
   }
@@ -2425,14 +2715,14 @@ function render() {
         }
       }
 
-      drawFish(f.x, f.y, r, f.angle, f.tier, f.mouthOpen, f.tailPhase, false, currentZone);
+      drawFish(f.x, f.y, r, f.angle, f.tier, f.mouthOpen, f.tailPhase, false, currentZone, f.bodyRatioW, f.bodyRatioH);
     }
   }
 
   // Abyss ambush predators (drawn with variable opacity + warning eye glow)
   for (const a of ambushFish) {
     ctx.globalAlpha = a.opacity;
-    drawFish(a.x, a.y, a.radius, a.angle, a.tier, a.mouthOpen, a.tailPhase, false, 'abyss');
+    drawFish(a.x, a.y, a.radius, a.angle, a.tier, a.mouthOpen, a.tailPhase, false, 'abyss', 1, 1);
 
     // Warning phase: bioluminescent eye glow before activation
     if (a.warning && !a.activated) {
@@ -2616,7 +2906,7 @@ function render() {
         ctx.shadowBlur = 20;
       }
     } else {
-      ctx.font = 'bold 16px "Segoe UI", system-ui, sans-serif';
+      ctx.font = 'bold 20px "Segoe UI", system-ui, sans-serif';
       ctx.shadowBlur = 0;
     }
     ctx.fillStyle = ft.color;
@@ -2669,52 +2959,72 @@ function gameOver() {
   }
 
   const timeSurvived = ((performance.now() - startTime) / 1000).toFixed(1);
+  const minutes = Math.floor(timeSurvived / 60);
+  const seconds = (timeSurvived % 60).toFixed(0);
+  const timeStr = minutes > 0 ? `${minutes}min ${seconds}s` : `${timeSurvived}s`;
+
+  // Death title
+  const deathTitle = deathReason === 'oxygen'
+    ? 'Plus d\'air ! 🫧💀'
+    : 'Tu t\'es fait manger ! 🐟💀';
 
   // Build stats HTML
-  let statsHTML = '';
+  let html = '';
 
-  const addStat = (label, value, isRecord) => {
-    const cls = isRecord ? 'stat-value record' : 'stat-value';
-    statsHTML += `<div class="stat-row"><span class="stat-label">${label}</span><span class="${cls}">${value}</span></div>`;
-  };
+  // Death title
+  html += `<div class="death-title">${deathTitle}</div>`;
 
-  addStat('Score', finalScore, isNewRecord);
-  addStat('Poissons mangés', totalFishEaten, false);
-  addStat('Taille max', TIER_NAMES[maxTierReached], false);
-  addStat('Profondeur max', depthLevel > 1 ? `Profondeur ${maxDepthReached}` : 'Surface', false);
-  if (bestFrenzy > 0) addStat('Meilleur Frenzy', `x${bestFrenzy}`, false);
-  addStat('Temps', `${timeSurvived}s`, false);
-
-  // Motivational message
-  let motivMsg = '';
+  // Score in vedette
+  html += `<div class="final-score${isNewRecord ? ' record' : ''}">${finalScore}</div>`;
   if (isNewRecord) {
-    motivMsg = `<div style="color:#ffcc00;font-weight:700;margin-bottom:8px;font-size:16px;text-shadow:0 0 12px rgba(255,200,0,.4)">🏆 Nouveau record !</div>`;
-  } else if (player && player.tier < TIER_COUNT - 1) {
-    const remaining = TIER_THRESHOLDS[player.tier] - player.eaten;
-    if (remaining <= 3 && remaining > 0) {
-      motivMsg = `<div style="color:#80e0ff;font-weight:600;margin-bottom:8px;font-size:14px">${remaining} poisson${remaining > 1 ? 's' : ''} de plus et tu montais de tier !</div>`;
+    html += `<div class="record-badge">🏆 Nouveau record !</div>`;
+  } else if (highScore > 0) {
+    html += `<div style="font-size:13px;opacity:.5;margin-bottom:8px">Record : ${highScore}</div>`;
+  }
+
+  // Visual fish summary by tier color
+  let hasFishStats = false;
+  let fishHtml = '<div class="fish-summary">';
+  for (let t = 0; t < TIER_COUNT; t++) {
+    if (fishEatenByTier[t] > 0) {
+      hasFishStats = true;
+      const color = TIER_COLORS[t].body;
+      fishHtml += `<div class="fish-summary-item"><span class="fish-dot" style="background:${color}"></span>×${fishEatenByTier[t]}</div>`;
     }
   }
-  if (maxTierReached > 1 && !motivMsg) {
-    const prevMax = parseInt(localStorage.getItem('deepfeed_maxTier') || '1', 10);
-    if (maxTierReached > prevMax) {
-      motivMsg = `<div style="color:#80e0ff;font-weight:600;margin-bottom:8px;font-size:14px">Tu as débloqué : ${ZONE_NAMES[maxTierReached]} !</div>`;
+  fishHtml += '</div>';
+  if (hasFishStats) html += fishHtml;
+
+  // Progress hint (how close to next tier)
+  if (player && player.tier < TIER_COUNT - 1) {
+    const pointsNeeded = TIER_THRESHOLDS[player.tier] - player.eaten;
+    const progressPct = (player.eaten / TIER_THRESHOLDS[player.tier]) * 100;
+    if (pointsNeeded > 0 && pointsNeeded <= TIER_THRESHOLDS[player.tier]) {
+      const nextName = TIER_NAMES[player.tier + 1];
+      html += `<div class="progress-hint">Encore un peu et tu grandissais ! 🐟→${nextName}</div>`;
+      html += `<div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${Math.min(100, progressPct)}%"></div></div>`;
     }
   }
-  if (!motivMsg) {
-    const msgs = ['Presque ! Encore un essai ?', 'Tu t\'améliores !', 'La prochaine sera la bonne !', 'Plus profond, plus fort !'];
-    motivMsg = `<div style="color:rgba(255,255,255,.6);font-weight:500;margin-bottom:8px;font-size:13px">${msgs[Math.floor(Math.random() * msgs.length)]}</div>`;
-  }
-  // Save max tier for future comparison
-  const prevMaxTier = parseInt(localStorage.getItem('deepfeed_maxTier') || '1', 10);
-  if (maxTierReached > prevMaxTier) localStorage.setItem('deepfeed_maxTier', String(maxTierReached));
 
-  statsHTML = motivMsg + statsHTML;
+  // Stats rows
+  html += '<div id="end-stats-rows">';
+  const addStat = (label, value) => {
+    html += `<div class="stat-row"><span class="stat-label">${label}</span><span class="stat-value">${value}</span></div>`;
+  };
+  addStat('Taille max', TIER_NAMES[maxTierReached]);
+  if (depthLevel > 1) addStat('Profondeur max', `${maxDepthReached}`);
+  if (bestFrenzy > 0) addStat('Meilleur combo', `${bestFrenzy} d\'affilée`);
+  addStat('Durée', timeStr);
+  html += '</div>';
 
-  endStatsEl.innerHTML = statsHTML;
+  endStatsEl.innerHTML = html;
   playBtn.textContent = 'Replonger';
   overlay.classList.remove('hidden');
   updateHUD();
+
+  // Save max tier
+  const prevMaxTier = parseInt(localStorage.getItem('deepfeed_maxTier') || '1', 10);
+  if (maxTierReached > prevMaxTier) localStorage.setItem('deepfeed_maxTier', String(maxTierReached));
 
   initTitleAmbient();
   titleLastTime = performance.now();
@@ -2868,10 +3178,11 @@ function titleLoop(timestamp) {
 }
 
 initTitleAmbient();
+generateZoneDecor();
 titleLastTime = performance.now();
 titleRafId = requestAnimationFrame(titleLoop);
 
-if (highScore > 0) highScoreEl.textContent = `Best: ${highScore}`;
+if (highScore > 0) highScoreEl.textContent = `Record : ${highScore}`;
 
 // ============================================================
 //  TESTS (run with ?test URL param)
