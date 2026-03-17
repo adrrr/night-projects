@@ -141,11 +141,44 @@ export function gameOver() {
   addStat('Dur\u00E9e', timeStr);
   html += '</div>';
 
+  // Depth retry system
+  let retryRemaining = 0;
+  if (G.depthLevel >= 2) {
+    // New depth or same depth retry?
+    if (G.retryDepthLevel !== G.depthLevel) {
+      // First death at this depth — start fresh retry sequence
+      G.retryDepthLevel = G.depthLevel;
+      G.depthRetryCount = 1;
+    } else {
+      G.depthRetryCount++;
+    }
+
+    if (G.depthRetryCount <= 3) {
+      retryRemaining = 3 - G.depthRetryCount;
+      html += `<div class="depth-retry-info">Tentative ${G.depthRetryCount}/3 à la Profondeur ${G.depthLevel}</div>`;
+    } else {
+      // Exhausted retries
+      html += `<div class="depth-retry-info exhausted">Retour à la Profondeur 1...</div>`;
+      G.retryDepthLevel = 0;
+      G.depthRetryCount = 0;
+    }
+  } else {
+    // Died at depth 1 — reset retry state
+    G.retryDepthLevel = 0;
+    G.depthRetryCount = 0;
+  }
+
   const endStatsEl = document.getElementById('end-stats');
   if (endStatsEl) endStatsEl.innerHTML = html;
 
   const playBtn = document.getElementById('play-btn');
-  if (playBtn) playBtn.textContent = 'Replonger';
+  if (playBtn) {
+    if (retryRemaining > 0) {
+      playBtn.textContent = `Réessayer (${retryRemaining} restante${retryRemaining > 1 ? 's' : ''})`;
+    } else {
+      playBtn.textContent = 'Replonger';
+    }
+  }
 
   const overlay = document.getElementById('overlay');
   if (overlay) overlay.classList.remove('hidden');

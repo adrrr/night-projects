@@ -193,6 +193,13 @@ function initGame() {
   const pauseOverlayEl = document.getElementById('pause-overlay');
   if (pauseOverlayEl) pauseOverlayEl.classList.remove('visible');
 
+  // Apply depth retry if retrying at a higher depth
+  if (G.retryDepthLevel > 0 && G.depthRetryCount <= 3) {
+    G.depthLevel = G.retryDepthLevel;
+    G.maxDepthReached = G.retryDepthLevel;
+    G.scoreMultiplier = G.retryDepthLevel;
+  }
+
   generateZoneDecor();
 
   // Spawn initial population

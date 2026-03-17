@@ -82,6 +82,10 @@ const G = {
   inPrestige: false,
   prestigeTimer: 0,
 
+  // Depth retry (persists between games)
+  depthRetryCount: 0,
+  retryDepthLevel: 0,
+
   // Frenzy
   recentEats: [],
   frenzyActive: false,
