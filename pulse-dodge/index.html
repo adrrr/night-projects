@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Pulse Dodge</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0a0f;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  #ui {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+  }
+  #score-display {
+    margin-top: max(20px, env(safe-area-inset-top, 20px));
+    font-size: clamp(28px, 6vw, 48px);
+    font-weight: bold;
+    text-shadow: 0 0 20px rgba(0, 255, 200, 0.8), 0 0 40px rgba(0, 255, 200, 0.4);
+    letter-spacing: 4px;
+    opacity: 0.9;
+  }
+  #high-score {
+    font-size: clamp(12px, 2.5vw, 16px);
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: 4px;
+    letter-spacing: 2px;
+  }
+  #start-screen {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    cursor: pointer;
+    z-index: 10;
+  }
+  #start-screen h1 {
+    font-size: clamp(36px, 10vw, 72px);
+    font-weight: bold;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, #00ffc8, #ff00aa, #00aaff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: titlePulse 2s ease-in-out infinite;
+  }
+  #start-screen p {
+    font-size: clamp(14px, 3vw, 20px);
+    color: rgba(255,255,255,0.5);
+    margin-top: 20px;
+    animation: blink 1.5s ease-in-out infinite;
+  }
+  @keyframes titlePulse {
+    0%, 100% { filter: brightness(1); transform: scale(1); }
+    50% { filter: brightness(1.3); transform: scale(1.02); }
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+  #death-screen {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    cursor: pointer;
+    z-index: 10;
+  }
+  #death-screen h2 {
+    font-size: clamp(24px, 7vw, 48px);
+    color: #ff3366;
+    text-shadow: 0 0 30px rgba(255, 51, 102, 0.6);
+    letter-spacing: 4px;
+  }
+  #death-score {
+    font-size: clamp(40px, 12vw, 80px);
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(255,255,255,0.5);
+    margin: 10px 0;
+  }
+  #death-best {
+    font-size: clamp(14px, 3vw, 18px);
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 30px;
+  }
+  #new-best {
+    font-size: clamp(16px, 3.5vw, 22px);
+    color: #ffcc00;
+    text-shadow: 0 0 15px rgba(255, 204, 0, 0.6);
+    display: none;
+    margin-bottom: 10px;
+    animation: blink 0.8s ease-in-out infinite;
+  }
+  #death-screen p {
+    font-size: clamp(14px, 3vw, 18px);
+    color: rgba(255,255,255,0.5);
+    animation: blink 1.5s ease-in-out infinite;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="score-display">0</div>
+  <div id="high-score"></div>
+</div>
+<div id="start-screen">
+  <h1>Pulse Dodge</h1>
+  <p>Tap anywhere to start</p>
+</div>
+<div id="death-screen">
+  <h2>SHATTERED</h2>
+  <div id="new-best">NEW BEST!</div>
+  <div id="death-score">0</div>
+  <div id="death-best">BEST: 0</div>
+  <p>Tap to retry</p>
+</div>
+
+<script>
+// ─── Canvas Setup ───
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, CX, CY, arenaR;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = canvas.width = window.innerWidth * dpr;
+  H = canvas.height = window.innerHeight * dpr;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  CX = W / 2;
+  CY = H / 2;
+  arenaR = Math.min(W, H) * 0.44;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Audio ───
+let audioCtx;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, dur, vol = 0.15, type = 'sine') {
+  if (!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g).connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime + dur);
+}
+
+function sfxDodge() {
+  playTone(600 + Math.random() * 400, 0.08, 0.08, 'sine');
+}
+function sfxNearMiss() {
+  playTone(900, 0.1, 0.2, 'triangle');
+  playTone(1200, 0.15, 0.12, 'sine');
+}
+function sfxDeath() {
+  playTone(200, 0.6, 0.3, 'sawtooth');
+  playTone(100, 0.8, 0.25, 'square');
+  setTimeout(() => playTone(60, 1, 0.2, 'sawtooth'), 100);
+}
+function sfxStart() {
+  playTone(400, 0.1, 0.1, 'sine');
+  setTimeout(() => playTone(600, 0.1, 0.1, 'sine'), 80);
+  setTimeout(() => playTone(900, 0.15, 0.12, 'sine'), 160);
+}
+
+// ─── Game State ───
+let state = 'menu'; // menu, playing, dead
+let score = 0;
+let highScore = parseInt(localStorage.getItem('pulseDodgeHigh')) || 0;
+let rings = [];
+let particles = [];
+let bgParticles = [];
+let shakeAmount = 0;
+let shakeTime = 0;
+let pulseFlash = 0;
+let comboMultiplier = 1;
+let nearMissStreak = 0;
+let lastTime = 0;
+let spawnTimer = 0;
+let difficultyTimer = 0;
+
+// Player
+const player = { angle: -Math.PI / 2, dist: 0, targetAngle: -Math.PI / 2, targetDist: 0, radius: 0, trail: [] };
+
+// ─── Difficulty Scaling ───
+function getSpawnInterval() { return Math.max(0.6, 1.8 - score * 0.025); }
+function getRingSpeed() { return arenaR * (0.28 + score * 0.012 + Math.min(score * 0.005, 0.3)); }
+function getGapSize() { return Math.max(0.35, 0.85 - score * 0.012); }
+function getNumGaps() { return score < 10 ? 2 : score < 25 ? Math.random() < 0.5 ? 2 : 3 : Math.random() < 0.3 ? 1 : 2; }
+
+// ─── Ring System ───
+function spawnRing() {
+  const numGaps = getNumGaps();
+  const gapSize = getGapSize();
+  const gaps = [];
+  // Ensure at least one gap is reachable from the player's current position
+  const playerAngle = player.angle;
+  // First gap near-ish the player (with some offset for challenge)
+  const offset = (Math.random() - 0.5) * 1.2;
+  gaps.push(playerAngle + offset);
+  for (let i = 1; i < numGaps; i++) {
+    gaps.push(playerAngle + offset + (Math.PI * 2 / numGaps) * i);
+  }
+  // Slight rotation randomness
+  const drift = (Math.random() - 0.5) * 0.5;
+  gaps.forEach((_, i) => gaps[i] += drift);
+
+  const hue = (score * 25 + Math.random() * 60) % 360;
+  rings.push({
+    radius: arenaR + 60,
+    speed: getRingSpeed(),
+    gaps,
+    gapSize,
+    hue,
+    scored: false,
+    alpha: 1,
+    thickness: 3 + Math.random() * 2
+  });
+}
+
+// ─── Particles ───
+function spawnParticles(x, y, count, hue, speed = 200, life = 0.8) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = speed * (0.3 + Math.random() * 0.7);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      life,
+      maxLife: life,
+      hue,
+      size: 2 + Math.random() * 4
+    });
+  }
+}
+
+function initBgParticles() {
+  bgParticles = [];
+  for (let i = 0; i < 60; i++) {
+    bgParticles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: 0.5 + Math.random() * 1.5,
+      speed: 5 + Math.random() * 15,
+      alpha: 0.1 + Math.random() * 0.3
+    });
+  }
+}
+initBgParticles();
+
+// ─── Collision ───
+function isInGap(angle, ring) {
+  for (const gapCenter of ring.gaps) {
+    let diff = angle - gapCenter;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    if (Math.abs(diff) < ring.gapSize / 2) return true;
+  }
+  return false;
+}
+
+function checkCollision(ring) {
+  const px = CX + Math.cos(player.angle) * player.dist;
+  const py = CY + Math.sin(player.angle) * player.dist;
+  const playerR = player.radius;
+  const ringInner = ring.radius - ring.thickness * 2;
+  const ringOuter = ring.radius + ring.thickness * 2;
+  const distFromCenter = Math.sqrt((px - CX) ** 2 + (py - CY) ** 2);
+
+  if (distFromCenter + playerR > ringInner && distFromCenter - playerR < ringOuter) {
+    if (!isInGap(player.angle, ring)) {
+      return 'hit';
+    }
+    // Check near miss
+    let minGapDist = Infinity;
+    for (const gapCenter of ring.gaps) {
+      let diff = player.angle - gapCenter;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      minGapDist = Math.min(minGapDist, Math.abs(diff));
+    }
+    if (minGapDist < ring.gapSize / 2 && minGapDist > ring.gapSize / 2 - 0.15) {
+      return 'near';
+    }
+    return 'safe';
+  }
+  return 'none';
+}
+
+// ─── Input ───
+let inputActive = false;
+let inputX = 0, inputY = 0;
+let keys = {};
+
+function handlePointerStart(x, y) {
+  const dpr = window.devicePixelRatio || 1;
+  inputActive = true;
+  inputX = x * dpr;
+  inputY = y * dpr;
+  updatePlayerTarget();
+}
+function handlePointerMove(x, y) {
+  if (!inputActive) return;
+  const dpr = window.devicePixelRatio || 1;
+  inputX = x * dpr;
+  inputY = y * dpr;
+  updatePlayerTarget();
+}
+function handlePointerEnd() { inputActive = false; }
+
+function updatePlayerTarget() {
+  const dx = inputX - CX;
+  const dy = inputY - CY;
+  player.targetAngle = Math.atan2(dy, dx);
+  player.targetDist = Math.min(Math.sqrt(dx * dx + dy * dy), arenaR - player.radius * 2);
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (state === 'menu') { startGame(); return; }
+  if (state === 'dead') { startGame(); return; }
+  handlePointerStart(e.clientX, e.clientY);
+});
+canvas.addEventListener('pointermove', e => {
+  e.preventDefault();
+  handlePointerMove(e.clientX, e.clientY);
+});
+canvas.addEventListener('pointerup', e => { e.preventDefault(); handlePointerEnd(); });
+canvas.addEventListener('pointercancel', e => { e.preventDefault(); handlePointerEnd(); });
+
+document.getElementById('start-screen').addEventListener('click', () => { if (state === 'menu') startGame(); });
+document.getElementById('death-screen').addEventListener('click', () => { if (state === 'dead') startGame(); });
+
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (state === 'menu' || state === 'dead') { if (e.key === ' ' || e.key === 'Enter') startGame(); }
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// ─── Game Control ───
+function startGame() {
+  ensureAudio();
+  sfxStart();
+  state = 'playing';
+  score = 0;
+  rings = [];
+  particles = [];
+  spawnTimer = 0;
+  difficultyTimer = 0;
+  shakeAmount = 0;
+  pulseFlash = 0;
+  nearMissStreak = 0;
+  player.angle = -Math.PI / 2;
+  player.dist = 0;
+  player.targetAngle = -Math.PI / 2;
+  player.targetDist = 0;
+  player.radius = Math.max(8, arenaR * 0.028);
+  player.trail = [];
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('death-screen').style.display = 'none';
+  document.getElementById('score-display').textContent = '0';
+  updateHighScoreDisplay();
+  lastTime = performance.now();
+}
+
+function die() {
+  state = 'dead';
+  sfxDeath();
+  const px = CX + Math.cos(player.angle) * player.dist;
+  const py = CY + Math.sin(player.angle) * player.dist;
+  spawnParticles(px, py, 80, 0, 400, 1.2);
+  spawnParticles(px, py, 40, 30, 250, 0.8);
+  shakeAmount = 20;
+  shakeTime = 0.5;
+
+  const isNewBest = score > highScore;
+  if (isNewBest) {
+    highScore = score;
+    localStorage.setItem('pulseDodgeHigh', highScore);
+  }
+
+  setTimeout(() => {
+    document.getElementById('death-screen').style.display = 'flex';
+    document.getElementById('death-score').textContent = score;
+    document.getElementById('death-best').textContent = 'BEST: ' + highScore;
+    document.getElementById('new-best').style.display = isNewBest ? 'block' : 'none';
+  }, 400);
+}
+
+function updateHighScoreDisplay() {
+  const el = document.getElementById('high-score');
+  el.textContent = highScore > 0 ? 'BEST: ' + highScore : '';
+}
+
+// ─── Update ───
+function update(dt) {
+  if (state !== 'playing') {
+    // Still update particles and bg
+    updateParticles(dt);
+    updateBg(dt);
+    return;
+  }
+
+  // Keyboard movement
+  const moveSpeed = arenaR * 2.5 * dt;
+  const rotSpeed = 3.5 * dt;
+  if (!inputActive) {
+    if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.targetAngle -= rotSpeed;
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) player.targetAngle += rotSpeed;
+    if (keys['ArrowUp'] || keys['w'] || keys['W']) player.targetDist = Math.min(player.targetDist + moveSpeed, arenaR - player.radius * 2);
+    if (keys['ArrowDown'] || keys['s'] || keys['S']) player.targetDist = Math.max(player.targetDist - moveSpeed, 0);
+  }
+
+  // Smooth player movement
+  let angleDiff = player.targetAngle - player.angle;
+  while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+  while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+  player.angle += angleDiff * Math.min(1, 12 * dt);
+  player.dist += (player.targetDist - player.dist) * Math.min(1, 10 * dt);
+
+  // Trail
+  const px = CX + Math.cos(player.angle) * player.dist;
+  const py = CY + Math.sin(player.angle) * player.dist;
+  player.trail.unshift({ x: px, y: py, life: 1 });
+  if (player.trail.length > 20) player.trail.pop();
+  for (const t of player.trail) t.life -= dt * 4;
+  player.trail = player.trail.filter(t => t.life > 0);
+
+  // Spawn rings
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) {
+    spawnRing();
+    spawnTimer = getSpawnInterval();
+  }
+
+  // Update rings
+  for (const ring of rings) {
+    ring.radius -= ring.speed * dt;
+
+    // Score when ring passes center
+    if (!ring.scored && ring.radius < player.dist + player.radius) {
+      const result = checkCollision(ring);
+      if (result === 'hit') {
+        die();
+        return;
+      }
+      ring.scored = true;
+      score++;
+      document.getElementById('score-display').textContent = score;
+      sfxDodge();
+      pulseFlash = 0.3;
+      if (result === 'near') {
+        nearMissStreak++;
+        sfxNearMiss();
+        shakeAmount = 6;
+        shakeTime = 0.15;
+        spawnParticles(px, py, 12, 60, 120, 0.4);
+      }
+    }
+
+    // Continuous collision check
+    if (!ring.scored) {
+      const result = checkCollision(ring);
+      if (result === 'hit') {
+        die();
+        return;
+      }
+    }
+  }
+
+  // Remove rings that passed center
+  rings = rings.filter(r => r.radius > -50);
+
+  // Shake decay
+  if (shakeTime > 0) {
+    shakeTime -= dt;
+    if (shakeTime <= 0) shakeAmount = 0;
+  }
+  pulseFlash = Math.max(0, pulseFlash - dt * 2);
+
+  updateParticles(dt);
+  updateBg(dt);
+}
+
+function updateParticles(dt) {
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.97;
+    p.vy *= 0.97;
+    p.life -= dt;
+  }
+  particles = particles.filter(p => p.life > 0);
+}
+
+function updateBg(dt) {
+  for (const p of bgParticles) {
+    p.y -= p.speed * dt;
+    if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W; }
+  }
+}
+
+// ─── Render ───
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient
+  const bgGrad = ctx.createRadialGradient(CX, CY, 0, CX, CY, arenaR * 1.5);
+  bgGrad.addColorStop(0, '#0d0d1a');
+  bgGrad.addColorStop(1, '#050508');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // BG particles
+  for (const p of bgParticles) {
+    ctx.fillStyle = `rgba(100, 140, 255, ${p.alpha})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.save();
+  // Screen shake
+  if (shakeAmount > 0 && shakeTime > 0) {
+    const sx = (Math.random() - 0.5) * shakeAmount * 2;
+    const sy = (Math.random() - 0.5) * shakeAmount * 2;
+    ctx.translate(sx, sy);
+  }
+
+  // Pulse flash overlay
+  if (pulseFlash > 0) {
+    ctx.fillStyle = `rgba(0, 255, 200, ${pulseFlash * 0.08})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Arena boundary
+  ctx.beginPath();
+  ctx.arc(CX, CY, arenaR, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(40, 60, 100, 0.3)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Subtle grid rings
+  for (let r = arenaR * 0.25; r < arenaR; r += arenaR * 0.25) {
+    ctx.beginPath();
+    ctx.arc(CX, CY, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(30, 50, 80, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Render rings
+  for (const ring of rings) {
+    if (ring.radius < 0) continue;
+    const alpha = ring.radius < 30 ? ring.radius / 30 : 1;
+    ctx.lineWidth = ring.thickness;
+
+    // Draw ring segments (skip gaps)
+    const segments = [];
+    // Sort gaps and build arc segments
+    const sortedGaps = [...ring.gaps].sort((a, b) => a - b);
+    const halfGap = ring.gapSize / 2;
+
+    // Build the full ring as arcs between gaps
+    ctx.beginPath();
+    for (let a = 0; a < Math.PI * 2; a += 0.02) {
+      const worldAngle = a;
+      let inGap = false;
+      for (const gc of ring.gaps) {
+        let diff = worldAngle - gc;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        if (Math.abs(diff) < halfGap) { inGap = true; break; }
+      }
+      if (!inGap) {
+        const x = CX + Math.cos(worldAngle) * ring.radius;
+        const y = CY + Math.sin(worldAngle) * ring.radius;
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(worldAngle) * 0.5, y + Math.sin(worldAngle) * 0.5);
+      }
+    }
+
+    // Actually draw the ring properly with arcs
+    ctx.beginPath();
+    // Draw filled arcs between gaps
+    const gapAngles = ring.gaps.map(g => {
+      let a = g % (Math.PI * 2);
+      if (a < 0) a += Math.PI * 2;
+      return a;
+    }).sort((a, b) => a - b);
+
+    if (gapAngles.length === 0) {
+      ctx.arc(CX, CY, ring.radius, 0, Math.PI * 2);
+    } else {
+      for (let i = 0; i < gapAngles.length; i++) {
+        const gapEnd = gapAngles[i] + halfGap;
+        const nextGapStart = gapAngles[(i + 1) % gapAngles.length] - halfGap;
+        let start = gapEnd;
+        let end = nextGapStart;
+        if (i === gapAngles.length - 1) end += Math.PI * 2;
+        if (end > start + 0.01) {
+          ctx.moveTo(CX + Math.cos(start) * ring.radius, CY + Math.sin(start) * ring.radius);
+          ctx.arc(CX, CY, ring.radius, start, end);
+        }
+      }
+    }
+
+    // Glow
+    ctx.shadowColor = `hsla(${ring.hue}, 100%, 60%, ${alpha * 0.6})`;
+    ctx.shadowBlur = 15;
+    ctx.strokeStyle = `hsla(${ring.hue}, 90%, 55%, ${alpha * 0.9})`;
+    ctx.stroke();
+
+    // Brighter inner
+    ctx.shadowBlur = 5;
+    ctx.lineWidth = ring.thickness * 0.4;
+    ctx.strokeStyle = `hsla(${ring.hue}, 80%, 80%, ${alpha})`;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // Player trail
+  if (state === 'playing') {
+    for (let i = 0; i < player.trail.length; i++) {
+      const t = player.trail[i];
+      const a = t.life * 0.5;
+      const r = player.radius * t.life;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0, 255, 200, ${a})`;
+      ctx.fill();
+    }
+
+    // Player orb
+    const px = CX + Math.cos(player.angle) * player.dist;
+    const py = CY + Math.sin(player.angle) * player.dist;
+
+    // Outer glow
+    const orbGrad = ctx.createRadialGradient(px, py, 0, px, py, player.radius * 3);
+    orbGrad.addColorStop(0, 'rgba(0, 255, 200, 0.3)');
+    orbGrad.addColorStop(1, 'rgba(0, 255, 200, 0)');
+    ctx.fillStyle = orbGrad;
+    ctx.beginPath();
+    ctx.arc(px, py, player.radius * 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.beginPath();
+    ctx.arc(px, py, player.radius, 0, Math.PI * 2);
+    ctx.shadowColor = '#00ffc8';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#00ffc8';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Inner highlight
+    ctx.beginPath();
+    ctx.arc(px, py, player.radius * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.fill();
+  }
+
+  // Particles
+  for (const p of particles) {
+    const a = p.life / p.maxLife;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * a, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${p.hue}, 100%, 60%, ${a})`;
+    ctx.shadowColor = `hsla(${p.hue}, 100%, 60%, ${a * 0.5})`;
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.restore();
+}
+
+// ─── Game Loop ───
+function gameLoop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+  update(dt);
+  render();
+  requestAnimationFrame(gameLoop);
+}
+lastTime = performance.now();
+updateHighScoreDisplay();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

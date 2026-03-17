@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🎯 **[Pulse Dodge](https://adrrr.github.io/night-projects/pulse-dodge/)**
+Jeu d'esquive dans une arène circulaire — des anneaux néon pulsent vers le centre avec des gaps à traverser. Déplace ton orbe en drag/touch ou WASD. Difficulté progressive (anneaux plus rapides, gaps plus étroits), near-miss screen shake, explosion de 80 particules à la mort, Web Audio (dodge pings, death bass rumble), high score localStorage. Mobile-first + desktop. Zéro dépendance.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/pulse-dodge/)
+
 ### 🐍 **[Neon Snake](https://adrrr.github.io/night-projects/neon-snake/)**
 Snake game néon — corps cyan-magenta gradient avec glow et trail ghost, particules explosives multicolores quand on mange, Web Audio API (eat chime, death sound, ambient bass pulse), vitesse progressive (8→22 moves/sec), high score localStorage, pause, start/game-over screens. Swipe + tap mobile, arrow keys + WASD desktop. 729 lignes, zéro dépendance.
 
