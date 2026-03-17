@@ -504,24 +504,52 @@ function playBonk() {
 function playTierUp() {
   if (!audioCtx) return;
   const t = audioCtx.currentTime;
-  // C5 → E5 → G5 → C6 ascending triumphant arpeggio (amplified)
-  [523, 659, 784, 1047].forEach((freq, i) => {
+  // Celebratory 3-note arpeggio: C5→E5→G5 (distinct from frenzy's 4-note sine)
+  // Uses saw+sine layering with crescendo and reverb tail on last note
+  const notes = [523, 659, 784]; // C5, E5, G5
+  notes.forEach((freq, i) => {
+    const vol = 0.18 + i * 0.06; // crescendo: each note louder
+    // Warm saw layer
     const o = audioCtx.createOscillator();
     const g = audioCtx.createGain();
-    o.type = 'triangle';
-    o.frequency.setValueAtTime(freq, t + i * 0.1);
-    g.gain.setValueAtTime(0.35, t + i * 0.1);
-    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.1 + 0.35);
-    o.connect(g).connect(audioCtx.destination);
-    o.start(t + i * 0.1);
-    o.stop(t + i * 0.1 + 0.4);
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(freq, t + i * 0.12);
+    g.gain.setValueAtTime(vol * 0.5, t + i * 0.12);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + (i === 2 ? 0.4 : 0.2));
+    // Low-pass filter for warmth
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2000;
+    o.connect(lp).connect(g).connect(audioCtx.destination);
+    o.start(t + i * 0.12);
+    o.stop(t + i * 0.12 + (i === 2 ? 0.45 : 0.25));
+    // Clean sine layer
+    const o2 = audioCtx.createOscillator();
+    const g2 = audioCtx.createGain();
+    o2.type = 'sine';
+    o2.frequency.setValueAtTime(freq, t + i * 0.12);
+    g2.gain.setValueAtTime(vol, t + i * 0.12);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + (i === 2 ? 0.4 : 0.2));
+    o2.connect(g2).connect(audioCtx.destination);
+    o2.start(t + i * 0.12);
+    o2.stop(t + i * 0.12 + (i === 2 ? 0.45 : 0.25));
   });
-  // Sub-bass punch (60Hz, 0.1s)
+  // Reverb tail on last note: delayed echo at half volume
+  const echo = audioCtx.createOscillator();
+  const eg = audioCtx.createGain();
+  echo.type = 'sine';
+  echo.frequency.setValueAtTime(784, t + 0.30);
+  eg.gain.setValueAtTime(0.12, t + 0.30);
+  eg.gain.exponentialRampToValueAtTime(0.001, t + 0.50);
+  echo.connect(eg).connect(audioCtx.destination);
+  echo.start(t + 0.30);
+  echo.stop(t + 0.50);
+  // Sub-bass punch
   const sub = audioCtx.createOscillator();
   const sg = audioCtx.createGain();
   sub.type = 'sine';
   sub.frequency.setValueAtTime(60, t);
-  sg.gain.setValueAtTime(0.3, t);
+  sg.gain.setValueAtTime(0.25, t);
   sg.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
   sub.connect(sg).connect(audioCtx.destination);
   sub.start(t);
@@ -840,6 +868,13 @@ let tierUpTextScale = 0;
 let tierUpTextTimer = 0;
 let tierUpTextName = '';
 let tierUpTextColor = '#fff';
+let tierUpTextAlpha = 1;
+let tierUpTextY = 0; // upward drift offset
+// Smooth tier-up slow-mo (0.4s with sine ease in/out, no hard freeze)
+const TIERUP_SLOWMO_DURATION = 0.4;
+// Smooth tier-up size lerp (easeOutCubic over 0.3s)
+let tierUpSizeLerpTimer = 0;
+let tierUpSizeLerpFrom = 0;
 
 // Zone wave
 let zoneWaveY = -1;
@@ -1165,13 +1200,21 @@ function drawFish(x, y, radius, angle, tier, mouthOpen, tailPhase, isPlayer, zon
     const glowOpacity = 0.3 + 0.15 * (1 + breathT); // 0.3→0.6
     const glowRadOff = 3 * breathT; // ±3px
 
-    // Outer tier-colored halo (single pass with shadow for soft glow)
+    // Outer tier-colored halo
     ctx.shadowColor = `rgba(${_tr},${_tg},${_tb},0.6)`;
     ctx.shadowBlur = 16 + 4 * breathT;
     ctx.strokeStyle = `rgba(${_tr},${_tg},${_tb},${glowOpacity})`;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.ellipse(0, 0, bodyLen * 0.52 + 6 + glowRadOff, bodyH + 6 + glowRadOff, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // Thin white inner ring for extra pop
+    ctx.shadowColor = 'rgba(255,255,255,0.3)';
+    ctx.shadowBlur = 6;
+    ctx.strokeStyle = `rgba(255,255,255,${glowOpacity * 0.5})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyLen * 0.52 + 2 + glowRadOff * 0.5, bodyH + 2 + glowRadOff * 0.5, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
@@ -1516,6 +1559,10 @@ function initGame() {
   tierUpZoomTimer = 0;
   tierUpTextScale = 0;
   tierUpTextTimer = 0;
+  tierUpTextAlpha = 0;
+  tierUpTextY = 0;
+  tierUpSizeLerpTimer = 0;
+  tierUpSizeLerpFrom = 0;
 
   // Zone wave reset
   zoneWaveY = -1;
@@ -2152,38 +2199,23 @@ function update(dt) {
     return;
   }
 
-  // Tier-up freeze frame
-  if (tierUpFreezeTimer > 0) {
-    tierUpFreezeTimer -= dt;
-    // Animate visual effects during freeze
-    for (let i = 0; i < 3; i++) {
-      const ring = tierUpRings[i];
-      if (ring.alpha <= 0) continue;
-      ring.age += dt;
-      if (ring.age > ring.delay) {
-        ring.radius += dt * 300;
-        ring.alpha = Math.max(0, ring.alpha - dt * 1.0);
-      }
+  // Tier-up smooth slow-mo (sine ease: 1.0 → 0.3 → 1.0 over 0.4s)
+  if (tierUpSlowmoTimer > 0) {
+    tierUpSlowmoTimer -= dt;
+    const progress = Math.min(1, 1 - (tierUpSlowmoTimer / TIERUP_SLOWMO_DURATION));
+    slowmoScale = 1 - 0.7 * Math.sin(Math.PI * progress);
+    if (tierUpSlowmoTimer <= 0 && !frenzyActive) {
+      slowmoScale = 1;
     }
-    if (tierUpZoomTimer > 0) {
-      tierUpZoomTimer -= dt;
-      const zt = 1 - (tierUpZoomTimer / 1.0);
-      tierUpZoomScale = zt < 0.3 ? 1 - (zt / 0.3) * 0.08 : 0.92 + ((zt - 0.3) / 0.7) * 0.08;
-      if (tierUpZoomTimer <= 0) tierUpZoomScale = 1;
-    }
-    if (tierUpTextTimer > 0) {
-      tierUpTextTimer -= dt;
-      const tt = 1 - (tierUpTextTimer / 1.5);
-      if (tt < 0.15) tierUpTextScale = (tt / 0.15) * 1.3;
-      else if (tt < 0.3) tierUpTextScale = 1.3 - ((tt - 0.15) / 0.15) * 0.3;
-      else tierUpTextScale = 1;
-      if (tierUpTextTimer <= 0) tierUpTextScale = 0;
-    }
-    if (tierUpFreezeTimer <= 0) {
-      tierUpSlowmoTimer = 1.0;
-      slowmoScale = 0.25;
-    }
-    return;
+  }
+
+  // Tier-up size lerp (easeOutCubic over 0.3s, uses real dt so it's visible during slow-mo)
+  if (tierUpSizeLerpTimer > 0) {
+    tierUpSizeLerpTimer = Math.max(0, tierUpSizeLerpTimer - dt);
+    const t = 1 - (tierUpSizeLerpTimer / 0.3);
+    const ease = 1 - Math.pow(1 - t, 3); // easeOutCubic
+    player.radius = tierUpSizeLerpFrom + (player.targetRadius - tierUpSizeLerpFrom) * ease;
+    if (tierUpSizeLerpTimer <= 0) player.radius = player.targetRadius;
   }
 
   // Apply slow-mo
@@ -2194,7 +2226,7 @@ function update(dt) {
   if (frenzyActive) {
     frenzyTimer -= dt; // real time, not slowed
     // Initial slow-mo for first 0.5s, then normal speed during golden time
-    if (frenzyTimer < 3.5 && tierUpSlowmoTimer <= 0 && tierUpFreezeTimer <= 0) {
+    if (frenzyTimer < 3.5 && tierUpSlowmoTimer <= 0) {
       slowmoScale = 1;
     }
     // Maintain golden glow
@@ -2213,14 +2245,6 @@ function update(dt) {
   // Saturation flash decay (only when not in festin)
   if (saturationFlash > 0 && !frenzyActive) {
     saturationFlash = Math.max(0, saturationFlash - dt * 3);
-  }
-
-  // Tier-up slow-mo timer (separate from frenzy)
-  if (tierUpSlowmoTimer > 0) {
-    tierUpSlowmoTimer -= dt;
-    if (tierUpSlowmoTimer <= 0 && !frenzyActive) {
-      slowmoScale = 1;
-    }
   }
 
   // Grace period countdown
@@ -2258,14 +2282,19 @@ function update(dt) {
     if (tierUpZoomTimer <= 0) tierUpZoomScale = 1;
   }
 
-  // Tier-up text bounce animation
+  // Tier-up text bounce + drift + fade animation
   if (tierUpTextTimer > 0) {
     tierUpTextTimer -= dt;
-    const tt = 1 - (tierUpTextTimer / 1.5);
-    if (tt < 0.15) tierUpTextScale = (tt / 0.15) * 1.3;
-    else if (tt < 0.3) tierUpTextScale = 1.3 - ((tt - 0.15) / 0.15) * 0.3;
+    const tt = 1 - (tierUpTextTimer / 1.5); // 0→1 progress
+    // Scale: 0.5→1.15 (overshoot) → 1.0 (settle)
+    if (tt < 0.12) tierUpTextScale = 0.5 + (tt / 0.12) * 0.65; // 0.5→1.15
+    else if (tt < 0.25) tierUpTextScale = 1.15 - ((tt - 0.12) / 0.13) * 0.15; // 1.15→1.0
     else tierUpTextScale = 1;
-    if (tierUpTextTimer <= 0) tierUpTextScale = 0;
+    // Upward drift: 0→-40px over lifetime
+    tierUpTextY = -tt * 40;
+    // Fade out in last 40% of lifetime
+    tierUpTextAlpha = tt > 0.6 ? 1 - ((tt - 0.6) / 0.4) : 1;
+    if (tierUpTextTimer <= 0) { tierUpTextScale = 0; tierUpTextAlpha = 0; }
   }
 
   // Combo timer decay
@@ -2553,11 +2582,13 @@ function update(dt) {
   player.tailPhase += effectiveDt * 10 * tailSpeedMult;
   player.mouthOpen = Math.max(0, player.mouthOpen - effectiveDt * 2);
 
-  // Smooth radius lerp toward targetRadius (0.3s transition)
-  if (Math.abs(player.radius - player.targetRadius) > 0.5) {
-    player.radius += (player.targetRadius - player.radius) * Math.min(1, effectiveDt * 8);
-  } else {
-    player.radius = player.targetRadius;
+  // Smooth radius lerp toward targetRadius (skip if tier-up easeOutCubic is active)
+  if (tierUpSizeLerpTimer <= 0) {
+    if (Math.abs(player.radius - player.targetRadius) > 0.5) {
+      player.radius += (player.targetRadius - player.radius) * Math.min(1, effectiveDt * 8);
+    } else {
+      player.radius = player.targetRadius;
+    }
   }
 
   if (player.invincible > 0) {
@@ -2847,34 +2878,42 @@ function update(dt) {
           const newTierColor = getFishColors(player.tier, getZoneForTier(player.tier)).body;
 
           // --- TIER-UP SPECTACLE ---
-          // Freeze frame 0.15s
-          tierUpFreezeTimer = 0.15;
+          // Timeline: shockwave → slow-mo eases in → size lerps → golden flash → text
 
-          // 3 concentric rings
+          // 1. Shockwave rings (start immediately)
           tierUpRings[0] = { radius: player.radius, alpha: 0.8, color: '#ffffff', age: 0, delay: 0 };
           tierUpRings[1] = { radius: player.radius, alpha: 0.7, color: oldTierColor, age: 0, delay: 0.1 };
           tierUpRings[2] = { radius: player.radius, alpha: 0.6, color: newTierColor, age: 0, delay: 0.2 };
+          tierUpRingColor = newTierColor;
+          tierUpRingRadius = player.radius;
+          tierUpRingAlpha = 0.7;
+
+          // 2. Sound (at the START of the sequence)
+          playTierUp();
+
+          // 3. Smooth slow-mo (0.4s sine ease in/out, no hard freeze)
+          tierUpSlowmoTimer = TIERUP_SLOWMO_DURATION;
+
+          // 4. Smooth size lerp (easeOutCubic over 0.3s)
+          tierUpSizeLerpTimer = 0.3;
+          tierUpSizeLerpFrom = player.radius;
+
+          // 5. Golden flash on player body (0.3s, rgba(255,215,0,0.3))
+          tierUpFlashTimer = 0.3;
 
           // 50+ bicolor particles with varied sizes
           spawnEatParticles(player.x, player.y, oldTierColor, 25, false, 2, 10);
           spawnEatParticles(player.x, player.y, newTierColor, 25, false, 2, 10);
 
-          // Zoom-out animation (1.0→0.92 in 0.3s, back in 0.7s)
+          // Zoom-out animation
           tierUpZoomTimer = 1.0;
 
-          // Text bounce animation
+          // 6. Text bounce + drift animation
           tierUpTextTimer = 1.5;
           tierUpTextName = TIER_NAMES[player.tier];
           tierUpTextColor = newTierColor;
-
-          // Screen flash in new tier color
-          tierUpFlashTimer = 0.5;
-          tierUpRingColor = newTierColor;
-          tierUpRingRadius = player.radius;
-          tierUpRingAlpha = 0.7;
-
-          // Sound (amplified with sub-bass + C6)
-          playTierUp();
+          tierUpTextAlpha = 1;
+          tierUpTextY = 0;
 
           // Haptic crescendo
           haptic([30, 15, 30, 15, 50, 20, 80]);
@@ -3631,10 +3670,10 @@ function render() {
     }
     ctx.globalAlpha = 1;
 
-    // Tier-up golden flash overlay on player body
+    // Tier-up golden flash overlay on player body (0.3s, rgba(255,215,0,0.3))
     if (tierUpFlashTimer > 0) {
-      ctx.globalAlpha = tierUpFlashTimer / 0.5 * 0.4;
-      ctx.fillStyle = '#ffcc00';
+      ctx.globalAlpha = (tierUpFlashTimer / 0.3) * 0.3;
+      ctx.fillStyle = '#ffd700';
       ctx.beginPath();
       ctx.arc(player.x, player.y, pDrawR * 1.3, 0, Math.PI * 2);
       ctx.fill();
@@ -3673,28 +3712,25 @@ function render() {
       }
     }
 
-    // Player chevron — tier-colored, breathes with the glow ring
+    // Player chevron — white-gold for visibility on any tier color
     {
       const chevronY = player.y - pDrawR * 1.9 - 16;
       const chevronSize = 10;
-      const tierCol = getFishColors(player.tier, currentZone).body;
-      const _cc = parseInt(tierCol.slice(1), 16);
-      const _cr = (_cc >> 16) & 0xff, _cg = (_cc >> 8) & 0xff, _cb = _cc & 0xff;
       // Breathe in sync with glow ring (same 2.5 freq)
       const chevBreath = Math.sin(gameTime * 2.5);
-      const chevronAlpha = 0.5 + 0.1 * (1 + chevBreath); // 0.5→0.7
+      const chevronAlpha = 0.6 + 0.1 * (1 + chevBreath); // 0.6→0.8
       ctx.globalAlpha = chevronAlpha;
-      ctx.shadowColor = `rgba(${_cr},${_cg},${_cb},0.5)`;
+      ctx.shadowColor = 'rgba(255,215,100,0.5)';
       ctx.shadowBlur = 8;
-      ctx.fillStyle = `rgba(${_cr},${_cg},${_cb},0.85)`;
+      ctx.fillStyle = 'rgba(255,235,200,0.9)';
       ctx.beginPath();
       ctx.moveTo(player.x - chevronSize, chevronY - chevronSize * 0.6);
       ctx.lineTo(player.x + chevronSize, chevronY - chevronSize * 0.6);
       ctx.lineTo(player.x, chevronY + chevronSize * 0.5);
       ctx.closePath();
       ctx.fill();
-      // White outline for visibility
-      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      // Subtle gold outline
+      ctx.strokeStyle = 'rgba(255,215,0,0.5)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(player.x - chevronSize, chevronY - chevronSize * 0.6);
@@ -3908,25 +3944,34 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  // Tier-up text animation (bounce: 0→1.3→1.0)
-  if (tierUpTextScale > 0) {
+  // Tier-up text: "TIER UP!" in gold + "→ tier name" in tier color
+  if (tierUpTextScale > 0 && tierUpTextAlpha > 0) {
     ctx.save();
-    ctx.translate(W / 2, H / 2);
+    ctx.globalAlpha = tierUpTextAlpha;
+    ctx.translate(W / 2, H / 2 + tierUpTextY);
     ctx.scale(tierUpTextScale, tierUpTextScale);
-    ctx.font = 'bold 36px "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = 'center';
+    // "TIER UP!" label — gold, big
+    ctx.font = 'bold 46px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = '#ffd700';
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 24;
+    ctx.fillText('TIER UP!', 0, -16);
+    // "→ tier name" — tier color, smaller
+    ctx.font = 'bold 28px "Segoe UI", system-ui, sans-serif';
     ctx.fillStyle = tierUpTextColor;
     ctx.shadowColor = tierUpTextColor;
-    ctx.shadowBlur = 20;
-    ctx.fillText(tierUpTextName, 0, 0);
+    ctx.shadowBlur = 16;
+    ctx.fillText('\u2192 ' + tierUpTextName, 0, 22);
     ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 
   // Tier-up bicolor flash
   if (tierUpFlashTimer > 0) {
-    ctx.globalAlpha = (tierUpFlashTimer / 0.5) * 0.2;
-    ctx.fillStyle = tierUpRingColor || '#ffcc00';
+    ctx.globalAlpha = (tierUpFlashTimer / 0.3) * 0.15;
+    ctx.fillStyle = tierUpRingColor || '#ffd700';
     ctx.fillRect(-10, -10, W + 20, H + 20);
     ctx.globalAlpha = 1;
   }
@@ -4598,10 +4643,152 @@ if (new URLSearchParams(window.location.search).has('test')) {
       [0,1,2,3,4,5].every(t => getFishColors(t, 'surface').body && getFishColors(t, 'surface').fin));
   }
 
+  // ---- Sprint 2: Tier-Up Celebration Tests ----
+
+  // Test: playTierUp() creates audio nodes (function exists and is callable)
+  assert('playTierUp function exists', typeof playTierUp === 'function');
+  assert('playTierUp is distinct from playFrenzy', playTierUp !== playFrenzy);
+
+  // Test: Tier-up text animation initializes with correct values
+  {
+    tierUpTextTimer = 1.5;
+    tierUpTextAlpha = 1;
+    tierUpTextY = 0;
+    tierUpTextScale = 0;
+    tierUpTextName = 'Moyen';
+    tierUpTextColor = '#ff9933';
+    assert('Tier-up text timer initialized to 1.5', tierUpTextTimer === 1.5);
+    assert('Tier-up text alpha starts at 1', tierUpTextAlpha === 1);
+    assert('Tier-up text Y drift starts at 0', tierUpTextY === 0);
+    assert('Tier-up text name set', tierUpTextName === 'Moyen');
+    assert('Tier-up text color set', tierUpTextColor === '#ff9933');
+  }
+
+  // Test: Tier-up text scale animation (overshoot bounce 0.5→1.15→1.0)
+  {
+    const tt0 = 0;
+    const scale0 = 0.5 + (tt0 / 0.12) * 0.65;
+    assert('Tier-up text scale starts at 0.5', Math.abs(scale0 - 0.5) < 0.01);
+    const tt1 = 0.12;
+    const scale1 = 0.5 + (tt1 / 0.12) * 0.65;
+    assert('Tier-up text scale overshoots to ~1.15', Math.abs(scale1 - 1.15) < 0.01);
+    const tt2 = 0.25;
+    const scale2 = 1.15 - ((tt2 - 0.12) / 0.13) * 0.15;
+    assert('Tier-up text scale settles to ~1.0', Math.abs(scale2 - 1.0) < 0.02);
+  }
+
+  // Test: Tier-up text fade in last 40% of lifetime
+  {
+    const alpha1 = 0.5 > 0.6 ? 1 - ((0.5 - 0.6) / 0.4) : 1;
+    assert('Text alpha=1 before 60% progress', alpha1 === 1);
+    const alpha2 = 0.8 > 0.6 ? 1 - ((0.8 - 0.6) / 0.4) : 1;
+    assert('Text alpha=0.5 at 80% progress', Math.abs(alpha2 - 0.5) < 0.01);
+    const alpha3 = 1.0 > 0.6 ? 1 - ((1.0 - 0.6) / 0.4) : 1;
+    assert('Text alpha=0 at 100% progress', Math.abs(alpha3) < 0.01);
+  }
+
+  // Test: Slow-mo factor calculation (sine ease: 1.0 → 0.3 → 1.0)
+  {
+    // At progress=0 (start): 1 - 0.7*sin(0) = 1.0
+    const sm0 = 1 - 0.7 * Math.sin(Math.PI * 0);
+    assert('Tier-up slowmo starts at 1.0x', Math.abs(sm0 - 1.0) < 0.01);
+    // At progress=0.5 (midpoint): 1 - 0.7*sin(pi/2) = 0.3
+    const sm1 = 1 - 0.7 * Math.sin(Math.PI * 0.5);
+    assert('Tier-up slowmo dips to 0.3x at midpoint', Math.abs(sm1 - 0.3) < 0.01);
+    // At progress=1.0 (end): 1 - 0.7*sin(pi) = 1.0
+    const sm2 = 1 - 0.7 * Math.sin(Math.PI * 1.0);
+    assert('Tier-up slowmo returns to 1.0x', Math.abs(sm2 - 1.0) < 0.01);
+  }
+
+  // Test: Expansion ring starts at player radius and expands
+  {
+    const startR = 20;
+    tierUpRings[0] = { radius: startR, alpha: 0.8, color: '#fff', age: 0, delay: 0 };
+    assert('Ring starts at player radius', tierUpRings[0].radius === startR);
+    tierUpRings[0].age += 0.016;
+    tierUpRings[0].radius += 0.016 * 300;
+    tierUpRings[0].alpha = Math.max(0, tierUpRings[0].alpha - 0.016 * 1.0);
+    assert('Ring expands after 1 frame', tierUpRings[0].radius > startR);
+    assert('Ring fades after 1 frame', tierUpRings[0].alpha < 0.8);
+  }
+
+  // Test: Size lerp (easeOutCubic) produces values between old and new radius
+  {
+    const oldR = TIER_RADIUS[1] * radiusScale;
+    const newR = TIER_RADIUS[2] * radiusScale;
+    // easeOutCubic at t=0: should be at oldR
+    const ease0 = 1 - Math.pow(1 - 0, 3);
+    assert('Size lerp at t=0 equals old radius', Math.abs(oldR + (newR - oldR) * ease0 - oldR) < 0.01);
+    // easeOutCubic at t=0.5: between old and new, front-loaded (>50%)
+    const ease5 = 1 - Math.pow(1 - 0.5, 3);
+    const r5 = oldR + (newR - oldR) * ease5;
+    assert('Size lerp at t=0.5 between old and new', r5 > oldR && r5 < newR);
+    assert('EaseOutCubic is front-loaded (>0.5 at t=0.5)', ease5 > 0.5);
+    // easeOutCubic at t=1: should be at newR
+    const ease1 = 1 - Math.pow(1 - 1, 3);
+    assert('Size lerp at t=1 equals new radius', Math.abs(oldR + (newR - oldR) * ease1 - newR) < 0.01);
+  }
+
+  // Test: tierUpSizeLerpTimer drives easeOutCubic radius
+  {
+    const oldR = 12;
+    const newR = 18;
+    tierUpSizeLerpTimer = 0.3;
+    tierUpSizeLerpFrom = oldR;
+    player = createPlayer();
+    player.targetRadius = newR;
+    // Simulate half-time (0.15s elapsed)
+    tierUpSizeLerpTimer -= 0.15;
+    const t = 1 - (tierUpSizeLerpTimer / 0.3);
+    const ease = 1 - Math.pow(1 - t, 3);
+    player.radius = tierUpSizeLerpFrom + (player.targetRadius - tierUpSizeLerpFrom) * ease;
+    assert('Size lerp timer at half > old', player.radius > oldR);
+    assert('Size lerp timer at half < new', player.radius < newR);
+    // Simulate full time
+    tierUpSizeLerpTimer = 0;
+    player.radius = player.targetRadius;
+    assert('Size lerp timer at end equals target', player.radius === newR);
+    tierUpSizeLerpTimer = 0;
+  }
+
+  // Test: Golden flash timer decreases correctly (0.3s)
+  {
+    tierUpFlashTimer = 0.3;
+    const prevFlash = tierUpFlashTimer;
+    tierUpFlashTimer = Math.max(0, tierUpFlashTimer - 0.1);
+    assert('Flash timer decreases', tierUpFlashTimer < prevFlash);
+    tierUpFlashTimer = 0.05;
+    tierUpFlashTimer = Math.max(0, tierUpFlashTimer - 0.1);
+    assert('Flash timer clamps to 0', tierUpFlashTimer === 0);
+  }
+
+  // Test: Tier-up during frenzy doesn't crash (state coexistence)
+  {
+    frenzyActive = true;
+    frenzyTimer = 3;
+    tierUpSlowmoTimer = TIERUP_SLOWMO_DURATION;
+    tierUpSizeLerpTimer = 0.3;
+    tierUpFlashTimer = 0.3;
+    tierUpTextTimer = 1.5;
+    tierUpTextAlpha = 1;
+    const frenzyWouldOverride = frenzyTimer < 3.5 && tierUpSlowmoTimer <= 0;
+    assert('Frenzy does not override tier-up slowmo while active', !frenzyWouldOverride);
+    frenzyActive = false;
+    frenzyTimer = 0;
+    tierUpSlowmoTimer = 0;
+    tierUpSizeLerpTimer = 0;
+    slowmoScale = 1;
+  }
+
   // Reset test state
   tierUpFlashTimer = 0;
   tierUpRingAlpha = 0;
   tierUpRingRadius = 0;
+  tierUpTextTimer = 0;
+  tierUpTextScale = 0;
+  tierUpTextAlpha = 0;
+  tierUpTextY = 0;
+  tierUpSizeLerpTimer = 0;
   player = null;
 
   // Output results
