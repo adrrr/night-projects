@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Deep Feed (Dev)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#001020;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+canvas{display:block;width:100%;height:100%}
+
+/* HUD */
+#hud{position:absolute;top:0;left:0;width:100%;pointer-events:none;padding:14px 16px;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#fff;z-index:5}
+#score-center{position:absolute;top:10px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;z-index:6}
+#score{font-size:28px;font-weight:700;text-shadow:0 2px 8px rgba(0,160,255,.5)}
+@keyframes scorePulse{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+#score.pulse{animation:scorePulse .3s ease}
+#highscore{font-size:12px;opacity:.6;margin-top:2px}
+#depth-info{font-size:13px;opacity:.7;margin-top:2px;color:#80e0ff}
+#size-info{font-size:13px;opacity:.8}
+#size-bar-wrap{margin-top:4px;width:130px;height:7px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden}
+#size-bar{height:100%;width:0%;border-radius:4px;transition:width .3s ease}
+#boost-wrap{margin-top:5px;width:130px;height:5px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
+#boost-bar{height:100%;width:100%;background:linear-gradient(90deg,#ffcc00,#ff8800);border-radius:3px;transition:width .1s}
+#oxygen-wrap{margin-top:5px;width:130px;height:5px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
+#oxygen-bar{height:100%;width:100%;background:linear-gradient(90deg,#44bbff,#0088ff);border-radius:3px;transition:width .15s}
+
+/* Overlay screens */
+#overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,8,24,.88);z-index:10;font-family:'Segoe UI',system-ui,sans-serif;color:#fff;text-align:center;transition:opacity .4s}
+#overlay.hidden{opacity:0;pointer-events:none}
+#overlay h1{font-size:clamp(32px,7vw,56px);margin-bottom:6px;background:linear-gradient(135deg,#00e0ff,#0080ff,#00e0ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 20px rgba(0,180,255,.4))}
+#overlay .sub{font-size:clamp(13px,3vw,18px);opacity:.7;margin-bottom:24px;max-width:300px;line-height:1.4}
+#overlay .stats{font-size:15px;margin-bottom:16px;opacity:.65;line-height:1.6}
+.play-btn{pointer-events:all;padding:14px 44px;font-size:clamp(16px,3.5vw,22px);font-weight:600;border:2px solid rgba(0,200,255,.5);background:rgba(0,60,100,.4);color:#fff;border-radius:30px;cursor:pointer;transition:all .25s;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.play-btn:hover,.play-btn:active{background:rgba(0,120,180,.5);border-color:#0ff;box-shadow:0 0 30px rgba(0,200,255,.3)}
+.hint{font-size:11px;opacity:.4;margin-top:12px}
+
+/* End stats card */
+#end-stats{max-width:320px;width:90%;margin:0 auto 16px}
+.stat-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px}
+.stat-row:last-child{border-bottom:none}
+.stat-label{opacity:.5}
+.stat-value{font-weight:600}
+.stat-value.record{color:#ffcc00;text-shadow:0 0 10px rgba(255,200,0,.4)}
+
+/* Damage vignette */
+#vignette{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(255,0,0,.35) 100%);transition:opacity .15s;z-index:4}
+
+/* Prestige flash overlay */
+#prestige-flash{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;background:#fff;z-index:8;transition:opacity .3s}
+
+/* Orientation hint */
+#orient-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:rgba(255,255,255,.6);background:rgba(0,30,60,.7);padding:8px 16px;border-radius:20px;pointer-events:none;opacity:0;transition:opacity .4s;z-index:6;white-space:nowrap}
+#orient-hint.visible{opacity:1}
+
+/* Boost button */
+#boost-btn{position:absolute;bottom:44px;right:24px;width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,200,0,.35);background:radial-gradient(circle,rgba(255,180,0,.2),rgba(200,100,0,.1));backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:7;display:none;pointer-events:all;touch-action:none;-webkit-touch-callout:none}
+#boost-btn::after{content:'\26A1';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;pointer-events:none}
+#boost-btn.active{border-color:rgba(255,220,0,.7);background:radial-gradient(circle,rgba(255,200,0,.45),rgba(255,120,0,.25));box-shadow:0 0 20px rgba(255,180,0,.3)}
+
+/* Control zone (mobile) */
+#control-zone{position:absolute;bottom:0;left:0;width:100%;height:30%;pointer-events:none;z-index:3;overflow:hidden;display:none}
+#control-zone.visible{display:block}
+
+/* Boost vignette tunnel effect */
+#boost-vignette{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;z-index:4;transition:opacity .15s}
+
+/* HUD progressive reveal */
+#size-group,#boost-group,#oxygen-group{opacity:0;max-height:0;overflow:hidden;transform:translateX(-20px);transition:opacity .5s ease,transform .5s ease,max-height .5s ease;pointer-events:none}
+#size-group.revealed,#boost-group.revealed,#oxygen-group.revealed{opacity:1;max-height:60px;transform:translateX(0)}
+.bar-label{font-size:12px;opacity:.7;display:flex;align-items:center;gap:4px;margin-top:5px}
+.bar-icon{font-size:14px;line-height:1}
+.bar-label.pulse{animation:labelPulse .8s ease}
+@keyframes labelPulse{0%,100%{opacity:.7;transform:scale(1)}50%{opacity:1;transform:scale(1.15);text-shadow:0 0 8px rgba(255,255,255,.4)}}
+
+#zone-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Segoe UI',system-ui,sans-serif;font-size:clamp(28px,6vw,48px);font-weight:700;color:#fff;text-shadow:0 0 30px rgba(0,180,255,.5);pointer-events:none;opacity:0;transition:opacity .6s;z-index:6;text-align:center}
+#zone-text.visible{opacity:1}
+
+#overlay .death-title{font-size:clamp(22px,5vw,36px);margin-bottom:12px;font-weight:700}
+#overlay .final-score{font-size:clamp(36px,8vw,64px);font-weight:800;background:linear-gradient(135deg,#00e0ff,#0080ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+#overlay .final-score.record{background:linear-gradient(135deg,#ffcc00,#ff8800);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#overlay .record-badge{color:#ffcc00;font-size:18px;font-weight:700;text-shadow:0 0 12px rgba(255,200,0,.4);margin-bottom:8px}
+.fish-summary{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin:8px 0 12px}
+.fish-summary-item{display:flex;align-items:center;gap:4px;font-size:14px;font-weight:600}
+.fish-dot{width:14px;height:14px;border-radius:50%;display:inline-block}
+.progress-hint{color:#80e0ff;font-size:14px;font-weight:600;margin-bottom:8px}
+.progress-bar-wrap{width:80%;max-width:200px;height:8px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden;margin:0 auto 12px}
+.progress-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#00e0ff,#0080ff)}
+
+/* Pause button */
+#pause-btn{position:absolute;top:12px;right:12px;width:36px;height:36px;border-radius:50%;border:1.5px solid rgba(255,255,255,.25);background:rgba(0,30,60,.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:7;display:none;pointer-events:all;cursor:pointer;color:#fff;font-size:16px;line-height:36px;text-align:center}
+#pause-btn::after{content:'\u23F8';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+
+/* Pause overlay */
+#pause-overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,8,24,.7);z-index:9;display:flex;align-items:center;justify-content:center;font-family:'Segoe UI',system-ui,sans-serif;font-size:42px;font-weight:700;color:#fff;text-shadow:0 0 20px rgba(0,180,255,.4);opacity:0;pointer-events:none;transition:opacity .3s}
+#pause-overlay.visible{opacity:1;pointer-events:all}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="score-center">
+  <div id="score">0</div>
+  <div id="highscore"></div>
+</div>
+
+<div id="hud">
+  <div id="depth-info"></div>
+  <div id="size-group">
+    <div class="bar-label"><span class="bar-icon">&#x1F41F;</span> <span id="size-info">Taille: Alevin</span></div>
+    <div id="size-bar-wrap"><div id="size-bar"></div></div>
+  </div>
+  <div id="boost-group">
+    <div class="bar-label"><span class="bar-icon">&#x26A1;</span> Boost</div>
+    <div id="boost-wrap"><div id="boost-bar"></div></div>
+  </div>
+  <div id="oxygen-group">
+    <div class="bar-label"><span class="bar-icon">&#x1FAE7;</span> O&#x2082;</div>
+    <div id="oxygen-wrap"><div id="oxygen-bar"></div></div>
+  </div>
+</div>
+
+<div id="vignette"></div>
+<div id="prestige-flash"></div>
+<div id="orient-hint">Rotate to portrait for a better experience</div>
+
+<div id="boost-btn"></div>
+<div id="control-zone"></div>
+<div id="boost-vignette"></div>
+<div id="pause-btn"></div>
+<div id="pause-overlay">PAUSE</div>
+
+<div id="zone-text"></div>
+
+<div id="overlay">
+  <h1>Deep Feed</h1>
+  <div class="sub">Mange les poissons plus petits pour grandir. &Eacute;vite les gros !</div>
+  <div class="stats" id="end-stats"></div>
+  <button class="play-btn" id="play-btn">Dive In</button>
+  <div class="hint" id="control-hint">Touch &amp; drag to move &bull; Tap &#x26A1; to boost</div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
