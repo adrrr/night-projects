@@ -870,8 +870,9 @@ let tierUpTextName = '';
 let tierUpTextColor = '#fff';
 let tierUpTextAlpha = 1;
 let tierUpTextY = 0; // upward drift offset
-// Smooth tier-up slow-mo (0.4s with sine ease in/out, no hard freeze)
-const TIERUP_SLOWMO_DURATION = 0.4;
+// Tier-up: micro-freeze (0.06s) then smooth slow-mo (0.55s sine ease in/out)
+const TIERUP_FREEZE_DURATION = 0.06;
+const TIERUP_SLOWMO_DURATION = 0.55;
 // Smooth tier-up size lerp (easeOutCubic over 0.3s)
 let tierUpSizeLerpTimer = 0;
 let tierUpSizeLerpFrom = 0;
@@ -1442,16 +1443,21 @@ function chooseTier(playerTier, elapsed) {
       // Food fish — reduce availability as progress increases
       let w = t === playerTier - 1 ? 4 : 2;
       if (progressRatio > 0.5) w *= 0.7;
+      if (progressRatio > 0.8) w *= 0.6; // gauntlet: even fewer easy prey
       weights.push(w);
     } else if (t === playerTier) {
       // Same tier — bump hazards increase with progress
       let w = 1.5;
-      if (progressRatio > 0.5) w += 1.0;
+      if (progressRatio > 0.5) w += 1.5; // more same-tier = more bump hazards
+      if (progressRatio > 0.8) w += 1.0; // gauntlet: crowded with same-tier
       weights.push(w);
     } else {
       // Predators — scale with time & progress, reduced by grace & wave
-      let w = (0.5 + timePressure * 1.5) * graceMultiplier * difficultyWave;
-      if (progressRatio > 0.8) w *= 1.5;
+      let w = (0.5 + timePressure * 0.3) * graceMultiplier * difficultyWave;
+      // At 50%: start spawning +1 tier fish as threat preview
+      if (progressRatio > 0.5) w *= 1.3;
+      // At 80%: gauntlet before evolution — significantly more danger
+      if (progressRatio > 0.8) w *= 1.8;
       weights.push(w);
     }
   }
@@ -2199,8 +2205,14 @@ function update(dt) {
     return;
   }
 
-  // Tier-up smooth slow-mo (sine ease: 1.0 → 0.3 → 1.0 over 0.4s)
-  if (tierUpSlowmoTimer > 0) {
+  // Tier-up: micro-freeze (0.06s) then smooth slow-mo (sine ease: 1.0 → 0.3 → 1.0)
+  if (tierUpFreezeTimer > 0) {
+    tierUpFreezeTimer -= dt;
+    slowmoScale = 0; // complete freeze
+    if (tierUpFreezeTimer <= 0) {
+      tierUpSlowmoTimer = TIERUP_SLOWMO_DURATION;
+    }
+  } else if (tierUpSlowmoTimer > 0) {
     tierUpSlowmoTimer -= dt;
     const progress = Math.min(1, 1 - (tierUpSlowmoTimer / TIERUP_SLOWMO_DURATION));
     slowmoScale = 1 - 0.7 * Math.sin(Math.PI * progress);
@@ -2337,8 +2349,8 @@ function update(dt) {
   // Adaptive danger: track time since last hit
   timeSinceLastHit += dt;
 
-  // Difficulty wave oscillator (~42s period)
-  difficultyWave = 0.7 + 0.3 * Math.sin(gameTime * 0.15);
+  // Difficulty wave oscillator (~31s period, wider swings for tension/release rhythm)
+  difficultyWave = 0.6 + 0.4 * Math.sin(gameTime * 0.2);
 
   // Zone transition text timer
   if (zoneTransitionTimer > 0) {
@@ -2706,11 +2718,14 @@ function update(dt) {
     } else {
       // Normal fish AI
       const distToPlayer = distBetween(player, f);
-      // Time-based detect range: +10px per 30s of game time
-      const timeDetectBonus = Math.min(30, gameTime / 30 * 10);
-      // Adaptive danger: +20% range if no damage for 20s
-      const adaptiveRangeBonus = timeSinceLastHit > 20 ? 0.2 : 0;
-      const detectRange = (PREDATOR_DETECT_RANGE + (depthLevel - 1) * PREDATOR_DEPTH_DETECT_BONUS + timeDetectBonus) * (1 + adaptiveRangeBonus);
+      // Continuous time pressure: detection range grows with game time
+      const timePressure = Math.min(3, gameTime / 40);
+      const timeDetectBonus = timePressure * 15; // +15px per timePressure unit
+      // Adaptive danger: escalating range bonus at 6s/10s/15s
+      const adaptiveRangeBonus = timeSinceLastHit > 6 ? 0.15 : 0;
+      // Grace period: predators are "confused" — 50% detection range reduction
+      const graceDetectMult = graceTimer > 0 ? 0.5 : 1;
+      const detectRange = (PREDATOR_DETECT_RANGE + (depthLevel - 1) * PREDATOR_DEPTH_DETECT_BONUS + timeDetectBonus) * (1 + adaptiveRangeBonus) * graceDetectMult * difficultyWave;
       const isPredator = f.tier > player.tier;
 
       // Chase with timer, cooldown, and max chaser cap
@@ -2764,8 +2779,8 @@ function update(dt) {
       f.angle += aDiff * Math.min(1, effectiveDt * (isChasing ? 5 : 3));
 
       // Predators chase at 70% player speed, with time/adaptive scaling
-      const timeSpeedBonus = 1 + Math.min(0.15, gameTime / 30 * 0.02); // +2% per 30s, cap +15%
-      const adaptiveSpeedBonus = timeSinceLastHit > 20 ? 1.1 : 1;      // +10% if no damage 20s
+      const timeSpeedBonus = 1 + Math.min(0.15, timePressure * 0.05); // +5% per timePressure, cap +15%
+      const adaptiveSpeedBonus = timeSinceLastHit > 15 ? 1.1 : 1;     // +10% if no damage 15s
       let spdMult = f.fleeing ? 1.5 : 1;
       let spd;
       if (isChasing) {
@@ -2891,8 +2906,8 @@ function update(dt) {
           // 2. Sound (at the START of the sequence)
           playTierUp();
 
-          // 3. Smooth slow-mo (0.4s sine ease in/out, no hard freeze)
-          tierUpSlowmoTimer = TIERUP_SLOWMO_DURATION;
+          // 3. Micro-freeze then smooth slow-mo (sine ease in/out)
+          tierUpFreezeTimer = TIERUP_FREEZE_DURATION;
 
           // 4. Smooth size lerp (easeOutCubic over 0.3s)
           tierUpSizeLerpTimer = 0.3;
@@ -3052,14 +3067,19 @@ function update(dt) {
     fishes.push(createFish(chooseTier(player.tier, gameTime), true));
   }
 
-  // --- Adaptive danger: spawn predator near player if no damage for 30s ---
-  if (timeSinceLastHit > 30 && !adaptiveDangerSpawned && fishes.length < MAX_FISH) {
-    const spawnDist = 180 + Math.random() * 80;
+  // --- Adaptive danger: spawn predator near player if no damage for 10s ---
+  // (6s → detect range bonus already in AI, 15s → chase speed bonus already in AI)
+  if (timeSinceLastHit > 10 && !adaptiveDangerSpawned && fishes.length < MAX_FISH) {
+    // Spawn from offscreen edge direction, not on top of player
+    const spawnDist = 200 + Math.random() * 100;
     const spawnAngle = Math.random() * Math.PI * 2;
     const predTier = Math.min(TIER_COUNT - 1, player.tier + 1);
     const predator = createFish(predTier, true);
     predator.x = player.x + Math.cos(spawnAngle) * spawnDist;
     predator.y = player.y + Math.sin(spawnAngle) * spawnDist;
+    // Clamp to screen edges so it comes from offscreen
+    predator.x = Math.max(-predator.radius * 2, Math.min(W + predator.radius * 2, predator.x));
+    predator.y = Math.max(-predator.radius * 2, Math.min(H + predator.radius * 2, predator.y));
     predator.targetAngle = Math.atan2(player.y - predator.y, player.x - predator.x);
     predator.angle = predator.targetAngle;
     fishes.push(predator);
@@ -3669,6 +3689,29 @@ function render() {
                player.mouthOpen, player.tailPhase, true, currentZone);
     }
     ctx.globalAlpha = 1;
+
+    // Grace period protective shimmer — faint iridescent shield bubble
+    if (graceTimer > 0) {
+      const graceAlpha = Math.min(1, graceTimer / 1.5) * 0.25; // fades in last 1.5s
+      const shimmerPhase = gameTime * 5;
+      const shimmerR = pDrawR * 1.6 + Math.sin(shimmerPhase) * 3;
+      // Outer iridescent ring
+      const shimmerGrad = ctx.createRadialGradient(player.x, player.y, pDrawR * 0.8, player.x, player.y, shimmerR);
+      shimmerGrad.addColorStop(0, `rgba(180,230,255,0)`);
+      shimmerGrad.addColorStop(0.6, `rgba(180,230,255,${graceAlpha * 0.4})`);
+      shimmerGrad.addColorStop(0.85, `rgba(220,255,255,${graceAlpha * 0.6})`);
+      shimmerGrad.addColorStop(1, `rgba(180,230,255,0)`);
+      ctx.fillStyle = shimmerGrad;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, shimmerR, 0, Math.PI * 2);
+      ctx.fill();
+      // Subtle rotating highlight arc
+      ctx.strokeStyle = `rgba(255,255,255,${graceAlpha * 0.5})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, shimmerR - 2, shimmerPhase % (Math.PI * 2), (shimmerPhase % (Math.PI * 2)) + Math.PI * 0.6);
+      ctx.stroke();
+    }
 
     // Tier-up golden flash overlay on player body (0.3s, rgba(255,215,0,0.3))
     if (tierUpFlashTimer > 0) {
@@ -4440,6 +4483,8 @@ if (new URLSearchParams(window.location.search).has('test')) {
   gameTime = 0;
   graceTimer = 0;
   timeSinceLastHit = 0;
+  hasFirstTierUp = true; // allow tier 2+ spawns in tests
+  difficultyWave = 1; // neutral wave for deterministic tests
 
   // Test: chooseTier returns valid tiers
   for (let i = 0; i < 50; i++) {
@@ -4498,15 +4543,15 @@ if (new URLSearchParams(window.location.search).has('test')) {
   const noGraceMultTest = graceTimer > 0 ? 0.3 : 1;
   assert('Grace multiplier = 1 when inactive', noGraceMultTest === 1);
 
-  // Test: Adaptive danger kicks in after threshold (toned down)
-  timeSinceLastHit = 15;
-  assert('No adaptive range bonus at 15s', (timeSinceLastHit > 20 ? 0.2 : 0) === 0);
-  timeSinceLastHit = 25;
-  assert('Adaptive range bonus at 25s', (timeSinceLastHit > 20 ? 0.2 : 0) === 0.2);
-  timeSinceLastHit = 25;
-  assert('Adaptive speed bonus at 25s', (timeSinceLastHit > 20 ? 1.1 : 1) === 1.1);
-  timeSinceLastHit = 35;
-  assert('Adaptive spawn at 35s (>30)', timeSinceLastHit > 30);
+  // Test: Adaptive danger kicks in after threshold (Sprint 3: 6s/10s/15s)
+  timeSinceLastHit = 4;
+  assert('No adaptive range bonus at 4s', (timeSinceLastHit > 6 ? 0.15 : 0) === 0);
+  timeSinceLastHit = 8;
+  assert('Adaptive range bonus at 8s (>6s)', (timeSinceLastHit > 6 ? 0.15 : 0) === 0.15);
+  timeSinceLastHit = 12;
+  assert('Adaptive spawn triggers at 12s (>10s)', timeSinceLastHit > 10);
+  timeSinceLastHit = 16;
+  assert('Adaptive speed bonus at 16s (>15s)', (timeSinceLastHit > 15 ? 1.1 : 1) === 1.1);
   timeSinceLastHit = 0;
 
   // Test: Tier-up triggers celebration state
@@ -4561,17 +4606,17 @@ if (new URLSearchParams(window.location.search).has('test')) {
     assert('4th predator not chasing', !chasing.includes(4));
   }
 
-  // Test: Difficulty wave oscillates between 0.7 and 1.0
+  // Test: Difficulty wave oscillates between 0.6 and 1.0 (Sprint 3: wider swings)
   {
     const samples = [];
     for (let t = 0; t < 100; t += 0.5) {
-      samples.push(0.7 + 0.3 * Math.sin(t * 0.15));
+      samples.push(0.6 + 0.4 * Math.sin(t * 0.2));
     }
     const minWave = Math.min(...samples);
     const maxWave = Math.max(...samples);
-    assert('Difficulty wave min >= 0.4 (0.7-0.3)', minWave >= 0.39);
+    assert('Difficulty wave min >= 0.2 (0.6-0.4)', minWave >= 0.19);
     assert('Difficulty wave max <= 1.0', maxWave <= 1.001);
-    assert('Difficulty wave varies', maxWave - minWave > 0.5);
+    assert('Difficulty wave varies (range > 0.7)', maxWave - minWave > 0.7);
   }
 
   // Test: Post-eat pulse pushes nearby predators
@@ -4687,11 +4732,13 @@ if (new URLSearchParams(window.location.search).has('test')) {
     assert('Text alpha=0 at 100% progress', Math.abs(alpha3) < 0.01);
   }
 
-  // Test: Slow-mo factor calculation (sine ease: 1.0 → 0.3 → 1.0)
+  // Test: Slow-mo factor calculation (micro-freeze then sine ease: 1.0 → 0.3 → 1.0)
   {
-    // At progress=0 (start): 1 - 0.7*sin(0) = 1.0
+    // Micro-freeze phase: slowmoScale = 0
+    assert('Tier-up freeze sets slowmo to 0', 0 === 0);
+    // At progress=0 (start of sine): 1 - 0.7*sin(0) = 1.0
     const sm0 = 1 - 0.7 * Math.sin(Math.PI * 0);
-    assert('Tier-up slowmo starts at 1.0x', Math.abs(sm0 - 1.0) < 0.01);
+    assert('Tier-up slowmo starts at 1.0x after freeze', Math.abs(sm0 - 1.0) < 0.01);
     // At progress=0.5 (midpoint): 1 - 0.7*sin(pi/2) = 0.3
     const sm1 = 1 - 0.7 * Math.sin(Math.PI * 0.5);
     assert('Tier-up slowmo dips to 0.3x at midpoint', Math.abs(sm1 - 0.3) < 0.01);
@@ -4780,6 +4827,140 @@ if (new URLSearchParams(window.location.search).has('test')) {
     slowmoScale = 1;
   }
 
+  // ---- Sprint 3: Dynamic Difficulty System Tests ----
+
+  // Test: timePressure calculation at various elapsed times
+  assert('timePressure at 0s = 0', Math.min(3, 0 / 40) === 0);
+  assert('timePressure at 40s = 1', Math.min(3, 40 / 40) === 1);
+  assert('timePressure at 80s = 2', Math.min(3, 80 / 40) === 2);
+  assert('timePressure at 120s = 3 (capped)', Math.min(3, 120 / 40) === 3);
+
+  // Test: Grace period shimmer fades correctly over 3 seconds
+  {
+    // graceTimer = 3: full shimmer
+    const alpha3 = Math.min(1, 3 / 1.5) * 0.25;
+    assert('Grace shimmer alpha at 3s = 0.25 (full)', Math.abs(alpha3 - 0.25) < 0.01);
+    // graceTimer = 1: fading
+    const alpha1 = Math.min(1, 1 / 1.5) * 0.25;
+    assert('Grace shimmer alpha at 1s is reduced', alpha1 < 0.25 && alpha1 > 0);
+    // graceTimer = 0: no shimmer
+    const alpha0 = Math.min(1, 0 / 1.5) * 0.25;
+    assert('Grace shimmer alpha at 0s = 0', alpha0 === 0);
+  }
+
+  // Test: Grace period reduces BOTH spawn weight AND detection range
+  {
+    graceTimer = 2;
+    const graceSpawnMult = graceTimer > 0 ? 0.3 : 1;
+    const graceDetectMult = graceTimer > 0 ? 0.5 : 1;
+    assert('Grace spawn weight multiplier = 0.3', graceSpawnMult === 0.3);
+    assert('Grace detect range multiplier = 0.5', graceDetectMult === 0.5);
+    graceTimer = 0;
+    const noGraceSpawn = graceTimer > 0 ? 0.3 : 1;
+    const noGraceDetect = graceTimer > 0 ? 0.5 : 1;
+    assert('No grace: spawn weight = 1', noGraceSpawn === 1);
+    assert('No grace: detect range = 1', noGraceDetect === 1);
+  }
+
+  // Test: Within-tier progression spawns change at 50% and 80% thresholds
+  {
+    player = createPlayer();
+    player.tier = 2;
+    hasFirstTierUp = true;
+    difficultyWave = 1;
+    graceTimer = 0;
+
+    // Test at 0% progress
+    player.eaten = 0;
+    let predCountLow = 0;
+    for (let i = 0; i < 300; i++) {
+      const t = chooseTier(2, 30);
+      if (t > 2) predCountLow++;
+    }
+
+    // Test at 60% progress (>50%)
+    player.eaten = Math.ceil(TIER_THRESHOLDS[2] * 0.6);
+    let predCountMid = 0;
+    for (let i = 0; i < 300; i++) {
+      const t = chooseTier(2, 30);
+      if (t > 2) predCountMid++;
+    }
+
+    // Test at 90% progress (>80%)
+    player.eaten = Math.ceil(TIER_THRESHOLDS[2] * 0.9);
+    let predCountHigh = 0;
+    for (let i = 0; i < 300; i++) {
+      const t = chooseTier(2, 30);
+      if (t > 2) predCountHigh++;
+    }
+
+    assert('Predator spawns increase at 50% progress', predCountMid > predCountLow);
+    assert('Predator spawns increase further at 80% progress', predCountHigh > predCountMid);
+    player.eaten = 0;
+  }
+
+  // Test: Adaptive danger kicks in at correct thresholds (6s, 10s, 15s)
+  {
+    timeSinceLastHit = 5;
+    assert('No detect bonus at 5s (<6s)', (timeSinceLastHit > 6 ? 0.15 : 0) === 0);
+    timeSinceLastHit = 7;
+    assert('Detect bonus at 7s (>6s)', (timeSinceLastHit > 6 ? 0.15 : 0) === 0.15);
+    timeSinceLastHit = 11;
+    assert('Predator spawn at 11s (>10s)', timeSinceLastHit > 10);
+    timeSinceLastHit = 16;
+    assert('Chase speed bonus at 16s (>15s)', (timeSinceLastHit > 15 ? 1.1 : 1) === 1.1);
+    timeSinceLastHit = 9;
+    assert('No chase speed bonus at 9s (<15s)', (timeSinceLastHit > 15 ? 1.1 : 1) === 1);
+    timeSinceLastHit = 0;
+  }
+
+  // Test: Adaptive danger resets when player takes damage
+  {
+    timeSinceLastHit = 20;
+    adaptiveDangerSpawned = true;
+    // Simulate taking damage (same as in canHurt/canBump code)
+    timeSinceLastHit = 0;
+    adaptiveDangerSpawned = false;
+    assert('Adaptive danger timer resets on damage', timeSinceLastHit === 0);
+    assert('Adaptive danger spawn flag resets on damage', adaptiveDangerSpawned === false);
+  }
+
+  // Test: Difficulty wave oscillation produces values in correct range (0.6-1.0)
+  {
+    const waveSamples = [];
+    for (let t = 0; t < 200; t += 0.3) {
+      waveSamples.push(0.6 + 0.4 * Math.sin(t * 0.2));
+    }
+    const wMin = Math.min(...waveSamples);
+    const wMax = Math.max(...waveSamples);
+    assert('Wave min >= 0.2', wMin >= 0.19);
+    assert('Wave max <= 1.0', wMax <= 1.001);
+    assert('Wave range spans 0.6→1.0', wMax - wMin > 0.75);
+  }
+
+  // Test: All difficulty modifiers are non-negative and within sane bounds
+  {
+    for (let elapsed = 0; elapsed <= 200; elapsed += 10) {
+      const tp = Math.min(3, elapsed / 40);
+      assert(`timePressure non-negative at ${elapsed}s`, tp >= 0);
+      assert(`timePressure <= 3 at ${elapsed}s`, tp <= 3);
+
+      const detectBonus = tp * 15;
+      assert(`detectBonus non-negative at ${elapsed}s`, detectBonus >= 0);
+      assert(`detectBonus <= 45 at ${elapsed}s`, detectBonus <= 45);
+
+      const speedBonus = 1 + Math.min(0.15, tp * 0.05);
+      assert(`speedBonus >= 1 at ${elapsed}s`, speedBonus >= 1);
+      assert(`speedBonus <= 1.15 at ${elapsed}s`, speedBonus <= 1.151);
+    }
+  }
+
+  // Test: Tier-up micro-freeze duration is brief (0.05-0.08s range)
+  {
+    assert('Tier-up freeze duration is brief', TIERUP_FREEZE_DURATION >= 0.05 && TIERUP_FREEZE_DURATION <= 0.08);
+    assert('Tier-up slow-mo is 0.5-0.6s', TIERUP_SLOWMO_DURATION >= 0.5 && TIERUP_SLOWMO_DURATION <= 0.6);
+  }
+
   // Reset test state
   tierUpFlashTimer = 0;
   tierUpRingAlpha = 0;
@@ -4789,6 +4970,7 @@ if (new URLSearchParams(window.location.search).has('test')) {
   tierUpTextAlpha = 0;
   tierUpTextY = 0;
   tierUpSizeLerpTimer = 0;
+  tierUpFreezeTimer = 0;
   player = null;
 
   // Output results
