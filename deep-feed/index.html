@@ -193,6 +193,18 @@ const TIER_THRESHOLDS = [5, 3, 6, 10, 15];
 // Tier-based scoring: points per tier eaten
 const TIER_POINTS = [1, 3, 8, 15, 25, 40];
 
+// Eat feedback scaling per eaten tier (T0–T4)
+const EAT_FEEDBACK = [
+  { particles: 3, shake: 0.5, scaleBump: 0.05, textSize: 16, haptic: 5 },
+  { particles: 6, shake: 2, scaleBump: 0.15, textSize: 20, haptic: 10 },
+  { particles: 10, shake: 4, scaleBump: 0.25, textSize: 26, haptic: 15 },
+  { particles: 15, shake: 7, scaleBump: 0.35, textSize: 32, haptic: [10,5,20] },
+  { particles: 25, shake: 12, scaleBump: 0.5, textSize: 38, haptic: [15,10,30] },
+];
+
+// Score milestones
+const SCORE_MILESTONES = [50, 100, 250, 500, 1000];
+
 // Enemy speed multiplier per tier
 const ENEMY_SPEED = [0.5, 0.7, 0.65, 0.55, 0.5, 0.4];
 
@@ -305,17 +317,18 @@ function ensureAudio() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-function playEat() {
+function playEat(pitchMult) {
   if (!audioCtx) return;
   const t = audioCtx.currentTime;
-  // Deep bass 'gulp' — satisfying pop
+  const pm = pitchMult || 1;
+  // Deep bass 'gulp' — satisfying pop (pitch scales with combo)
   const o = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   o.type = 'sine';
-  o.frequency.setValueAtTime(250, t);
-  o.frequency.exponentialRampToValueAtTime(120, t + 0.08);
-  o.frequency.exponentialRampToValueAtTime(200, t + 0.15);
-  o.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+  o.frequency.setValueAtTime(250 * pm, t);
+  o.frequency.exponentialRampToValueAtTime(120 * pm, t + 0.08);
+  o.frequency.exponentialRampToValueAtTime(200 * pm, t + 0.15);
+  o.frequency.exponentialRampToValueAtTime(80 * pm, t + 0.2);
   g.gain.setValueAtTime(0.22, t);
   g.gain.linearRampToValueAtTime(0.18, t + 0.05);
   g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
@@ -326,8 +339,8 @@ function playEat() {
   const o2 = audioCtx.createOscillator();
   const g2 = audioCtx.createGain();
   o2.type = 'sine';
-  o2.frequency.setValueAtTime(500, t);
-  o2.frequency.exponentialRampToValueAtTime(300, t + 0.06);
+  o2.frequency.setValueAtTime(500 * pm, t);
+  o2.frequency.exponentialRampToValueAtTime(300 * pm, t + 0.06);
   g2.gain.setValueAtTime(0.1, t);
   g2.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
   o2.connect(g2).connect(audioCtx.destination);
@@ -399,18 +412,42 @@ function playFrenzy() {
 function playPrestige() {
   if (!audioCtx) return;
   const t = audioCtx.currentTime;
-  // Deep descending + rising sweep
+  // Deep descending sweep with reverb-like tail
   const o = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   o.type = 'sine';
   o.frequency.setValueAtTime(800, t);
-  o.frequency.exponentialRampToValueAtTime(100, t + 0.4);
-  o.frequency.exponentialRampToValueAtTime(600, t + 0.8);
-  g.gain.setValueAtTime(0.2, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
+  o.frequency.exponentialRampToValueAtTime(60, t + 0.6);
+  o.frequency.exponentialRampToValueAtTime(400, t + 1.2);
+  g.gain.setValueAtTime(0.25, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
   o.connect(g).connect(audioCtx.destination);
   o.start(t);
-  o.stop(t + 1.0);
+  o.stop(t + 1.5);
+  // Sub bass
+  const sub = audioCtx.createOscillator();
+  const sg = audioCtx.createGain();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(50, t);
+  sg.gain.setValueAtTime(0.2, t);
+  sg.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+  sub.connect(sg).connect(audioCtx.destination);
+  sub.start(t);
+  sub.stop(t + 0.8);
+  // Bubble pops (rising)
+  for (let i = 0; i < 5; i++) {
+    const bo = audioCtx.createOscillator();
+    const bg = audioCtx.createGain();
+    bo.type = 'sine';
+    const bt = t + 0.3 + i * 0.15;
+    bo.frequency.setValueAtTime(1200 + Math.random() * 800, bt);
+    bo.frequency.exponentialRampToValueAtTime(600, bt + 0.05);
+    bg.gain.setValueAtTime(0.06, bt);
+    bg.gain.exponentialRampToValueAtTime(0.001, bt + 0.06);
+    bo.connect(bg).connect(audioCtx.destination);
+    bo.start(bt);
+    bo.stop(bt + 0.07);
+  }
 }
 
 function playBonk() {
@@ -431,18 +468,120 @@ function playBonk() {
 function playTierUp() {
   if (!audioCtx) return;
   const t = audioCtx.currentTime;
-  // C5 → E5 → G5 ascending triumphant arpeggio
-  [523, 659, 784].forEach((freq, i) => {
+  // C5 → E5 → G5 → C6 ascending triumphant arpeggio (amplified)
+  [523, 659, 784, 1047].forEach((freq, i) => {
     const o = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     o.type = 'triangle';
     o.frequency.setValueAtTime(freq, t + i * 0.1);
-    g.gain.setValueAtTime(0.2, t + i * 0.1);
-    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.1 + 0.3);
+    g.gain.setValueAtTime(0.35, t + i * 0.1);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.1 + 0.35);
     o.connect(g).connect(audioCtx.destination);
     o.start(t + i * 0.1);
-    o.stop(t + i * 0.1 + 0.35);
+    o.stop(t + i * 0.1 + 0.4);
   });
+  // Sub-bass punch (60Hz, 0.1s)
+  const sub = audioCtx.createOscillator();
+  const sg = audioCtx.createGain();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(60, t);
+  sg.gain.setValueAtTime(0.3, t);
+  sg.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  sub.connect(sg).connect(audioCtx.destination);
+  sub.start(t);
+  sub.stop(t + 0.12);
+}
+
+function playZoneSound(zone) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  if (zone === 'reef') {
+    // Tropical marimba-like high notes
+    [880, 1100, 1320, 880].forEach((freq, i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(freq, t + i * 0.08);
+      g.gain.setValueAtTime(0.12, t + i * 0.08);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.15);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(t + i * 0.08);
+      o.stop(t + i * 0.08 + 0.2);
+    });
+  } else if (zone === 'twilight') {
+    // Minor descending chord
+    [440, 392, 330, 294].forEach((freq, i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(freq, t + i * 0.12);
+      g.gain.setValueAtTime(0.1, t + i * 0.12);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.3);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(t + i * 0.12);
+      o.stop(t + i * 0.12 + 0.35);
+    });
+  } else if (zone === 'abyss') {
+    // Grave drone + crystalline note
+    const drone = audioCtx.createOscillator();
+    const dg = audioCtx.createGain();
+    drone.type = 'sine';
+    drone.frequency.setValueAtTime(55, t);
+    dg.gain.setValueAtTime(0.15, t);
+    dg.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+    drone.connect(dg).connect(audioCtx.destination);
+    drone.start(t);
+    drone.stop(t + 0.8);
+    const crystal = audioCtx.createOscillator();
+    const cg = audioCtx.createGain();
+    crystal.type = 'sine';
+    crystal.frequency.setValueAtTime(2000, t + 0.2);
+    cg.gain.setValueAtTime(0.08, t + 0.2);
+    cg.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+    crystal.connect(cg).connect(audioCtx.destination);
+    crystal.start(t + 0.2);
+    crystal.stop(t + 0.7);
+  }
+}
+
+function playMilestone() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Crystalline 'ching'
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(2400, t);
+  o.frequency.exponentialRampToValueAtTime(1800, t + 0.15);
+  g.gain.setValueAtTime(0.1, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.25);
+}
+
+function startFestinDrone() {
+  if (!audioCtx || festinDroneNode) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(80, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0, audioCtx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.5);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  festinDroneNode = osc;
+  festinDroneGain = gain;
+}
+
+function stopFestinDrone() {
+  if (festinDroneNode && festinDroneGain) {
+    festinDroneGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+    const node = festinDroneNode;
+    setTimeout(() => { try { node.stop(); } catch(e) {} }, 600);
+    festinDroneNode = null;
+    festinDroneGain = null;
+  }
 }
 
 // ============================================================
@@ -457,7 +596,7 @@ function haptic(pattern) {
 //  FLOATING SCORE TEXT
 // ============================================================
 
-function spawnFloatingText(x, y, text, color, big) {
+function spawnFloatingText(x, y, text, color, big, fontSize) {
   if (floatingTexts.length >= MAX_FLOATING_TEXTS) return;
   floatingTexts.push({
     x, y, text,
@@ -466,6 +605,7 @@ function spawnFloatingText(x, y, text, color, big) {
     decay: big ? 0.006 : 0.012,
     big: big || false,
     glow: big || false,
+    fontSize: fontSize || (big ? 32 : 20),
   });
 }
 
@@ -602,6 +742,44 @@ let zoneTransitionTimer = 0;
 let zoneTransitionName = '';
 let lastZone = 'surface';
 let zoneDecor = null;
+
+// Combo system
+let comboCount = 0;
+let comboTimer = 0;
+let comboPulseScale = 1;
+let comboPitch = 1;
+
+// Enhanced festin
+let festinPointsAccum = 0;
+let festinDroneNode = null;
+let festinDroneGain = null;
+
+// Enhanced tier-up
+let tierUpFreezeTimer = 0;
+let tierUpRings = [
+  { radius: 0, alpha: 0, color: '#fff', age: 0, delay: 0 },
+  { radius: 0, alpha: 0, color: '#fff', age: 0, delay: 0 },
+  { radius: 0, alpha: 0, color: '#fff', age: 0, delay: 0 },
+];
+let tierUpZoomScale = 1;
+let tierUpZoomTimer = 0;
+let tierUpTextScale = 0;
+let tierUpTextTimer = 0;
+let tierUpTextName = '';
+let tierUpTextColor = '#fff';
+
+// Zone wave
+let zoneWaveY = -1;
+let zoneWaveColor = '#fff';
+let zoneSlowmoTimer = 0;
+
+// Score milestones
+let nextMilestoneIdx = 0;
+let inGameRecordBeaten = false;
+let highscorePulseTimer = 0;
+
+// Death direction
+let deathImpactAngle = 0;
 
 // ============================================================
 //  RESIZE
@@ -971,7 +1149,9 @@ function drawJellyfish(j) {
 //  PARTICLE & BUBBLE
 // ============================================================
 
-function spawnEatParticles(x, y, color, count) {
+function spawnEatParticles(x, y, color, count, magnetic, sizeMin, sizeMax) {
+  const sMin = sizeMin || 2;
+  const sMax = sizeMax || 6;
   for (let i = 0; i < count && particles.length < MAX_PARTICLES; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 1 + Math.random() * 3;
@@ -981,8 +1161,10 @@ function spawnEatParticles(x, y, color, count) {
       vy: Math.sin(angle) * speed,
       life: 1,
       decay: 0.02 + Math.random() * 0.02,
-      size: 2 + Math.random() * 4,
+      size: sMin + Math.random() * (sMax - sMin),
       color,
+      magnetic: magnetic || false,
+      magnetTimer: magnetic ? 0.3 : 0,
     });
   }
 }
@@ -1173,6 +1355,36 @@ function initGame() {
   tierUpRingAlpha = 0;
   tierUpFlashTimer = 0;
   tierUpSlowmoTimer = 0;
+
+  // Combo reset
+  comboCount = 0;
+  comboTimer = 0;
+  comboPulseScale = 1;
+  comboPitch = 1;
+
+  // Enhanced festin reset
+  festinPointsAccum = 0;
+  stopFestinDrone();
+
+  // Enhanced tier-up reset
+  tierUpFreezeTimer = 0;
+  for (let i = 0; i < 3; i++) { tierUpRings[i].alpha = 0; }
+  tierUpZoomScale = 1;
+  tierUpZoomTimer = 0;
+  tierUpTextScale = 0;
+  tierUpTextTimer = 0;
+
+  // Zone wave reset
+  zoneWaveY = -1;
+  zoneSlowmoTimer = 0;
+
+  // Milestone reset
+  nextMilestoneIdx = 0;
+  inGameRecordBeaten = false;
+  highscorePulseTimer = 0;
+
+  // Death reset
+  deathImpactAngle = 0;
 
   // HUD progressive reveal reset
   hasEverEaten = false;
@@ -1410,9 +1622,10 @@ function circlesOverlap(ax, ay, ar, bx, by, br) {
 
 function triggerPrestige() {
   inPrestige = true;
-  prestigeTimer = 1.5; // 1.5s animation
+  prestigeTimer = 3.0; // extended cinematic
   playPrestige();
   haptic([50, 30, 50, 30, 100]);
+  stopFestinDrone();
 
   // Flash
   prestigeFlashEl.style.opacity = '0.8';
@@ -1467,25 +1680,29 @@ function checkFrenzy() {
   }
 
   if (recentEats.length >= FRENZY_THRESHOLD && !frenzyActive) {
-    // Trigger frenzy!
+    // Trigger FESTIN — golden time!
     frenzyActive = true;
-    frenzyTimer = FRENZY_SLOWMO_DURATION;
+    frenzyTimer = 4; // 4 seconds of golden time
     frenzyCount = recentEats.length;
     bestFrenzy = Math.max(bestFrenzy, frenzyCount);
+    festinPointsAccum = 0;
+
+    // Brief initial slow-mo
     slowmoScale = FRENZY_SLOWMO_SCALE;
     saturationFlash = 1;
 
     playFrenzy();
+    startFestinDrone();
     haptic([20, 10, 20, 10, 40]);
     if (!firstFestinTriggered) {
       firstFestinTriggered = true;
-      spawnFloatingText(W / 2, H / 3, 'FESTIN ! Mange vite pour', '#ffcc00', true);
-      spawnFloatingText(W / 2, H / 3 + 36, 'doubler tes points !', '#ffcc00', true);
+      spawnFloatingText(W / 2, H / 3, 'FESTIN !', '#ffd700', true, 42);
+      spawnFloatingText(W / 2, H / 3 + 36, 'Mange vite pour doubler !', '#ffd700', true, 22);
     } else {
-      spawnFloatingText(W / 2, H / 3, `FESTIN ×${frenzyCount} 🔥`, '#ffcc00', true);
+      spawnFloatingText(W / 2, H / 3, `FESTIN ×${frenzyCount}`, '#ffd700', true, 42);
     }
     shakeIntensity = 10;
-    recentEats = []; // reset window
+    recentEats = [];
   }
 }
 
@@ -1495,16 +1712,38 @@ function checkFrenzy() {
 
 function triggerDeathAnim() {
   deathAnimActive = true;
-  deathAnimTimer = 0.5; // 0.5s slow-mo before game over
+  deathAnimTimer = 0.8; // extended slow-mo before game over
   slowmoScale = 0.2;
   shakeIntensity = 15;
   haptic([30, 20, 60]);
   playHurt();
-  // Burst particles from player
+  stopFestinDrone();
+  // Fish-shaped disintegration: particles along the body ellipse
   if (player) {
     const c = getFishColors(player.tier, currentZone);
-    spawnEatParticles(player.x, player.y, c.body, 30);
-    spawnEatParticles(player.x, player.y, '#ff4444', 20);
+    const bodyLen = player.radius * 2.2;
+    const bodyH = player.radius * 1.1;
+    const cosA = Math.cos(player.angle);
+    const sinA = Math.sin(player.angle);
+    for (let i = 0; i < 40 && particles.length < MAX_PARTICLES; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rx = bodyLen * 0.45 * Math.cos(a);
+      const ry = bodyH * Math.sin(a);
+      const px = player.x + rx * cosA - ry * sinA;
+      const py = player.y + rx * sinA + ry * cosA;
+      const pAngle = Math.atan2(py - player.y, px - player.x) + (Math.random() - 0.5) * 0.5;
+      const speed = 1 + Math.random() * 2;
+      particles.push({
+        x: px, y: py,
+        vx: Math.cos(pAngle) * speed,
+        vy: Math.sin(pAngle) * speed,
+        life: 1,
+        decay: 0.01 + Math.random() * 0.01, // persist ~1.5s
+        size: 2 + Math.random() * 4,
+        color: Math.random() > 0.4 ? c.body : '#ff4444',
+        magnetic: false, magnetTimer: 0,
+      });
+    }
   }
   // Intense red flash
   vignetteEl.style.opacity = '1';
@@ -1590,6 +1829,17 @@ function triggerZoneTransition(zone) {
   zoneTextEl.textContent = zoneTransitionName;
   zoneTextEl.classList.add('visible');
   zoneTransitionTimer = 2.5;
+
+  // Zone-specific sound
+  playZoneSound(zone);
+
+  // Color wave sweeping down
+  zoneWaveY = 0;
+  zoneWaveColor = zone === 'reef' ? '#44ddbb' : zone === 'twilight' ? '#5566aa' : zone === 'abyss' ? '#223355' : '#88ccff';
+
+  // Brief slow-mo
+  zoneSlowmoTimer = 0.5;
+  if (tierUpSlowmoTimer <= 0) slowmoScale = 0.5;
 }
 
 // ============================================================
@@ -1614,8 +1864,49 @@ function update(dt) {
     }
     // Keep rendering but don't process game logic
     gameTime += dt * 0.2;
-    // Fade player opacity via flash
     player.flashTimer += dt * 15;
+    // Directional shake during death
+    if (shakeIntensity > 0.5) {
+      shakeX = Math.cos(deathImpactAngle) * shakeIntensity * (0.5 + Math.random() * 0.5);
+      shakeY = Math.sin(deathImpactAngle) * shakeIntensity * (0.5 + Math.random() * 0.5);
+      shakeIntensity *= SHAKE_DECAY;
+    } else {
+      shakeX = shakeY = 0;
+    }
+    return;
+  }
+
+  // Tier-up freeze frame
+  if (tierUpFreezeTimer > 0) {
+    tierUpFreezeTimer -= dt;
+    // Animate visual effects during freeze
+    for (let i = 0; i < 3; i++) {
+      const ring = tierUpRings[i];
+      if (ring.alpha <= 0) continue;
+      ring.age += dt;
+      if (ring.age > ring.delay) {
+        ring.radius += dt * 300;
+        ring.alpha = Math.max(0, ring.alpha - dt * 1.0);
+      }
+    }
+    if (tierUpZoomTimer > 0) {
+      tierUpZoomTimer -= dt;
+      const zt = 1 - (tierUpZoomTimer / 1.0);
+      tierUpZoomScale = zt < 0.3 ? 1 - (zt / 0.3) * 0.08 : 0.92 + ((zt - 0.3) / 0.7) * 0.08;
+      if (tierUpZoomTimer <= 0) tierUpZoomScale = 1;
+    }
+    if (tierUpTextTimer > 0) {
+      tierUpTextTimer -= dt;
+      const tt = 1 - (tierUpTextTimer / 1.5);
+      if (tt < 0.15) tierUpTextScale = (tt / 0.15) * 1.3;
+      else if (tt < 0.3) tierUpTextScale = 1.3 - ((tt - 0.15) / 0.15) * 0.3;
+      else tierUpTextScale = 1;
+      if (tierUpTextTimer <= 0) tierUpTextScale = 0;
+    }
+    if (tierUpFreezeTimer <= 0) {
+      tierUpSlowmoTimer = 1.0;
+      slowmoScale = 0.25;
+    }
     return;
   }
 
@@ -1623,16 +1914,28 @@ function update(dt) {
   const effectiveDt = dt * slowmoScale;
   gameTime += effectiveDt;
 
-  // Frenzy timer
+  // Festin golden time timer
   if (frenzyActive) {
     frenzyTimer -= dt; // real time, not slowed
+    // Initial slow-mo for first 0.5s, then normal speed during golden time
+    if (frenzyTimer < 3.5 && tierUpSlowmoTimer <= 0 && tierUpFreezeTimer <= 0) {
+      slowmoScale = 1;
+    }
+    // Maintain golden glow
+    saturationFlash = Math.max(0.6, saturationFlash);
     if (frenzyTimer <= 0) {
       frenzyActive = false;
       slowmoScale = 1;
+      saturationFlash = 0;
+      stopFestinDrone();
+      // Show festin summary
+      if (festinPointsAccum > 0) {
+        spawnFloatingText(W / 2, H / 3, `FESTIN +${festinPointsAccum} pts !`, '#ffd700', true, 38);
+      }
     }
   }
-  // Saturation flash decay
-  if (saturationFlash > 0) {
+  // Saturation flash decay (only when not in festin)
+  if (saturationFlash > 0 && !frenzyActive) {
     saturationFlash = Math.max(0, saturationFlash - dt * 3);
   }
 
@@ -1654,10 +1957,76 @@ function update(dt) {
     tierUpFlashTimer = Math.max(0, tierUpFlashTimer - dt);
   }
 
-  // Tier-up expansion ring animation
+  // Tier-up expansion ring animation (legacy single ring)
   if (tierUpRingAlpha > 0) {
-    tierUpRingRadius += dt * 300; // expand outward fast
+    tierUpRingRadius += dt * 300;
     tierUpRingAlpha = Math.max(0, tierUpRingAlpha - dt * 1.4);
+  }
+
+  // Enhanced tier-up 3-ring animation
+  for (let i = 0; i < 3; i++) {
+    const ring = tierUpRings[i];
+    if (ring.alpha <= 0) continue;
+    ring.age += dt;
+    if (ring.age > ring.delay) {
+      ring.radius += dt * 300;
+      ring.alpha = Math.max(0, ring.alpha - dt * 1.0);
+    }
+  }
+
+  // Tier-up zoom animation
+  if (tierUpZoomTimer > 0) {
+    tierUpZoomTimer -= dt;
+    const zt = 1 - (tierUpZoomTimer / 1.0);
+    tierUpZoomScale = zt < 0.3 ? 1 - (zt / 0.3) * 0.08 : 0.92 + ((zt - 0.3) / 0.7) * 0.08;
+    if (tierUpZoomTimer <= 0) tierUpZoomScale = 1;
+  }
+
+  // Tier-up text bounce animation
+  if (tierUpTextTimer > 0) {
+    tierUpTextTimer -= dt;
+    const tt = 1 - (tierUpTextTimer / 1.5);
+    if (tt < 0.15) tierUpTextScale = (tt / 0.15) * 1.3;
+    else if (tt < 0.3) tierUpTextScale = 1.3 - ((tt - 0.15) / 0.15) * 0.3;
+    else tierUpTextScale = 1;
+    if (tierUpTextTimer <= 0) tierUpTextScale = 0;
+  }
+
+  // Combo timer decay
+  if (comboTimer > 0) {
+    comboTimer -= effectiveDt;
+    if (comboTimer <= 0) {
+      comboCount = 0;
+      comboPitch = 1;
+    }
+  }
+  if (comboPulseScale > 1) {
+    comboPulseScale = Math.max(1, comboPulseScale - effectiveDt * 3);
+  }
+
+  // Zone wave sweep
+  if (zoneWaveY >= 0) {
+    zoneWaveY += dt * (H / 0.8);
+    if (zoneWaveY > H + 50) zoneWaveY = -1;
+  }
+
+  // Zone slow-mo timer
+  if (zoneSlowmoTimer > 0) {
+    zoneSlowmoTimer -= dt;
+    if (zoneSlowmoTimer <= 0 && tierUpSlowmoTimer <= 0 && !frenzyActive) {
+      slowmoScale = 1;
+    }
+  }
+
+  // Highscore pulse timer
+  if (highscorePulseTimer > 0) {
+    highscorePulseTimer -= dt;
+    highScoreEl.style.color = '#ffd700';
+    highScoreEl.style.textShadow = '0 0 10px rgba(255,200,0,.5)';
+    if (highscorePulseTimer <= 0) {
+      highScoreEl.style.color = '';
+      highScoreEl.style.textShadow = '';
+    }
   }
 
   // Adaptive danger: track time since last hit
@@ -1711,6 +2080,7 @@ function update(dt) {
       player.angle += angleDiff * Math.min(1, effectiveDt * 12);
 
       let speed = PLAYER_BASE_SPEED;
+      if (frenzyActive) speed *= 1.3; // festin speed boost
       if (boosting && boostFuel > 0) {
         speed *= BOOST_MULT;
         boostFuel = Math.max(0, boostFuel - BOOST_DRAIN);
@@ -1729,6 +2099,7 @@ function update(dt) {
   if (!hasDirectionalInput) {
     // Idle auto-swim: drift forward at 40% speed
     let idleSpeed = PLAYER_BASE_SPEED * 0.4;
+    if (frenzyActive) idleSpeed *= 1.3;
     if (playerStunTimer > 0) idleSpeed *= 0.6;
     if (playerSlowTimer > 0) idleSpeed *= 0.6;
 
@@ -1844,6 +2215,7 @@ function update(dt) {
           player.eaten = Math.max(0, player.eaten - 2);
 
           if (player.tier <= 1) {
+            deathImpactAngle = Math.atan2(player.y - j.y, player.x - j.x);
             triggerDeathAnim();
             return;
           }
@@ -2015,11 +2387,22 @@ function update(dt) {
         // Reveal size bar on first eat
         if (!hasEverEaten) { hasEverEaten = true; revealSizeBar(); }
 
+        // Combo tracking
+        if (comboTimer > 0) {
+          comboCount++;
+        } else {
+          comboCount = 1;
+        }
+        comboTimer = 2; // 2s window
+        comboPulseScale = 1.4;
+        comboPitch = 1 + (comboCount - 1) * 0.1; // +10% pitch per combo (Mario coins)
+
         // Tier-based scoring with frenzy doubler and depth multiplier
         let pointValue = TIER_POINTS[f.tier] || 1;
         if (frenzyActive) pointValue *= 2;
         pointValue *= scoreMultiplier;
         score += pointValue;
+        if (frenzyActive) festinPointsAccum += pointValue;
         totalFishEaten++;
         fishEatenByTier[f.tier]++;
         player.totalEaten++;
@@ -2033,42 +2416,88 @@ function update(dt) {
         recentEats.push(gameTime);
         checkFrenzy();
 
+        // Scaled eat feedback by eaten tier
+        const fb = EAT_FEEDBACK[Math.min(f.tier, EAT_FEEDBACK.length - 1)];
+        const isMagnetic = f.tier >= 2; // tier 2+ particles fly toward player
+        spawnEatParticles(f.x, f.y, getFishColors(f.tier, currentZone).body, fb.particles, isMagnetic);
+        if (f.tier > 0) spawnBubble(f.x, f.y);
+        shakeIntensity = Math.max(shakeIntensity, fb.shake);
+        playerScaleBump = fb.scaleBump;
+
+        const scoreText = frenzyActive ? `+${pointValue}!` : `+${pointValue}`;
+        const ftSize = typeof fb.textSize === 'number' ? fb.textSize : 32;
+        spawnFloatingText(f.x, f.y, scoreText,
+          frenzyActive ? '#ffd700' : getFishColors(f.tier, currentZone).body,
+          pointValue >= 10, ftSize);
+
+        haptic(fb.haptic);
+        playEat(comboPitch);
+
+        // Score milestones
+        while (nextMilestoneIdx < SCORE_MILESTONES.length && score >= SCORE_MILESTONES[nextMilestoneIdx]) {
+          playMilestone();
+          spawnFloatingText(W / 2, H / 4, `${SCORE_MILESTONES[nextMilestoneIdx]} !`, '#80e0ff', true, 28);
+          nextMilestoneIdx++;
+        }
+        // In-game record detection
+        if (!inGameRecordBeaten && highScore > 0 && score > highScore) {
+          inGameRecordBeaten = true;
+          spawnFloatingText(W / 2, H / 4, 'NOUVEAU RECORD !', '#ffd700', true, 36);
+          highscorePulseTimer = 2;
+          playMilestone();
+          haptic([20, 10, 30]);
+        }
+
         // Level up check
         if (player.tier < TIER_COUNT - 1 && player.eaten >= TIER_THRESHOLDS[player.tier]) {
+          const oldTier = player.tier;
+          const oldTierColor = getFishColors(oldTier, currentZone).body;
           player.tier++;
           player.eaten = 0;
           hasFirstTierUp = true;
-          // Smooth radius transition via lerp (not instant)
           player.targetRadius = TIER_RADIUS[player.tier] * radiusScale;
-          shakeIntensity = 10;
-          spawnEatParticles(player.x, player.y, getFishColors(player.tier, currentZone).body, 25);
           maxTierReached = Math.max(maxTierReached, player.tier);
-
-          // --- Tier-up celebration ---
-          playTierUp();
-          haptic([20, 15, 30]);
-
-          // Big floating text: tier name
-          spawnFloatingText(W / 2, H / 2 - 40, 'Tu grandis !', '#ffcc00', true);
           const newTierColor = getFishColors(player.tier, getZoneForTier(player.tier)).body;
-          spawnFloatingText(W / 2, H / 2, `→ ${TIER_NAMES[player.tier]}`, newTierColor, true);
 
-          // Expansion ring from player
+          // --- TIER-UP SPECTACLE ---
+          // Freeze frame 0.15s
+          tierUpFreezeTimer = 0.15;
+
+          // 3 concentric rings
+          tierUpRings[0] = { radius: player.radius, alpha: 0.8, color: '#ffffff', age: 0, delay: 0 };
+          tierUpRings[1] = { radius: player.radius, alpha: 0.7, color: oldTierColor, age: 0, delay: 0.1 };
+          tierUpRings[2] = { radius: player.radius, alpha: 0.6, color: newTierColor, age: 0, delay: 0.2 };
+
+          // 50+ bicolor particles with varied sizes
+          spawnEatParticles(player.x, player.y, oldTierColor, 25, false, 2, 10);
+          spawnEatParticles(player.x, player.y, newTierColor, 25, false, 2, 10);
+
+          // Zoom-out animation (1.0→0.92 in 0.3s, back in 0.7s)
+          tierUpZoomTimer = 1.0;
+
+          // Text bounce animation
+          tierUpTextTimer = 1.5;
+          tierUpTextName = TIER_NAMES[player.tier];
+          tierUpTextColor = newTierColor;
+
+          // Screen flash in new tier color
+          tierUpFlashTimer = 0.5;
+          tierUpRingColor = newTierColor;
           tierUpRingRadius = player.radius;
           tierUpRingAlpha = 0.7;
-          tierUpRingColor = newTierColor;
 
-          // Golden flash on player body
-          tierUpFlashTimer = 0.3;
+          // Sound (amplified with sub-bass + C6)
+          playTierUp();
 
-          // Brief slow-mo (0.4s at 0.3x)
-          tierUpSlowmoTimer = 0.4;
-          slowmoScale = 0.3;
+          // Haptic crescendo
+          haptic([30, 15, 30, 15, 50, 20, 80]);
 
-          // Grace period: 3s reduced predator spawns
+          shakeIntensity = 15;
+
+          // Grace period
           graceTimer = 3;
 
-          // Zone change notification
+          // Zone change
           const newZone = getZoneForTier(player.tier);
           if (newZone !== currentZone) {
             triggerZoneTransition(newZone);
@@ -2080,18 +2509,6 @@ function update(dt) {
             triggerPrestige();
           }
         }
-
-        const pCount = f.tier === 0 ? 3 : 6;
-        spawnEatParticles(f.x, f.y, getFishColors(f.tier, currentZone).body, pCount);
-        if (f.tier > 0) spawnBubble(f.x, f.y);
-        shakeIntensity = Math.max(shakeIntensity, f.tier === 0 ? 1 : 3);
-
-        const scoreText = frenzyActive ? `+${pointValue}!` : `+${pointValue}`;
-        const bigText = pointValue >= 10;
-        spawnFloatingText(f.x, f.y, scoreText, frenzyActive ? '#ffcc00' : getFishColors(f.tier, currentZone).body, bigText);
-        playerScaleBump = 0.2;
-        haptic(10);
-        playEat();
 
         // Post-eat breathing pulse: push nearby predators back ~30px
         for (const pf of fishes) {
@@ -2127,7 +2544,7 @@ function update(dt) {
         adaptiveDangerSpawned = false;
 
         if (player.tier <= 1) {
-          // Dramatic death: slow-mo + particles, then game over
+          deathImpactAngle = Math.atan2(player.y - f.y, player.x - f.x);
           triggerDeathAnim();
           return;
         }
@@ -2223,9 +2640,22 @@ function update(dt) {
     adaptiveDangerSpawned = true; // only one per cycle, resets on damage
   }
 
-  // --- Particles ---
+  // --- Particles (with magnetism for tier 2+ eats) ---
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
+    if (p.magnetic && player && player.alive) {
+      if (p.magnetTimer > 0) {
+        p.magnetTimer -= effectiveDt; // expand outward first
+      } else {
+        // Attract toward player
+        const mdx = player.x - p.x, mdy = player.y - p.y;
+        const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
+        if (mdist > 2) {
+          p.vx += (mdx / mdist) * 12;
+          p.vy += (mdy / mdist) * 12;
+        }
+      }
+    }
     p.x += p.vx;
     p.y += p.vy;
     p.vx *= 0.95;
@@ -2255,9 +2685,9 @@ function update(dt) {
     if (ft.life <= 0) floatingTexts.splice(i, 1);
   }
 
-  // --- Player scale bump decay (visible ~0.3s) ---
+  // --- Player scale bump decay (~0.5s visible) ---
   if (playerScaleBump > 0) {
-    playerScaleBump = Math.max(0, playerScaleBump - effectiveDt * 0.5);
+    playerScaleBump = Math.max(0, playerScaleBump - effectiveDt * 1.0);
   }
 
   // --- Oxygen drain (only at depth >= 2) ---
@@ -2268,6 +2698,7 @@ function update(dt) {
     if (oxygen < OXYGEN_MAX * 0.92 && !hasEverLowOxygen) { hasEverLowOxygen = true; revealOxygenBar(); }
     if (oxygen <= 0) {
       deathReason = 'oxygen';
+      deathImpactAngle = Math.PI / 2; // downward for oxygen death
       triggerDeathAnim();
       return;
     }
@@ -2388,6 +2819,7 @@ function update(dt) {
           player.invincible = 1.5;
           player.eaten = 0;
           if (player.tier <= 1) {
+            deathImpactAngle = Math.atan2(player.y - a.y, player.x - a.x);
             triggerDeathAnim();
             return;
           }
@@ -2450,6 +2882,13 @@ function distBetween(a, b) {
 function render() {
   ctx.save();
   ctx.translate(shakeX, shakeY);
+
+  // Tier-up zoom effect
+  if (tierUpZoomScale !== 1) {
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(tierUpZoomScale, tierUpZoomScale);
+    ctx.translate(-W / 2, -H / 2);
+  }
 
   // --- Zone-based background ---
   const bg = ZONE_BG[currentZone] || ZONE_BG.surface;
@@ -2780,7 +3219,7 @@ function render() {
 
     // Tier-up golden flash overlay on player body
     if (tierUpFlashTimer > 0) {
-      ctx.globalAlpha = tierUpFlashTimer / 0.3 * 0.4;
+      ctx.globalAlpha = tierUpFlashTimer / 0.5 * 0.4;
       ctx.fillStyle = '#ffcc00';
       ctx.beginPath();
       ctx.arc(player.x, player.y, pDrawR * 1.3, 0, Math.PI * 2);
@@ -2849,7 +3288,109 @@ function render() {
       ctx.globalAlpha = 1;
     }
 
-    // Tier-up expansion ring (shockwave)
+    // Combo counter above chevron
+    if (comboCount >= 2) {
+      const comboY = player.y - pDrawR * 1.9 - 30;
+      let comboColor;
+      if (frenzyActive) comboColor = '#ffd700';
+      else if (comboCount >= 7) comboColor = '#ffd700';
+      else if (comboCount >= 5) comboColor = '#ff4444';
+      else if (comboCount >= 3) comboColor = '#ffaa00';
+      else comboColor = '#ffffff';
+      const comboSize = Math.min(36, 20 + comboCount * 2) * comboPulseScale;
+      ctx.font = `bold ${Math.round(comboSize)}px "Segoe UI", system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = comboColor;
+      ctx.globalAlpha = Math.min(1, comboTimer / 0.3); // fade out near end
+      if (comboCount >= 5 || frenzyActive) {
+        ctx.shadowColor = comboColor;
+        ctx.shadowBlur = 12;
+      }
+      ctx.fillText(`×${comboCount}`, player.x, comboY);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
+    // Festin golden time overlay + timer arc
+    if (frenzyActive && frenzyTimer > 0) {
+      // Golden overlay
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(-20, -20, W + 40, H + 40);
+      ctx.globalAlpha = 1;
+      // Timer arc (cooldown ring)
+      const festinProgress = frenzyTimer / 4;
+      const arcRadius = pDrawR * 2.2;
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 4;
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = 10;
+      const startA = -Math.PI / 2;
+      const endA = startA + festinProgress * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, arcRadius, startA, endA);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Build-up near tier-up: sparkles + XP glow
+    {
+      const xpRadiusBU = pDrawR * 1.7;
+      let progressBU;
+      if (player.tier < TIER_COUNT - 1) {
+        progressBU = player.eaten / TIER_THRESHOLDS[player.tier];
+      } else {
+        progressBU = prestigeEats / PRESTIGE_EXTRA_EATS;
+      }
+      if (progressBU >= 0.8) {
+        // Sparkles at end of XP arc
+        const xpColorBU = player.tier < TIER_COUNT - 1
+          ? getFishColors(player.tier + 1, currentZone).body : '#ffcc00';
+        const endAngle = -Math.PI / 2 + Math.min(1, progressBU) * Math.PI * 2;
+        const sparkX = player.x + Math.cos(endAngle) * xpRadiusBU;
+        const sparkY = player.y + Math.sin(endAngle) * xpRadiusBU;
+        const sparkAlpha = 0.4 + 0.4 * Math.sin(gameTime * 8);
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = sparkAlpha;
+        ctx.beginPath();
+        ctx.arc(sparkX, sparkY, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // Threshold - 1: blink the ring
+        const threshold = player.tier < TIER_COUNT - 1
+          ? TIER_THRESHOLDS[player.tier] : PRESTIGE_EXTRA_EATS;
+        const current = player.tier < TIER_COUNT - 1 ? player.eaten : prestigeEats;
+        if (current === threshold - 1) {
+          const blink = Math.sin(gameTime * 10) > 0;
+          if (blink) {
+            ctx.strokeStyle = xpColorBU;
+            ctx.lineWidth = 5;
+            ctx.shadowColor = xpColorBU;
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, xpRadiusBU, -Math.PI / 2, endAngle);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+          }
+        }
+      }
+      // Prestige build-up: rising particles when close
+      if (player.tier === TIER_COUNT - 1 && prestigeEats >= PRESTIGE_EXTRA_EATS * 0.75) {
+        const intensity = (prestigeEats - PRESTIGE_EXTRA_EATS * 0.75) / (PRESTIGE_EXTRA_EATS * 0.25);
+        ctx.globalAlpha = 0.3 * intensity;
+        ctx.fillStyle = '#ffd700';
+        for (let pi = 0; pi < 6; pi++) {
+          const ppx = player.x + Math.sin(gameTime * 2 + pi * Math.PI / 3) * (pDrawR + 15);
+          const ppy = player.y - ((gameTime * 40 + pi * 15) % 60);
+          ctx.beginPath();
+          ctx.arc(ppx, ppy, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Tier-up expansion ring (legacy single ring)
     if (tierUpRingAlpha > 0) {
       ctx.strokeStyle = tierUpRingColor;
       ctx.globalAlpha = tierUpRingAlpha;
@@ -2859,6 +3400,22 @@ function render() {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
+
+    // Enhanced 3-ring tier-up shockwaves
+    for (let ri = 0; ri < 3; ri++) {
+      const ring = tierUpRings[ri];
+      if (ring.alpha <= 0) continue;
+      ctx.strokeStyle = ring.color;
+      ctx.globalAlpha = ring.alpha;
+      ctx.lineWidth = 3 * ring.alpha;
+      ctx.shadowColor = ring.color;
+      ctx.shadowBlur = 10 * ring.alpha;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, ring.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
 
     // Jellyfish slow: purple tint over player
     if (playerSlowTimer > 0) {
@@ -2895,18 +3452,15 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // Floating texts
+  // Floating texts (variable font size per text)
   for (const ft of floatingTexts) {
     ctx.globalAlpha = ft.life;
     ctx.textAlign = 'center';
-    if (ft.big) {
-      ctx.font = 'bold 32px "Segoe UI", system-ui, sans-serif';
-      if (ft.glow) {
-        ctx.shadowColor = ft.color;
-        ctx.shadowBlur = 20;
-      }
+    ctx.font = `bold ${ft.fontSize}px "Segoe UI", system-ui, sans-serif`;
+    if (ft.glow) {
+      ctx.shadowColor = ft.color;
+      ctx.shadowBlur = 20;
     } else {
-      ctx.font = 'bold 20px "Segoe UI", system-ui, sans-serif';
       ctx.shadowBlur = 0;
     }
     ctx.fillStyle = ft.color;
@@ -2915,30 +3469,113 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // Saturation flash overlay (frenzy effect)
-  if (saturationFlash > 0) {
+  // Saturation flash overlay (frenzy/festin golden glow)
+  if (saturationFlash > 0 && !frenzyActive) {
+    // Brief flash only (festin golden overlay is handled separately above)
     ctx.globalAlpha = saturationFlash * 0.15;
     ctx.fillStyle = '#ffcc00';
     ctx.fillRect(-10, -10, W + 20, H + 20);
     ctx.globalAlpha = 1;
   }
 
-  // Prestige zoom/darken animation
+  // Zone wave sweep
+  if (zoneWaveY >= 0 && zoneWaveY < H + 50) {
+    ctx.globalAlpha = 0.3 * (1 - zoneWaveY / H);
+    const waveGrad = ctx.createLinearGradient(0, zoneWaveY - 30, 0, zoneWaveY + 30);
+    waveGrad.addColorStop(0, 'transparent');
+    waveGrad.addColorStop(0.5, zoneWaveColor);
+    waveGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = waveGrad;
+    ctx.fillRect(-10, zoneWaveY - 30, W + 20, 60);
+    ctx.globalAlpha = 1;
+  }
+
+  // Tier-up text animation (bounce: 0→1.3→1.0)
+  if (tierUpTextScale > 0) {
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(tierUpTextScale, tierUpTextScale);
+    ctx.font = 'bold 36px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = tierUpTextColor;
+    ctx.shadowColor = tierUpTextColor;
+    ctx.shadowBlur = 20;
+    ctx.fillText(tierUpTextName, 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  // Tier-up bicolor flash
+  if (tierUpFlashTimer > 0) {
+    ctx.globalAlpha = (tierUpFlashTimer / 0.5) * 0.2;
+    ctx.fillStyle = tierUpRingColor || '#ffcc00';
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+    ctx.globalAlpha = 1;
+  }
+
+  // Prestige cinematic animation
   if (inPrestige) {
-    const t = 1 - (prestigeTimer / 1.5); // 0 → 1
-    ctx.globalAlpha = t * 0.8;
+    const totalDur = 3.0;
+    const t = 1 - (prestigeTimer / totalDur); // 0 → 1
+
+    // Fish swimming down
+    if (t < 0.4 && player) {
+      const fishY = H / 2 + (t / 0.4) * (H / 2 + 50);
+      ctx.globalAlpha = Math.max(0, 1 - t * 2.5);
+      drawFish(W / 2, fishY, player.radius, Math.PI / 2, player.tier,
+               0, gameTime * 10, true, currentZone);
+      ctx.globalAlpha = 1;
+    }
+
+    // Progressive darken
+    ctx.globalAlpha = Math.min(0.85, t * 1.2);
     ctx.fillStyle = '#000010';
     ctx.fillRect(-10, -10, W + 20, H + 20);
 
-    // Depth text
-    ctx.globalAlpha = Math.min(1, t * 2);
-    ctx.fillStyle = '#80e0ff';
-    ctx.font = 'bold 28px "Segoe UI", system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.shadowColor = '#00aaff';
-    ctx.shadowBlur = 20;
-    ctx.fillText('Plongée...', W / 2, H / 2);
-    ctx.shadowBlur = 0;
+    // Rising bubbles
+    ctx.globalAlpha = Math.min(0.8, t * 2);
+    for (let bi = 0; bi < 10; bi++) {
+      const bx = W * 0.2 + (bi / 10) * W * 0.6 + Math.sin(gameTime * 3 + bi) * 20;
+      const by = H - ((gameTime * 60 + bi * 80) % (H + 40));
+      ctx.fillStyle = 'rgba(150,200,255,0.3)';
+      ctx.beginPath();
+      ctx.arc(bx, by, 3 + Math.sin(gameTime + bi) * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Text: "PROFONDEUR X" with sequential letter reveal
+    if (t > 0.4) {
+      const textT = (t - 0.4) / 0.3;
+      const fullText = `PROFONDEUR ${depthLevel + 1}`;
+      const visChars = Math.min(fullText.length, Math.ceil(textT * fullText.length));
+      const displayText = fullText.substring(0, visChars);
+      ctx.globalAlpha = Math.min(1, textT * 2);
+      ctx.fillStyle = '#80e0ff';
+      ctx.font = 'bold 48px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = '#00aaff';
+      ctx.shadowBlur = 20;
+      ctx.fillText(displayText, W / 2, H / 2 - 20);
+      ctx.shadowBlur = 0;
+    }
+
+    // Multiplier with 3 pulses
+    if (t > 0.7) {
+      const multT = (t - 0.7) / 0.3;
+      const pulse = 1 + 0.15 * Math.sin(multT * Math.PI * 6);
+      ctx.globalAlpha = Math.min(1, multT * 3);
+      ctx.save();
+      ctx.translate(W / 2, H / 2 + 30);
+      ctx.scale(pulse, pulse);
+      ctx.font = 'bold 64px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffd700';
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = 25;
+      ctx.fillText(`×${depthLevel + 1}`, 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
     ctx.globalAlpha = 1;
   }
 
