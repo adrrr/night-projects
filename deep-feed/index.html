@@ -57,6 +57,18 @@ canvas{display:block;width:100%;height:100%}
 #boost-btn{position:absolute;bottom:44px;right:24px;width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,200,0,.35);background:radial-gradient(circle,rgba(255,180,0,.2),rgba(200,100,0,.1));backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:7;display:none;pointer-events:all;touch-action:none;-webkit-touch-callout:none}
 #boost-btn::after{content:'⚡';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;pointer-events:none}
 #boost-btn.active{border-color:rgba(255,220,0,.7);background:radial-gradient(circle,rgba(255,200,0,.45),rgba(255,120,0,.25));box-shadow:0 0 20px rgba(255,180,0,.3)}
+@keyframes boostPulse{0%{transform:scale(1);box-shadow:0 0 0 rgba(255,200,0,0)}50%{transform:scale(1.08);box-shadow:0 0 20px rgba(255,200,0,.4)}100%{transform:scale(1);box-shadow:0 0 0 rgba(255,200,0,0)}}
+#boost-btn.pulse-ready{animation:boostPulse 1.5s ease infinite}
+@keyframes boostVibrate{0%,100%{transform:translate(0,0)}25%{transform:translate(-1px,1px)}50%{transform:translate(1px,-1px)}75%{transform:translate(-1px,-1px)}}
+#boost-btn.vibrating{animation:boostVibrate .05s linear infinite}
+#boost-btn.vibrating::after{text-shadow:0 0 12px rgba(255,200,0,.8)}
+
+/* Control zone (mobile) */
+#control-zone{position:absolute;bottom:0;left:0;width:100%;height:30%;pointer-events:none;z-index:3;overflow:hidden;display:none}
+#control-zone.visible{display:block}
+
+/* Boost vignette tunnel effect */
+#boost-vignette{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0;z-index:4;transition:opacity .15s}
 
 /* HUD progressive reveal */
 #size-group,#boost-group,#oxygen-group{opacity:0;max-height:0;overflow:hidden;transform:translateX(-20px);transition:opacity .5s ease,transform .5s ease,max-height .5s ease;pointer-events:none}
@@ -110,6 +122,8 @@ canvas{display:block;width:100%;height:100%}
 <div id="orient-hint">Rotate to portrait for a better experience</div>
 
 <div id="boost-btn"></div>
+<div id="control-zone"></div>
+<div id="boost-vignette"></div>
 
 <div id="zone-text"></div>
 
@@ -184,8 +198,28 @@ const ZONE_PALETTES = {
   ],
 };
 
-// Base radius per tier
-const TIER_RADIUS = [10, 14, 22, 34, 50, 72];
+// Base radius per tier (scaled down for mobile)
+const TIER_RADIUS = [8, 12, 18, 26, 36, 48];
+
+// Joystick config
+const JOYSTICK_DEAD_ZONE = 15;
+const JOYSTICK_MAX_RADIUS = 60;
+const JOYSTICK_BASE_RADIUS = 40; // visual base circle
+const JOYSTICK_KNOB_RADIUS = 18; // visual knob
+
+// Inertia config
+const INERTIA_FRICTION = 0.85;
+const INERTIA_DURATION = 0.3; // seconds of glide after release
+
+// Tail flick config
+const TAIL_FLICK_VELOCITY_THRESHOLD = 8; // px/frame velocity for swipe detection
+const TAIL_FLICK_SPEED_MULT = 1.5;
+const TAIL_FLICK_DURATION = 0.15; // seconds
+const TAIL_FLICK_COOLDOWN = 0.8; // seconds
+
+// Camera zoom-out for large tiers
+const CAMERA_ZOOM_T4 = 0.92;
+const CAMERA_ZOOM_T5 = 0.85;
 
 // V3: faster progression — target 60-90s runs
 const TIER_THRESHOLDS = [5, 3, 6, 10, 15];
@@ -303,6 +337,8 @@ const oxygenGroupEl = document.getElementById('oxygen-group');
 const controlHintEl = document.getElementById('control-hint');
 const zoneTextEl = document.getElementById('zone-text');
 const scoreCenterEl = document.getElementById('score-center');
+const controlZoneEl = document.getElementById('control-zone');
+const boostVignetteEl = document.getElementById('boost-vignette');
 
 // ============================================================
 //  AUDIO (Web Audio API — lazy init)
@@ -560,6 +596,43 @@ function playMilestone() {
   o.stop(t + 0.25);
 }
 
+function playTailFlick() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Short aquatic swoosh: filtered noise + pitch sweep
+  const bufSize = Math.floor(audioCtx.sampleRate * 0.12);
+  const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) {
+    const env = Math.exp(-i / (bufSize * 0.3)) * (1 - i / bufSize);
+    data[i] = (Math.random() * 2 - 1) * env * 0.3;
+  }
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buf;
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(2000, t);
+  filter.frequency.exponentialRampToValueAtTime(800, t + 0.1);
+  filter.Q.value = 2;
+  const ng = audioCtx.createGain();
+  ng.gain.setValueAtTime(0.18, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  noise.connect(filter).connect(ng).connect(audioCtx.destination);
+  noise.start(t);
+  noise.stop(t + 0.12);
+  // Subtle pitch sweep undertone
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(400, t);
+  o.frequency.exponentialRampToValueAtTime(200, t + 0.1);
+  g.gain.setValueAtTime(0.08, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.1);
+}
+
 function startFestinDrone() {
   if (!audioCtx || festinDroneNode) return;
   const osc = audioCtx.createOscillator();
@@ -781,6 +854,53 @@ let highscorePulseTimer = 0;
 // Death direction
 let deathImpactAngle = 0;
 
+// Joystick state (mobile only)
+let joystick = {
+  active: false,
+  originX: 0, originY: 0,      // where thumb first touched
+  currentX: 0, currentY: 0,    // current thumb position
+  dx: 0, dy: 0,                // normalized direction (-1 to 1)
+  tilt: 0,                     // 0 to 1, how far the stick is pushed
+  angle: 0,                    // direction angle in radians
+  touchId: -1,
+  releaseAnimT: 0,             // elastic return animation (0 = idle, >0 = animating)
+  releaseFromX: 0, releaseFromY: 0, // where the knob was when released
+  ripplePhase: 0,              // aquatic ripple animation
+  glowDir: 0,                  // glow direction angle
+  cooldownIndicator: 0,        // tail flick cooldown visual (0-1)
+};
+
+// Joystick velocity tracking (for tail flick detection)
+let joystickVelocity = { x: 0, y: 0 };
+let joystickPrevPos = { x: 0, y: 0 };
+
+// Player inertia
+let playerInertiaVx = 0;
+let playerInertiaVy = 0;
+let playerInertiaTimer = 0; // time since joystick release
+
+// Tail flick state
+let tailFlickActive = false;
+let tailFlickTimer = 0;
+let tailFlickCooldown = 0;
+let tailFlickDirX = 0;
+let tailFlickDirY = 0;
+let tailFlickSquash = 0; // squash & stretch animation
+
+// Swim haptic rhythm
+let swimHapticTimer = 0;
+
+// Control zone particles (sand/plancton)
+let controlZoneParticles = [];
+
+// Camera dynamic zoom
+let cameraZoom = 1;
+let cameraZoomTarget = 1;
+
+// Mobile layout
+let gameAreaHeight = 0; // calculated in resize
+let controlAreaTop = 0; // Y where control area starts
+
 // ============================================================
 //  RESIZE
 // ============================================================
@@ -792,7 +912,19 @@ function resize() {
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  radiusScale = Math.max(0.6, Math.min(1, Math.min(W, H) / REF_SCREEN));
+
+  // Viewport-based radius scaling: small screens get smaller fish
+  if (W < 400) {
+    radiusScale = 0.75;
+  } else if (W < 500) {
+    radiusScale = 0.75 + ((W - 400) / 100) * 0.25; // interpolate 0.75 to 1.0
+  } else {
+    radiusScale = Math.max(0.6, Math.min(1, Math.min(W, H) / REF_SCREEN));
+  }
+
+  // Mobile layout zones
+  gameAreaHeight = H * 0.72;
+  controlAreaTop = gameAreaHeight;
 
   if (orientHintEl) {
     const isMobileSize = Math.min(W, H) < 500;
@@ -1288,9 +1420,12 @@ function chooseTier(playerTier, elapsed) {
 
 function createPlayer() {
   const r = TIER_RADIUS[1] * radiusScale;
+  // On mobile, center in the game area (top 72%), not the full screen
+  const touchDevice = typeof isTouchDevice !== 'undefined' && isTouchDevice;
+  const centerY = touchDevice && gameAreaHeight > 0 ? gameAreaHeight * 0.45 : H / 2;
   return {
     x: W / 2,
-    y: H / 2,
+    y: centerY,
     angle: 0,
     tier: 1,
     radius: r,
@@ -1394,9 +1529,26 @@ function initGame() {
   boostGroupEl.classList.remove('revealed');
   oxygenGroupEl.classList.remove('revealed');
 
-  // Touch reset
+  // Touch / joystick reset
   moveTouchId = -1;
   boosting = false;
+  joystick.active = false;
+  joystick.touchId = -1;
+  joystick.dx = 0;
+  joystick.dy = 0;
+  joystick.tilt = 0;
+  joystick.releaseAnimT = 0;
+  joystick.cooldownIndicator = 0;
+  playerInertiaVx = 0;
+  playerInertiaVy = 0;
+  playerInertiaTimer = 0;
+  tailFlickActive = false;
+  tailFlickTimer = 0;
+  tailFlickCooldown = 0;
+  tailFlickSquash = 0;
+  swimHapticTimer = 0;
+  cameraZoom = 1;
+  cameraZoomTarget = 1;
 
   // Death anim reset
   deathAnimActive = false;
@@ -1442,18 +1594,115 @@ function initGame() {
 //  INPUT HANDLING
 // ============================================================
 
-// --- Mobile: drag-to-move via touch events ---
+// --- Mobile: floating joystick via touch events ---
+
+function updateJoystickFromTouch(tx, ty) {
+  const dx = tx - joystick.originX;
+  const dy = ty - joystick.originY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  // Clamp to max radius
+  const clampedDist = Math.min(dist, JOYSTICK_MAX_RADIUS);
+  const angle = Math.atan2(dy, dx);
+
+  joystick.currentX = joystick.originX + Math.cos(angle) * clampedDist;
+  joystick.currentY = joystick.originY + Math.sin(angle) * clampedDist;
+
+  // Dead zone
+  if (dist < JOYSTICK_DEAD_ZONE) {
+    joystick.dx = 0;
+    joystick.dy = 0;
+    joystick.tilt = 0;
+  } else {
+    const effectiveDist = clampedDist - JOYSTICK_DEAD_ZONE;
+    const maxEffective = JOYSTICK_MAX_RADIUS - JOYSTICK_DEAD_ZONE;
+    joystick.tilt = Math.min(1, effectiveDist / maxEffective);
+    joystick.dx = Math.cos(angle) * joystick.tilt;
+    joystick.dy = Math.sin(angle) * joystick.tilt;
+  }
+  joystick.angle = angle;
+  joystick.glowDir = angle;
+
+  // Track velocity for tail flick detection
+  joystickVelocity.x = tx - joystickPrevPos.x;
+  joystickVelocity.y = ty - joystickPrevPos.y;
+  joystickPrevPos.x = tx;
+  joystickPrevPos.y = ty;
+}
+
+function releaseJoystick() {
+  // Store release position for elastic animation
+  joystick.releaseFromX = joystick.currentX - joystick.originX;
+  joystick.releaseFromY = joystick.currentY - joystick.originY;
+  joystick.releaseAnimT = 1.0;
+
+  // Calculate inertia from current joystick state
+  if (joystick.tilt > 0.2 && player) {
+    const speed = PLAYER_BASE_SPEED * joystick.tilt;
+    playerInertiaVx = Math.cos(joystick.angle) * speed;
+    playerInertiaVy = Math.sin(joystick.angle) * speed;
+    playerInertiaTimer = INERTIA_DURATION;
+  }
+
+  // Check for tail flick (fast swipe on release)
+  const swipeVel = Math.sqrt(joystickVelocity.x * joystickVelocity.x + joystickVelocity.y * joystickVelocity.y);
+  if (swipeVel > TAIL_FLICK_VELOCITY_THRESHOLD && tailFlickCooldown <= 0) {
+    const flickAngle = Math.atan2(joystickVelocity.y, joystickVelocity.x);
+    tailFlickActive = true;
+    tailFlickTimer = TAIL_FLICK_DURATION;
+    tailFlickCooldown = TAIL_FLICK_COOLDOWN;
+    tailFlickDirX = Math.cos(flickAngle);
+    tailFlickDirY = Math.sin(flickAngle);
+    tailFlickSquash = 1.0;
+    playTailFlick();
+    haptic(20);
+    // Bubble trail
+    if (player) {
+      for (let i = 0; i < 5; i++) spawnBubble(player.x - tailFlickDirX * player.radius, player.y - tailFlickDirY * player.radius);
+    }
+  }
+
+  joystick.active = false;
+  joystick.touchId = -1;
+  joystick.dx = 0;
+  joystick.dy = 0;
+  joystick.tilt = 0;
+  pointer.active = false;
+}
 
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (!running) return;
   ensureAudio();
   for (const touch of e.changedTouches) {
-    if (moveTouchId === -1) {
+    const tx = touch.clientX;
+    const ty = touch.clientY;
+
+    // Only activate joystick in left half, lower portion of screen
+    if (joystick.touchId === -1 && tx < W * 0.5 && ty > H * 0.4) {
+      isTouch = true;
+      joystick.active = true;
+      joystick.touchId = touch.identifier;
+      joystick.originX = tx;
+      joystick.originY = ty;
+      joystick.currentX = tx;
+      joystick.currentY = ty;
+      joystick.dx = 0;
+      joystick.dy = 0;
+      joystick.tilt = 0;
+      joystick.releaseAnimT = 0;
+      joystickPrevPos.x = tx;
+      joystickPrevPos.y = ty;
+      joystickVelocity.x = 0;
+      joystickVelocity.y = 0;
+      moveTouchId = touch.identifier;
+      pointer.active = true;
+    } else if (moveTouchId === -1 && joystick.touchId === -1) {
+      // Fallback: non-joystick touch for movement (right side or upper area)
       isTouch = true;
       moveTouchId = touch.identifier;
-      pointer.x = touch.clientX;
-      pointer.y = touch.clientY - TOUCH_OFFSET_Y;
+      pointer.x = tx;
+      pointer.y = ty - TOUCH_OFFSET_Y;
       pointer.active = true;
     }
   }
@@ -1462,7 +1711,9 @@ canvas.addEventListener('touchstart', (e) => {
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
   for (const touch of e.changedTouches) {
-    if (touch.identifier === moveTouchId) {
+    if (touch.identifier === joystick.touchId) {
+      updateJoystickFromTouch(touch.clientX, touch.clientY);
+    } else if (touch.identifier === moveTouchId) {
       pointer.x = touch.clientX;
       pointer.y = touch.clientY - TOUCH_OFFSET_Y;
       pointer.active = true;
@@ -1473,7 +1724,10 @@ canvas.addEventListener('touchmove', (e) => {
 canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
   for (const touch of e.changedTouches) {
-    if (touch.identifier === moveTouchId) {
+    if (touch.identifier === joystick.touchId) {
+      releaseJoystick();
+      moveTouchId = -1;
+    } else if (touch.identifier === moveTouchId) {
       moveTouchId = -1;
       pointer.active = false;
     }
@@ -1482,6 +1736,7 @@ canvas.addEventListener('touchend', (e) => {
 
 canvas.addEventListener('touchcancel', (e) => {
   e.preventDefault();
+  if (joystick.active) releaseJoystick();
   moveTouchId = -1;
   pointer.active = false;
 }, { passive: false });
@@ -1534,10 +1789,23 @@ canvas.addEventListener('mousemove', (e) => {
   pointer.active = true;
 });
 
-// Show boost button on touch-capable devices
-if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+// Show boost button & control zone on touch-capable devices
+const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+if (isTouchDevice) {
   boostBtnEl.style.display = 'block';
-  if (controlHintEl) controlHintEl.textContent = 'Touch & drag to move \u2022 Tap \u26A1 to boost';
+  controlZoneEl.classList.add('visible');
+  if (controlHintEl) controlHintEl.textContent = 'Joystick gauche \u2022 Swipe = Tail Flick \u2022 \u26A1 Boost';
+  // Init control zone particles
+  for (let i = 0; i < 20; i++) {
+    controlZoneParticles.push({
+      x: Math.random() * W,
+      y: Math.random() * 100,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.1,
+      size: 1 + Math.random() * 2,
+      alpha: 0.1 + Math.random() * 0.15,
+    });
+  }
 } else {
   if (controlHintEl) controlHintEl.textContent = 'Move mouse \u2022 Click to boost';
 }
@@ -2062,11 +2330,74 @@ function update(dt) {
   if (playerStunTimer > 0) playerStunTimer = Math.max(0, playerStunTimer - effectiveDt);
   if (playerSlowTimer > 0) playerSlowTimer = Math.max(0, playerSlowTimer - effectiveDt);
 
+  // --- Tail flick cooldown ---
+  if (tailFlickCooldown > 0) {
+    tailFlickCooldown -= effectiveDt;
+    joystick.cooldownIndicator = Math.max(0, tailFlickCooldown / TAIL_FLICK_COOLDOWN);
+  }
+
+  // --- Tail flick timer ---
+  if (tailFlickActive) {
+    tailFlickTimer -= effectiveDt;
+    if (tailFlickTimer <= 0) tailFlickActive = false;
+  }
+
+  // --- Tail flick squash animation ---
+  if (tailFlickSquash > 0) {
+    tailFlickSquash = Math.max(0, tailFlickSquash - effectiveDt * 10);
+  }
+
+  // --- Joystick elastic release animation ---
+  if (joystick.releaseAnimT > 0) {
+    joystick.releaseAnimT = Math.max(0, joystick.releaseAnimT - effectiveDt * 5);
+  }
+
+  // --- Joystick ripple animation ---
+  joystick.ripplePhase += effectiveDt * 3;
+
   // --- Player movement (unified pointer for both touch and desktop) ---
   let hasDirectionalInput = false;
   let playerActualSpeed = 0;
 
-  if (pointer.active) {
+  // Joystick input (mobile)
+  if (joystick.active && joystick.tilt > 0) {
+    hasDirectionalInput = true;
+    const targetAngle = joystick.angle;
+    let angleDiff = targetAngle - player.angle;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    player.angle += angleDiff * Math.min(1, effectiveDt * 12);
+
+    // Analog speed: tilt controls speed (0 to full)
+    let speed = PLAYER_BASE_SPEED * joystick.tilt;
+    if (frenzyActive) speed *= 1.3;
+    if (boosting && boostFuel > 0) {
+      speed *= BOOST_MULT;
+      boostFuel = Math.max(0, boostFuel - BOOST_DRAIN);
+      if (!hasEverBoosted) { hasEverBoosted = true; revealBoostBar(); }
+    }
+    if (playerStunTimer > 0) speed *= 0.6;
+    if (playerSlowTimer > 0) speed *= 0.6;
+
+    // Tail flick burst
+    if (tailFlickActive) speed *= TAIL_FLICK_SPEED_MULT;
+
+    const move = speed * (60 * effectiveDt);
+    player.x += Math.cos(player.angle) * move;
+    player.y += Math.sin(player.angle) * move;
+    playerActualSpeed = speed;
+
+    // Reset inertia while actively controlling
+    playerInertiaTimer = 0;
+
+    // Swim haptic rhythm (rhythmic tail beats)
+    swimHapticTimer += effectiveDt * (1 + playerActualSpeed / PLAYER_BASE_SPEED);
+    if (swimHapticTimer > 0.3) {
+      swimHapticTimer = 0;
+      if (joystick.tilt > 0.4) haptic(3);
+    }
+  } else if (pointer.active && !joystick.active) {
+    // Desktop/fallback pointer control
     const dx = pointer.x - player.x;
     const dy = pointer.y - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -2080,7 +2411,7 @@ function update(dt) {
       player.angle += angleDiff * Math.min(1, effectiveDt * 12);
 
       let speed = PLAYER_BASE_SPEED;
-      if (frenzyActive) speed *= 1.3; // festin speed boost
+      if (frenzyActive) speed *= 1.3;
       if (boosting && boostFuel > 0) {
         speed *= BOOST_MULT;
         boostFuel = Math.max(0, boostFuel - BOOST_DRAIN);
@@ -2088,12 +2419,33 @@ function update(dt) {
       }
       if (playerStunTimer > 0) speed *= 0.6;
       if (playerSlowTimer > 0) speed *= 0.6;
+      if (tailFlickActive) speed *= TAIL_FLICK_SPEED_MULT;
 
       const move = Math.min(dist, speed * (60 * effectiveDt));
       player.x += (dx / dist) * move;
       player.y += (dy / dist) * move;
       playerActualSpeed = move / (60 * effectiveDt);
     }
+  }
+
+  // --- Aquatic inertia (after joystick release) ---
+  if (!hasDirectionalInput && playerInertiaTimer > 0) {
+    playerInertiaTimer -= effectiveDt;
+    const inertiaMove = 60 * effectiveDt;
+    player.x += playerInertiaVx * inertiaMove;
+    player.y += playerInertiaVy * inertiaMove;
+    playerInertiaVx *= INERTIA_FRICTION;
+    playerInertiaVy *= INERTIA_FRICTION;
+    playerActualSpeed = Math.sqrt(playerInertiaVx * playerInertiaVx + playerInertiaVy * playerInertiaVy);
+    if (playerActualSpeed > 0.1) hasDirectionalInput = true; // prevent auto-swim during glide
+  }
+
+  // --- Tail flick movement (applies even without joystick) ---
+  if (tailFlickActive && !joystick.active) {
+    const flickSpeed = PLAYER_BASE_SPEED * TAIL_FLICK_SPEED_MULT * 60 * effectiveDt;
+    player.x += tailFlickDirX * flickSpeed;
+    player.y += tailFlickDirY * flickSpeed;
+    hasDirectionalInput = true;
   }
 
   if (!hasDirectionalInput) {
@@ -2131,6 +2483,33 @@ function update(dt) {
   if (!boosting) {
     boostFuel = Math.min(BOOST_MAX, boostFuel + BOOST_REGEN);
   }
+
+  // --- Boost button visual state ---
+  if (isTouchDevice) {
+    const boostFull = boostFuel >= BOOST_MAX * 0.95;
+    boostBtnEl.classList.toggle('pulse-ready', boostFull && !boosting);
+    boostBtnEl.classList.toggle('vibrating', boosting && boostFuel > 0);
+    // Boost tunnel vignette effect
+    if (boosting && boostFuel > 0) {
+      const vigAngle = player ? player.angle : 0;
+      const vx = Math.cos(vigAngle);
+      const vy = Math.sin(vigAngle);
+      boostVignetteEl.style.opacity = '1';
+      boostVignetteEl.style.background = `radial-gradient(ellipse at ${50 + vx * 20}% ${50 + vy * 20}%, transparent 30%, rgba(0,0,0,0.25) 100%)`;
+    } else {
+      boostVignetteEl.style.opacity = '0';
+    }
+  }
+
+  // --- Camera zoom (dynamic for large tiers) ---
+  if (player.tier >= 5) {
+    cameraZoomTarget = CAMERA_ZOOM_T5;
+  } else if (player.tier >= 4) {
+    cameraZoomTarget = CAMERA_ZOOM_T4;
+  } else {
+    cameraZoomTarget = 1;
+  }
+  cameraZoom += (cameraZoomTarget - cameraZoom) * Math.min(1, effectiveDt * 2);
 
   // --- Apply bounce velocity ---
   player.x += playerBounceVx;
@@ -2883,10 +3262,11 @@ function render() {
   ctx.save();
   ctx.translate(shakeX, shakeY);
 
-  // Tier-up zoom effect
-  if (tierUpZoomScale !== 1) {
+  // Camera dynamic zoom (tier 4-5 zoom out)
+  const effectiveCamZoom = tierUpZoomScale * cameraZoom;
+  if (effectiveCamZoom !== 1) {
     ctx.translate(W / 2, H / 2);
-    ctx.scale(tierUpZoomScale, tierUpZoomScale);
+    ctx.scale(effectiveCamZoom, effectiveCamZoom);
     ctx.translate(-W / 2, -H / 2);
   }
 
@@ -3213,8 +3593,34 @@ function render() {
       ctx.globalAlpha = 0.4;
     }
     const pDrawR = player.radius * (1 + playerScaleBump);
-    drawFish(player.x, player.y, pDrawR, player.angle, player.tier,
-             player.mouthOpen, player.tailPhase, true, currentZone);
+    // Tail flick squash & stretch
+    if (tailFlickSquash > 0) {
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate(player.angle);
+      // Squash phase (first 0.5) then stretch (0.5-1.0)
+      const t = 1 - tailFlickSquash;
+      const scaleX = t < 0.5 ? 1 - t * 0.3 : 0.85 + (t - 0.5) * 0.5;
+      const scaleY = t < 0.5 ? 1 + t * 0.2 : 1.1 - (t - 0.5) * 0.3;
+      ctx.scale(scaleX, scaleY);
+      ctx.rotate(-player.angle);
+      ctx.translate(-player.x, -player.y);
+      drawFish(player.x, player.y, pDrawR, player.angle, player.tier,
+               player.mouthOpen, player.tailPhase, true, currentZone);
+      // White flash
+      if (tailFlickSquash > 0.5) {
+        ctx.globalAlpha = (tailFlickSquash - 0.5) * 0.6;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, pDrawR * 1.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+    } else {
+      drawFish(player.x, player.y, pDrawR, player.angle, player.tier,
+               player.mouthOpen, player.tailPhase, true, currentZone);
+    }
     ctx.globalAlpha = 1;
 
     // Tier-up golden flash overlay on player body
@@ -3511,6 +3917,139 @@ function render() {
     ctx.fillStyle = tierUpRingColor || '#ffcc00';
     ctx.fillRect(-10, -10, W + 20, H + 20);
     ctx.globalAlpha = 1;
+  }
+
+  // --- JOYSTICK RENDERING (mobile only) ---
+  if (isTouchDevice && running && player && player.alive && !deathAnimActive && !inPrestige) {
+    const drawJoystick = joystick.active || joystick.releaseAnimT > 0;
+    if (drawJoystick) {
+      ctx.save();
+      // Elastic release animation
+      let knobOffX = 0, knobOffY = 0;
+      if (joystick.active) {
+        knobOffX = joystick.currentX - joystick.originX;
+        knobOffY = joystick.currentY - joystick.originY;
+      } else if (joystick.releaseAnimT > 0) {
+        // Elastic ease-out (overshoot)
+        const t = 1 - joystick.releaseAnimT;
+        const elastic = 1 - Math.pow(2, -10 * t) * Math.cos(t * Math.PI * 3);
+        knobOffX = joystick.releaseFromX * (1 - elastic);
+        knobOffY = joystick.releaseFromY * (1 - elastic);
+      }
+
+      const baseX = joystick.originX;
+      const baseY = joystick.originY;
+      const alpha = joystick.active ? 0.5 : joystick.releaseAnimT * 0.5;
+
+      // Zone-themed color
+      let joyColor;
+      if (currentZone === 'abyss') joyColor = 'rgba(0,255,200,';
+      else if (currentZone === 'twilight') joyColor = 'rgba(120,140,220,';
+      else if (currentZone === 'reef') joyColor = 'rgba(80,220,160,';
+      else joyColor = 'rgba(100,200,255,';
+
+      // Aquatic ripple on base circle
+      const ripple1 = 1 + 0.03 * Math.sin(joystick.ripplePhase * 2.5);
+      const ripple2 = 1 + 0.02 * Math.sin(joystick.ripplePhase * 3.7 + 1);
+
+      // Base circle (outer ring with ripple)
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.strokeStyle = joyColor + '0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(baseX, baseY, JOYSTICK_MAX_RADIUS * ripple1, JOYSTICK_MAX_RADIUS * ripple2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner base circle
+      ctx.globalAlpha = alpha * 0.15;
+      ctx.fillStyle = joyColor + '0.1)';
+      ctx.beginPath();
+      ctx.arc(baseX, baseY, JOYSTICK_BASE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Directional glow on the rim
+      if (joystick.active && joystick.tilt > 0.1) {
+        const glowX = baseX + Math.cos(joystick.glowDir) * JOYSTICK_MAX_RADIUS;
+        const glowY = baseY + Math.sin(joystick.glowDir) * JOYSTICK_MAX_RADIUS;
+        const glowGrad = ctx.createRadialGradient(glowX, glowY, 0, glowX, glowY, 25);
+        glowGrad.addColorStop(0, joyColor + (0.4 * joystick.tilt) + ')');
+        glowGrad.addColorStop(1, joyColor + '0)');
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = glowGrad;
+        ctx.beginPath();
+        ctx.arc(glowX, glowY, 25, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Knob
+      const knobX = baseX + knobOffX;
+      const knobY = baseY + knobOffY;
+      ctx.globalAlpha = alpha * 0.8;
+      const knobGrad = ctx.createRadialGradient(knobX, knobY, 0, knobX, knobY, JOYSTICK_KNOB_RADIUS);
+      knobGrad.addColorStop(0, joyColor + '0.5)');
+      knobGrad.addColorStop(0.7, joyColor + '0.25)');
+      knobGrad.addColorStop(1, joyColor + '0.1)');
+      ctx.fillStyle = knobGrad;
+      ctx.beginPath();
+      ctx.arc(knobX, knobY, JOYSTICK_KNOB_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = joyColor + '0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(knobX, knobY, JOYSTICK_KNOB_RADIUS, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Tail flick cooldown indicator (arc on base)
+      if (joystick.cooldownIndicator > 0) {
+        ctx.globalAlpha = alpha * 0.5;
+        ctx.strokeStyle = 'rgba(255,150,50,0.5)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(baseX, baseY, JOYSTICK_MAX_RADIUS + 5, -Math.PI / 2, -Math.PI / 2 + joystick.cooldownIndicator * Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+  }
+
+  // --- CONTROL ZONE RENDERING (mobile only) ---
+  if (isTouchDevice && running && controlZoneEl.classList.contains('visible')) {
+    ctx.save();
+    const czTop = H * 0.72;
+    const czHeight = H - czTop;
+
+    // Semi-transparent zone-colored backdrop
+    let czColor1, czColor2;
+    if (currentZone === 'abyss') { czColor1 = 'rgba(0,10,20,0.3)'; czColor2 = 'rgba(0,5,15,0.5)'; }
+    else if (currentZone === 'twilight') { czColor1 = 'rgba(10,15,30,0.25)'; czColor2 = 'rgba(5,10,25,0.4)'; }
+    else if (currentZone === 'reef') { czColor1 = 'rgba(10,50,50,0.2)'; czColor2 = 'rgba(5,30,35,0.35)'; }
+    else { czColor1 = 'rgba(15,50,80,0.15)'; czColor2 = 'rgba(10,35,60,0.3)'; }
+    const czGrad = ctx.createLinearGradient(0, czTop, 0, H);
+    czGrad.addColorStop(0, czColor1);
+    czGrad.addColorStop(1, czColor2);
+    ctx.fillStyle = czGrad;
+    ctx.fillRect(0, czTop, W, czHeight);
+
+    // Sand/plancton particles
+    ctx.globalAlpha = 0.15;
+    for (const p of controlZoneParticles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      if (p.x < 0) p.x = W;
+      if (p.x > W) p.x = 0;
+      if (p.y < 0) p.y = czHeight;
+      if (p.y > czHeight) p.y = 0;
+      const py = czTop + p.y;
+      ctx.globalAlpha = p.alpha;
+      ctx.fillStyle = currentZone === 'abyss' ? 'rgba(0,255,200,0.3)' : 'rgba(180,200,220,0.4)';
+      ctx.beginPath();
+      ctx.arc(p.x, py, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   // Prestige cinematic animation
