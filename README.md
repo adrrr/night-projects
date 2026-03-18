@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🧲 **[Magnet Merge](https://adrrr.github.io/night-projects/magnet-merge/)**
+Puzzle physique magnétique — des orbes colorées flottent à l'écran. Tap/click pour activer un aimant qui attire les orbes. Fusionne les orbes de même couleur pour marquer des points et enchaîner des combos. Attention : la collision de couleurs différentes = game over ! Difficulté progressive (2→6 couleurs, spawn accéléré), physique réaliste (drift, rebonds, répulsion entre couleurs), effets néon avec glow radial, particules explosives, screen shake, sons synthétiques Web Audio. High score localStorage, mobile-first + desktop.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/magnet-merge/)
+
 ### 🎯 **[Pulse Dodge](https://adrrr.github.io/night-projects/pulse-dodge/)**
 Jeu d'esquive dans une arène circulaire — des anneaux néon pulsent vers le centre avec des gaps à traverser. Déplace ton orbe en drag/touch ou WASD. Difficulté progressive (anneaux plus rapides, gaps plus étroits), near-miss screen shake, explosion de 80 particules à la mort, Web Audio (dodge pings, death bass rumble), high score localStorage. Mobile-first + desktop. Zéro dépendance.
 
