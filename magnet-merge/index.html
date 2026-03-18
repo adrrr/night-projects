@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Magnet Merge</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: #0a0a12;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+canvas { display: block; width: 100%; height: 100%; }
+#ui {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 12px 16px; pointer-events: none; z-index: 10;
+}
+#ui > div { pointer-events: auto; }
+.score-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+.score-value { font-size: 28px; font-weight: 700; color: #fff; line-height: 1.1; }
+.hi-score .score-value { color: #f0a; font-size: 18px; }
+#combo {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 48px; font-weight: 900; color: #fff; pointer-events: none;
+  opacity: 0; z-index: 20; text-shadow: 0 0 30px currentColor;
+  transition: none;
+}
+#overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; z-index: 30;
+  background: rgba(5,5,12,0.85); backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 1; transition: opacity 0.3s;
+}
+#overlay.hidden { opacity: 0; pointer-events: none; }
+#overlay h1 {
+  font-size: clamp(36px, 8vw, 64px); font-weight: 900;
+  background: linear-gradient(135deg, #f0a, #0ff, #f0a);
+  background-size: 200% 200%;
+  animation: shimmer 3s ease-in-out infinite;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; margin-bottom: 8px;
+}
+@keyframes shimmer { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
+#overlay .sub { color: #888; font-size: 16px; margin-bottom: 32px; }
+#overlay .final-score { color: #fff; font-size: 22px; margin-bottom: 8px; display: none; }
+#overlay .final-hi { color: #f0a; font-size: 16px; margin-bottom: 32px; display: none; }
+#play-btn {
+  background: linear-gradient(135deg, #f0a, #a0f);
+  border: none; color: #fff; font-size: 20px; font-weight: 700;
+  padding: 16px 48px; border-radius: 50px; cursor: pointer;
+  min-width: 200px; min-height: 56px;
+  box-shadow: 0 0 30px rgba(255,0,170,0.4);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+#play-btn:active { transform: scale(0.95); }
+.how {
+  color: #666; font-size: 14px; margin-top: 24px; max-width: 280px; text-align: center; line-height: 1.5;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div>
+    <div class="score-label">Score</div>
+    <div class="score-value" id="scoreEl">0</div>
+  </div>
+  <div class="hi-score">
+    <div class="score-label">Best</div>
+    <div class="score-value" id="hiEl">0</div>
+  </div>
+</div>
+<div id="combo"></div>
+<div id="overlay">
+  <h1>MAGNET MERGE</h1>
+  <div class="sub">physics puzzle</div>
+  <div class="final-score" id="finalScore"></div>
+  <div class="final-hi" id="finalHi"></div>
+  <button id="play-btn">TAP TO PLAY</button>
+  <div class="how">Tap to pull same-colored orbs together.<br>Merge them for points. Don't mix colors!</div>
+</div>
+<script>
+'use strict';
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('scoreEl');
+const hiEl = document.getElementById('hiEl');
+const comboEl = document.getElementById('combo');
+const overlay = document.getElementById('overlay');
+const playBtn = document.getElementById('play-btn');
+const finalScoreEl = document.getElementById('finalScore');
+const finalHiEl = document.getElementById('finalHi');
+
+// --- Audio ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function resumeAudio() { if (audioCtx.state === 'suspended') audioCtx.resume(); }
+
+function playTone(freq, dur, vol = 0.15, type = 'sine') {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+
+function sfxMerge(combo) {
+  const base = 400 + combo * 80;
+  playTone(base, 0.2, 0.12);
+  setTimeout(() => playTone(base * 1.5, 0.15, 0.08), 50);
+}
+function sfxPulse() { playTone(150, 0.3, 0.06, 'triangle'); }
+function sfxDeath() {
+  playTone(200, 0.4, 0.2, 'sawtooth');
+  setTimeout(() => playTone(100, 0.6, 0.15, 'sawtooth'), 100);
+}
+function sfxStart() { playTone(500, 0.1, 0.1); setTimeout(() => playTone(700, 0.15, 0.1), 80); }
+
+// --- State ---
+let W, H, dpr;
+let orbs = [], particles = [], ripples = [];
+let score = 0, hiScore = 0, comboCount = 0, comboTimer = 0;
+let gameActive = false, gameOverAnim = false;
+let magnetX = 0, magnetY = 0, magnetStrength = 0;
+let spawnTimer = 0, difficultyTimer = 0, maxColors = 2, spawnRate = 2.2;
+let shakeX = 0, shakeY = 0, shakeMag = 0;
+let lastTime = 0;
+let gameOverFlash = 0;
+let magnetHeld = false;
+let deathOrb1 = null, deathOrb2 = null;
+
+const COLORS = [
+  { h: '#ff1493', r: 255, g: 20, b: 147 },   // hot pink
+  { h: '#00e5ff', r: 0, g: 229, b: 255 },     // cyan
+  { h: '#76ff03', r: 118, g: 255, b: 3 },      // lime
+  { h: '#ffea00', r: 255, g: 234, b: 0 },      // yellow
+  { h: '#ff6e40', r: 255, g: 110, b: 64 },     // orange
+  { h: '#e040fb', r: 224, g: 64, b: 251 },     // purple
+];
+
+hiScore = parseInt(localStorage.getItem('magnetMergeHi') || '0');
+hiEl.textContent = hiScore;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Orb class ---
+function Orb(x, y, colorIdx, radius) {
+  this.x = x; this.y = y;
+  this.vx = (Math.random() - 0.5) * 30;
+  this.vy = (Math.random() - 0.5) * 30;
+  this.colorIdx = colorIdx;
+  this.radius = radius || 18;
+  this.mergeCount = 0;
+  this.alive = true;
+  this.spawnAnim = 1.0; // shrinks from 0 to 1
+  this.pulsePhase = Math.random() * Math.PI * 2;
+}
+
+function spawnOrb() {
+  const pad = 30;
+  const side = Math.floor(Math.random() * 4);
+  let x, y;
+  if (side === 0) { x = pad + Math.random() * (W - pad * 2); y = -pad; }
+  else if (side === 1) { x = pad + Math.random() * (W - pad * 2); y = H + pad; }
+  else if (side === 2) { x = -pad; y = pad + Math.random() * (H - pad * 2); }
+  else { x = W + pad; y = pad + Math.random() * (H - pad * 2); }
+  const ci = Math.floor(Math.random() * Math.min(maxColors, COLORS.length));
+  orbs.push(new Orb(x, y, ci));
+}
+
+// --- Particles ---
+function emitParticles(x, y, color, count, speed) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = (0.5 + Math.random()) * speed;
+    particles.push({
+      x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+      life: 1, decay: 1.5 + Math.random() * 1.5,
+      radius: 2 + Math.random() * 3,
+      color
+    });
+  }
+}
+
+function emitRipple(x, y, color) {
+  ripples.push({ x, y, radius: 10, maxRadius: 150, life: 1, color });
+}
+
+// --- Input ---
+function activateMagnet(px, py) {
+  resumeAudio();
+  if (!gameActive) return;
+  magnetX = px; magnetY = py;
+  magnetStrength = 1;
+  magnetHeld = true;
+  sfxPulse();
+  emitRipple(px, py, 'rgba(255,255,255,0.3)');
+}
+function moveMagnet(px, py) {
+  if (!magnetHeld || !gameActive) return;
+  magnetX = px; magnetY = py;
+}
+function releaseMagnet() {
+  magnetHeld = false;
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  activateMagnet(e.clientX, e.clientY);
+});
+canvas.addEventListener('pointermove', e => {
+  e.preventDefault();
+  moveMagnet(e.clientX, e.clientY);
+});
+canvas.addEventListener('pointerup', e => { e.preventDefault(); releaseMagnet(); });
+canvas.addEventListener('pointercancel', e => { e.preventDefault(); releaseMagnet(); });
+
+// --- Game logic ---
+function startGame() {
+  resumeAudio();
+  sfxStart();
+  orbs = []; particles = []; ripples = [];
+  score = 0; comboCount = 0; comboTimer = 0;
+  maxColors = 2; spawnRate = 2.2; difficultyTimer = 0; spawnTimer = 0;
+  magnetStrength = 0; magnetHeld = false;
+  shakeX = 0; shakeY = 0; shakeMag = 0;
+  gameOverAnim = false; gameOverFlash = 0;
+  deathOrb1 = null; deathOrb2 = null;
+  scoreEl.textContent = '0';
+  gameActive = true;
+  overlay.classList.add('hidden');
+  // Spawn initial orbs
+  for (let i = 0; i < 6; i++) {
+    const x = 60 + Math.random() * (W - 120);
+    const y = 80 + Math.random() * (H - 160);
+    const ci = Math.floor(Math.random() * 2);
+    orbs.push(new Orb(x, y, ci));
+  }
+}
+
+function endGame() {
+  gameActive = false;
+  gameOverAnim = true;
+  gameOverFlash = 1;
+  sfxDeath();
+  shakeMag = 15;
+  // Save hi score
+  if (score > hiScore) {
+    hiScore = score;
+    localStorage.setItem('magnetMergeHi', hiScore);
+    hiEl.textContent = hiScore;
+  }
+  // Show overlay after delay
+  setTimeout(() => {
+    gameOverAnim = false;
+    overlay.classList.remove('hidden');
+    playBtn.textContent = 'TAP TO RETRY';
+    finalScoreEl.style.display = 'block';
+    finalScoreEl.textContent = `Score: ${score}`;
+    finalHiEl.style.display = 'block';
+    finalHiEl.textContent = `Best: ${hiScore}`;
+  }, 1200);
+}
+
+function mergeOrbs(a, b) {
+  const bigger = a.radius >= b.radius ? a : b;
+  const smaller = a === bigger ? b : a;
+  // Merge into bigger
+  bigger.radius = Math.min(Math.sqrt(bigger.radius * bigger.radius + smaller.radius * smaller.radius), 50);
+  bigger.mergeCount += smaller.mergeCount + 1;
+  bigger.vx = (bigger.vx + smaller.vx) * 0.5;
+  bigger.vy = (bigger.vy + smaller.vy) * 0.5;
+  smaller.alive = false;
+  // Score
+  comboCount++;
+  comboTimer = 2;
+  const pts = 10 * comboCount * (bigger.mergeCount + 1);
+  score += pts;
+  scoreEl.textContent = score;
+  // Effects
+  const c = COLORS[bigger.colorIdx];
+  emitParticles((a.x + b.x) / 2, (a.y + b.y) / 2, c.h, 12 + comboCount * 4, 80 + comboCount * 20);
+  sfxMerge(comboCount);
+  shakeMag = Math.min(3 + comboCount * 1.5, 12);
+  // Combo display
+  if (comboCount >= 2) {
+    comboEl.textContent = `${comboCount}x COMBO!`;
+    comboEl.style.color = c.h;
+    comboEl.style.opacity = 1;
+    comboEl.style.transform = 'translate(-50%, -50%) scale(1.3)';
+    setTimeout(() => {
+      comboEl.style.transition = 'opacity 0.5s, transform 0.5s';
+      comboEl.style.opacity = 0;
+      comboEl.style.transform = 'translate(-50%, -50%) scale(0.8)';
+      setTimeout(() => { comboEl.style.transition = 'none'; }, 500);
+    }, 50);
+  }
+}
+
+function update(dt) {
+  if (!gameActive && !gameOverAnim) return;
+
+  // Difficulty
+  if (gameActive) {
+    difficultyTimer += dt;
+    if (difficultyTimer > 12 && maxColors < 3) { maxColors = 3; }
+    if (difficultyTimer > 30 && maxColors < 4) { maxColors = 4; }
+    if (difficultyTimer > 55 && maxColors < 5) { maxColors = 5; }
+    if (difficultyTimer > 80 && maxColors < 6) { maxColors = 6; }
+    spawnRate = Math.max(0.8, 2.2 - difficultyTimer * 0.012);
+  }
+
+  // Spawn
+  if (gameActive) {
+    spawnTimer += dt;
+    if (spawnTimer > spawnRate) {
+      spawnTimer = 0;
+      spawnOrb();
+    }
+  }
+
+  // Combo timer
+  if (comboTimer > 0) {
+    comboTimer -= dt;
+    if (comboTimer <= 0) comboCount = 0;
+  }
+
+  // Magnet decay
+  if (!magnetHeld) {
+    magnetStrength *= Math.pow(0.05, dt);
+    if (magnetStrength < 0.01) magnetStrength = 0;
+  } else {
+    magnetStrength = Math.min(magnetStrength + dt * 5, 1);
+  }
+
+  // Update orbs
+  for (const orb of orbs) {
+    if (!orb.alive) continue;
+    // Spawn animation
+    if (orb.spawnAnim > 0) orb.spawnAnim = Math.max(0, orb.spawnAnim - dt * 3);
+
+    // Random drift
+    orb.vx += (Math.random() - 0.5) * 40 * dt;
+    orb.vy += (Math.random() - 0.5) * 40 * dt;
+
+    // Damping
+    orb.vx *= Math.pow(0.4, dt);
+    orb.vy *= Math.pow(0.4, dt);
+
+    // Magnet pull
+    if (magnetStrength > 0.01 && gameActive) {
+      const dx = magnetX - orb.x;
+      const dy = magnetY - orb.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 1 && dist < 300) {
+        const force = magnetStrength * 600 / (dist + 30);
+        orb.vx += (dx / dist) * force * dt;
+        orb.vy += (dy / dist) * force * dt;
+      }
+    }
+
+    // Soft repulsion between different-colored orbs (helps separate them slightly)
+    for (const other of orbs) {
+      if (other === orb || !other.alive || other.colorIdx === orb.colorIdx) continue;
+      const dx = orb.x - other.x;
+      const dy = orb.y - other.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = orb.radius + other.radius + 8;
+      if (dist < minDist && dist > 0.1) {
+        const push = (minDist - dist) * 2 * dt;
+        orb.vx += (dx / dist) * push;
+        orb.vy += (dy / dist) * push;
+      }
+    }
+
+    // Move
+    orb.x += orb.vx * dt;
+    orb.y += orb.vy * dt;
+
+    // Bounce off walls
+    const pad = orb.radius;
+    if (orb.x < pad) { orb.x = pad; orb.vx = Math.abs(orb.vx) * 0.6; }
+    if (orb.x > W - pad) { orb.x = W - pad; orb.vx = -Math.abs(orb.vx) * 0.6; }
+    if (orb.y < pad) { orb.y = pad; orb.vy = Math.abs(orb.vy) * 0.6; }
+    if (orb.y > H - pad) { orb.y = H - pad; orb.vy = -Math.abs(orb.vy) * 0.6; }
+
+    orb.pulsePhase += dt * 3;
+  }
+
+  // Collision detection
+  if (gameActive) {
+    for (let i = 0; i < orbs.length; i++) {
+      const a = orbs[i];
+      if (!a.alive) continue;
+      for (let j = i + 1; j < orbs.length; j++) {
+        const b = orbs[j];
+        if (!b.alive) continue;
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const touchDist = a.radius + b.radius;
+        if (dist < touchDist * 0.85) {
+          if (a.colorIdx === b.colorIdx) {
+            mergeOrbs(a, b);
+          } else {
+            // Game over!
+            deathOrb1 = { x: a.x, y: a.y, color: COLORS[a.colorIdx].h, radius: a.radius };
+            deathOrb2 = { x: b.x, y: b.y, color: COLORS[b.colorIdx].h, radius: b.radius };
+            emitParticles((a.x + b.x) / 2, (a.y + b.y) / 2, '#fff', 40, 150);
+            endGame();
+          }
+        }
+      }
+    }
+  }
+
+  // Remove dead orbs
+  orbs = orbs.filter(o => o.alive);
+
+  // Update particles
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= Math.pow(0.3, dt);
+    p.vy *= Math.pow(0.3, dt);
+    p.life -= p.decay * dt;
+  }
+  particles = particles.filter(p => p.life > 0);
+
+  // Update ripples
+  for (const r of ripples) {
+    r.radius += (r.maxRadius - r.radius) * dt * 4;
+    r.life -= dt * 2.5;
+  }
+  ripples = ripples.filter(r => r.life > 0);
+
+  // Shake decay
+  shakeMag *= Math.pow(0.01, dt);
+  if (shakeMag > 0.1) {
+    shakeX = (Math.random() - 0.5) * shakeMag * 2;
+    shakeY = (Math.random() - 0.5) * shakeMag * 2;
+  } else {
+    shakeX = shakeY = 0;
+  }
+
+  // Game over flash
+  if (gameOverFlash > 0) gameOverFlash -= dt * 2;
+}
+
+function draw() {
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+  grad.addColorStop(0, '#12121e');
+  grad.addColorStop(1, '#0a0a12');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.lineWidth = 1;
+  const gs = 50;
+  for (let x = gs; x < W; x += gs) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = gs; y < H; y += gs) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  // Ripples
+  for (const r of ripples) {
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = r.color;
+    ctx.globalAlpha = r.life * 0.5;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Magnet indicator
+  if (magnetStrength > 0.05) {
+    ctx.beginPath();
+    ctx.arc(magnetX, magnetY, 6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${magnetStrength * 0.4})`;
+    ctx.fill();
+    // Pull range indicator
+    ctx.beginPath();
+    ctx.arc(magnetX, magnetY, 300 * magnetStrength, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,255,255,${magnetStrength * 0.08})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Orbs
+  for (const orb of orbs) {
+    if (!orb.alive) continue;
+    const c = COLORS[orb.colorIdx];
+    const scale = 1 - orb.spawnAnim;
+    const pulse = 1 + Math.sin(orb.pulsePhase) * 0.05;
+    const r = orb.radius * scale * pulse;
+    if (r < 0.5) continue;
+
+    ctx.save();
+    ctx.translate(orb.x, orb.y);
+
+    // Glow
+    const glow = ctx.createRadialGradient(0, 0, r * 0.3, 0, 0, r * 2.5);
+    glow.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.25)`);
+    glow.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body
+    const bodyGrad = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0, 0, 0, r);
+    bodyGrad.addColorStop(0, `rgba(${Math.min(255, c.r + 80)},${Math.min(255, c.g + 80)},${Math.min(255, c.b + 80)},1)`);
+    bodyGrad.addColorStop(0.7, c.h);
+    bodyGrad.addColorStop(1, `rgba(${c.r >> 1},${c.g >> 1},${c.b >> 1},1)`);
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(-r * 0.25, -r * 0.25, r * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Merge count indicator
+    if (orb.mergeCount > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.font = `bold ${Math.max(10, r * 0.6)}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${orb.mergeCount + 1}`, 0, 1);
+    }
+
+    ctx.restore();
+  }
+
+  // Particles
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.restore(); // shake
+
+  // Game over flash
+  if (gameOverFlash > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${gameOverFlash * 0.4})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Death indicator
+  if (gameOverAnim && deathOrb1 && deathOrb2) {
+    const cx = (deathOrb1.x + deathOrb2.x) / 2;
+    const cy = (deathOrb1.y + deathOrb2.y) / 2;
+    ctx.save();
+    ctx.font = `bold ${clamp(36, W * 0.08, 56)}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = Math.max(0, gameOverFlash * 2);
+    ctx.fillText('CRASH!', cx, cy);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function clamp(min, val, max) { return Math.min(max, Math.max(min, val)); }
+
+function loop(ts) {
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Start
+playBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  startGame();
+});
+
+lastTime = performance.now();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
