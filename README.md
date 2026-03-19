@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🧩 **[Tile Collapse](https://adrrr.github.io/night-projects/tile-collapse/)**
+Puzzle-action addictif — une grille 6×10 de tuiles colorées. Tape sur un groupe de 3+ tuiles adjacentes de même couleur pour les faire disparaître. La gravité fait tomber les tuiles restantes, enchaîne les combos (x2, x3…) pour multiplier ton score. Supprime 10+ tuiles d'un coup pour créer une bombe 💣 qui clear une zone 3×3. Toutes les 8 secondes, une nouvelle rangée pousse par le bas — si ça déborde, game over ! Esthétique néon sombre, sons Web Audio, particules CSS, high score localStorage. Mobile-first + desktop.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/tile-collapse/)
+
 ### 🧲 **[Magnet Merge](https://adrrr.github.io/night-projects/magnet-merge/)**
 Puzzle physique magnétique — des orbes colorées flottent à l'écran. Tap/click pour activer un aimant qui attire les orbes. Fusionne les orbes de même couleur pour marquer des points et enchaîner des combos. Attention : la collision de couleurs différentes = game over ! Difficulté progressive (2→6 couleurs, spawn accéléré), physique réaliste (drift, rebonds, répulsion entre couleurs), effets néon avec glow radial, particules explosives, screen shake, sons synthétiques Web Audio. High score localStorage, mobile-first + desktop.
 
