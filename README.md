@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🏎️ **[Momentum Dash](https://adrrr.github.io/night-projects/momentum-dash/)**
+Jeu de momentum — une balle tombe sous l'effet de la gravité, place des plateformes en tap & drag pour la faire rebondir. Plus tu enchaînes de rebonds, plus le multiplicateur de score monte (combo x3+). Plateformes qui disparaissent après un rebond, obstacles spiky rouges après 5s, vent aléatoire pour le chaos. Esthétique neon sombre, trail arc-en-ciel, particules explosives, screen shake, sons synthétiques Web Audio (pitch monte avec la vitesse). High score localStorage. Mobile-first + desktop.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/momentum-dash/)
+
 ### 🧩 **[Tile Collapse](https://adrrr.github.io/night-projects/tile-collapse/)**
 Puzzle-action addictif — une grille 6×10 de tuiles colorées. Tape sur un groupe de 3+ tuiles adjacentes de même couleur pour les faire disparaître. La gravité fait tomber les tuiles restantes, enchaîne les combos (x2, x3…) pour multiplier ton score. Supprime 10+ tuiles d'un coup pour créer une bombe 💣 qui clear une zone 3×3. Toutes les 8 secondes, une nouvelle rangée pousse par le bas — si ça déborde, game over ! Esthétique néon sombre, sons Web Audio, particules CSS, high score localStorage. Mobile-first + desktop.
 
