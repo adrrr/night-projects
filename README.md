@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### ⚔️ **[Slice Storm](https://adrrr.github.io/night-projects/slice-storm/)**
+Fruit Ninja-style — swipe pour trancher les formes géométriques néon qui volent à l'écran. Évite les bombes 💀 sinon tu perds une vie ! Système de combo avec multiplicateurs (x2→x5), trail lumineux sur le swipe, particules explosives, screen shake, sons synthétiques Web Audio. Difficulté progressive (spawn plus rapide, plus de bombes). High score localStorage. Mobile-first (touch swipe) + desktop (souris). Esthétique neon sombre.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/slice-storm/)
+
 ### 🏎️ **[Momentum Dash](https://adrrr.github.io/night-projects/momentum-dash/)**
 Jeu de momentum — une balle tombe sous l'effet de la gravité, place des plateformes en tap & drag pour la faire rebondir. Plus tu enchaînes de rebonds, plus le multiplicateur de score monte (combo x3+). Plateformes qui disparaissent après un rebond, obstacles spiky rouges après 5s, vent aléatoire pour le chaos. Esthétique neon sombre, trail arc-en-ciel, particules explosives, screen shake, sons synthétiques Web Audio (pitch monte avec la vitesse). High score localStorage. Mobile-first + desktop.
 

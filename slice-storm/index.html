@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Slice Storm</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0a12;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  canvas {
+    display: block;
+    width: 100%; height: 100%;
+  }
+  #ui {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  #hud {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 16px 20px;
+  }
+  .hud-left, .hud-right { display: flex; flex-direction: column; gap: 4px; }
+  .hud-right { align-items: flex-end; }
+  .score-label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 2px; }
+  .score-value { font-size: 32px; font-weight: 800; color: #fff; text-shadow: 0 0 20px rgba(0,255,200,0.5); }
+  .combo-value { font-size: 18px; font-weight: 700; color: #ff3388; text-shadow: 0 0 15px rgba(255,51,136,0.6); transition: transform 0.1s; }
+  .best-value { font-size: 14px; color: #555; }
+  #lives { display: flex; gap: 6px; margin-top: 4px; }
+  .life { width: 12px; height: 12px; border-radius: 50%; background: #ff3366; box-shadow: 0 0 8px #ff3366; transition: all 0.3s; }
+  .life.lost { background: #222; box-shadow: none; }
+  #menu {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: all; gap: 20px;
+    background: radial-gradient(ellipse at center, rgba(10,10,18,0.85) 0%, rgba(10,10,18,0.98) 100%);
+  }
+  #menu.hidden { display: none; }
+  .title {
+    font-size: clamp(42px, 10vw, 72px); font-weight: 900;
+    background: linear-gradient(135deg, #00ffc8, #ff3388, #8844ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; text-fill-color: transparent;
+    letter-spacing: -2px; line-height: 1;
+  }
+  .subtitle { font-size: clamp(14px, 3vw, 18px); color: #556; margin-top: -8px; letter-spacing: 4px; text-transform: uppercase; }
+  .play-btn {
+    margin-top: 24px; padding: 18px 56px;
+    font-size: 20px; font-weight: 700;
+    color: #0a0a12; background: linear-gradient(135deg, #00ffc8, #00dda8);
+    border: none; border-radius: 60px; cursor: pointer;
+    box-shadow: 0 0 30px rgba(0,255,200,0.3), 0 4px 20px rgba(0,0,0,0.4);
+    transition: transform 0.15s, box-shadow 0.15s;
+    min-height: 56px; min-width: 180px;
+    letter-spacing: 1px;
+  }
+  .play-btn:active { transform: scale(0.95); }
+  .final-score { font-size: clamp(48px, 12vw, 80px); font-weight: 900; color: #fff; text-shadow: 0 0 40px rgba(0,255,200,0.4); }
+  .game-over-label { font-size: clamp(16px, 4vw, 22px); color: #ff3388; text-transform: uppercase; letter-spacing: 6px; font-weight: 700; }
+  .best-label { font-size: 16px; color: #556; margin-top: -8px; }
+  .new-best { color: #ffcc00; font-weight: 700; text-shadow: 0 0 10px rgba(255,204,0,0.4); }
+  .hint { font-size: clamp(12px, 2.5vw, 14px); color: #334; margin-top: 8px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="hud">
+    <div class="hud-left">
+      <span class="score-label">Score</span>
+      <span class="score-value" id="scoreVal">0</span>
+      <div id="lives"></div>
+    </div>
+    <div class="hud-right">
+      <span class="combo-value" id="comboVal"></span>
+      <span class="best-value" id="bestVal"></span>
+    </div>
+  </div>
+  <div id="menu">
+    <div class="title">SLICE STORM</div>
+    <div class="subtitle">Swipe to Destroy</div>
+    <div class="hint">Slice the shapes. Dodge the skulls.</div>
+    <button class="play-btn" id="playBtn">PLAY</button>
+    <span class="best-value" id="menuBest"></span>
+  </div>
+</div>
+
+<script>
+// ─── Canvas Setup ───────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Audio ──────────────────────────────────────────────
+let audioCtx;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playSound(freq, type, dur, vol = 0.3) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(freq * 0.5, audioCtx.currentTime + dur);
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + dur);
+}
+
+function sliceSound(combo) {
+  const base = 400 + combo * 80;
+  playSound(base, 'square', 0.12, 0.15);
+  playSound(base * 1.5, 'sine', 0.08, 0.1);
+}
+
+function bombSound() {
+  playSound(80, 'sawtooth', 0.5, 0.4);
+  playSound(60, 'square', 0.6, 0.3);
+}
+
+function missSound() {
+  playSound(150, 'sine', 0.3, 0.15);
+}
+
+function gameOverSound() {
+  playSound(200, 'sawtooth', 0.3, 0.3);
+  setTimeout(() => playSound(150, 'sawtooth', 0.3, 0.3), 150);
+  setTimeout(() => playSound(100, 'sawtooth', 0.5, 0.3), 300);
+}
+
+// ─── Game State ─────────────────────────────────────────
+const LIVES_MAX = 3;
+let score, combo, maxCombo, lives, gameRunning, gameOver;
+let shapes, particles, sliceTrail, textPopups;
+let shakeX, shakeY, shakeDecay;
+let spawnTimer, spawnRate, difficulty;
+let bestScore = parseInt(localStorage.getItem('sliceStorm_best') || '0');
+let flashAlpha = 0, flashColor = '#fff';
+let bgPulse = 0;
+
+const COLORS = ['#00ffc8', '#ff3388', '#8844ff', '#ffcc00', '#00aaff', '#ff6622'];
+const SHAPE_TYPES = ['circle', 'square', 'triangle', 'diamond', 'hex', 'star'];
+
+// ─── Shape Class ────────────────────────────────────────
+class Shape {
+  constructor(isBomb = false) {
+    this.r = 28 + Math.random() * 16;
+    this.x = this.r + Math.random() * (W - this.r * 2);
+    this.y = H + this.r * 2;
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.8;
+    const speed = 9 + Math.random() * 4 + difficulty * 0.5;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.gravity = 0.18 + difficulty * 0.01;
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 0.12;
+    this.isBomb = isBomb;
+    this.sliced = false;
+    this.missed = false;
+    this.type = SHAPE_TYPES[Math.floor(Math.random() * SHAPE_TYPES.length)];
+    this.color = isBomb ? '#ff2244' : COLORS[Math.floor(Math.random() * COLORS.length)];
+    this.points = isBomb ? 0 : Math.ceil(this.r / 10) * 10;
+    this.alpha = 1;
+    this.peakY = this.y;
+    this.reachedPeak = false;
+    // halves for sliced animation
+    this.half1 = null; this.half2 = null;
+    this.sliceAngle = 0;
+  }
+
+  update(dt) {
+    if (this.sliced) {
+      if (this.half1) {
+        this.half1.x += this.half1.vx * dt;
+        this.half1.y += this.half1.vy * dt;
+        this.half1.vy += 0.3 * dt;
+        this.half1.rot += this.half1.rotSpeed * dt;
+        this.half2.x += this.half2.vx * dt;
+        this.half2.y += this.half2.vy * dt;
+        this.half2.vy += 0.3 * dt;
+        this.half2.rot += this.half2.rotSpeed * dt;
+        this.alpha -= 0.03 * dt;
+      }
+      return this.alpha > 0;
+    }
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.vy += this.gravity * dt;
+    this.rotation += this.rotSpeed * dt;
+    if (this.y < this.peakY) this.peakY = this.y;
+    if (this.vy > 0) this.reachedPeak = true;
+    // off screen bottom after going up
+    if (this.reachedPeak && this.y > H + this.r * 3) {
+      if (!this.isBomb && !this.sliced) this.missed = true;
+      return false;
+    }
+    return true;
+  }
+
+  draw() {
+    ctx.save();
+    if (this.sliced && this.half1) {
+      this.drawHalf(this.half1, -1);
+      this.drawHalf(this.half2, 1);
+      ctx.restore();
+      return;
+    }
+    ctx.globalAlpha = this.alpha;
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+
+    // glow
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = this.isBomb ? 25 : 15;
+
+    if (this.isBomb) {
+      this.drawBomb();
+    } else {
+      this.drawShape();
+    }
+    ctx.restore();
+  }
+
+  drawShape() {
+    ctx.fillStyle = this.color;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 2.5;
+    const r = this.r;
+    switch (this.type) {
+      case 'circle':
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); break;
+      case 'square':
+        ctx.beginPath();
+        const s = r * 0.8;
+        ctx.rect(-s, -s, s * 2, s * 2); ctx.fill(); break;
+      case 'triangle':
+        ctx.beginPath();
+        ctx.moveTo(0, -r); ctx.lineTo(r * 0.87, r * 0.5); ctx.lineTo(-r * 0.87, r * 0.5);
+        ctx.closePath(); ctx.fill(); break;
+      case 'diamond':
+        ctx.beginPath();
+        ctx.moveTo(0, -r); ctx.lineTo(r * 0.65, 0); ctx.lineTo(0, r); ctx.lineTo(-r * 0.65, 0);
+        ctx.closePath(); ctx.fill(); break;
+      case 'hex':
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = i * Math.PI / 3 - Math.PI / 6;
+          ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(a) * r, Math.sin(a) * r);
+        }
+        ctx.closePath(); ctx.fill(); break;
+      case 'star':
+        ctx.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const a = i * Math.PI / 5 - Math.PI / 2;
+          const rad = i % 2 === 0 ? r : r * 0.45;
+          ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(a) * rad, Math.sin(a) * rad);
+        }
+        ctx.closePath(); ctx.fill(); break;
+    }
+    // inner shine
+    ctx.globalAlpha *= 0.3;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-r * 0.2, -r * 0.2, r * 0.3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  drawBomb() {
+    const r = this.r;
+    // pulsing skull-ish bomb
+    const pulse = 1 + Math.sin(Date.now() * 0.01) * 0.08;
+    ctx.scale(pulse, pulse);
+    // body
+    ctx.fillStyle = '#1a0008';
+    ctx.strokeStyle = '#ff2244';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // skull face
+    ctx.fillStyle = '#ff2244';
+    ctx.font = `${r * 1.1}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('💀', 0, 2);
+  }
+
+  drawHalf(h, side) {
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    ctx.translate(h.x, h.y);
+    ctx.rotate(h.rot);
+    ctx.beginPath();
+    ctx.rect(side < 0 ? -this.r * 1.2 : 0, -this.r * 1.2, this.r * 1.2, this.r * 2.4);
+    ctx.clip();
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 10;
+    if (this.isBomb) {
+      ctx.fillStyle = '#1a0008';
+      ctx.beginPath(); ctx.arc(0, 0, this.r, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = this.color;
+      ctx.beginPath(); ctx.arc(0, 0, this.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  slice(angle) {
+    this.sliced = true;
+    this.sliceAngle = angle;
+    const perpX = Math.cos(angle + Math.PI / 2) * 2.5;
+    const perpY = Math.sin(angle + Math.PI / 2) * 2.5;
+    this.half1 = { x: this.x - perpX, y: this.y - perpY, vx: this.vx - perpX, vy: this.vy - perpY, rot: this.rotation, rotSpeed: -0.15 };
+    this.half2 = { x: this.x + perpX, y: this.y + perpY, vx: this.vx + perpX, vy: this.vy + perpY, rot: this.rotation, rotSpeed: 0.15 };
+  }
+
+  contains(px, py) {
+    const dx = px - this.x, dy = py - this.y;
+    return dx * dx + dy * dy < (this.r + 10) * (this.r + 10);
+  }
+}
+
+// ─── Particle System ────────────────────────────────────
+class Particle {
+  constructor(x, y, color, vx, vy, size, life) {
+    this.x = x; this.y = y; this.color = color;
+    this.vx = vx; this.vy = vy;
+    this.size = size; this.life = life; this.maxLife = life;
+  }
+  update(dt) {
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.vy += 0.12 * dt;
+    this.life -= dt;
+    return this.life > 0;
+  }
+  draw() {
+    const a = this.life / this.maxLife;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 8;
+    const s = this.size * (0.5 + a * 0.5);
+    ctx.fillRect(this.x - s / 2, this.y - s / 2, s, s);
+  }
+}
+
+function spawnParticles(x, y, color, count = 15) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 6;
+    particles.push(new Particle(
+      x, y, color,
+      Math.cos(angle) * speed, Math.sin(angle) * speed,
+      3 + Math.random() * 5, 30 + Math.random() * 30
+    ));
+  }
+}
+
+function spawnSliceParticles(x, y, color, angle) {
+  for (let i = 0; i < 10; i++) {
+    const spread = angle + (Math.random() - 0.5) * 1.5;
+    const speed = 3 + Math.random() * 5;
+    particles.push(new Particle(
+      x, y, color,
+      Math.cos(spread) * speed, Math.sin(spread) * speed,
+      2 + Math.random() * 4, 20 + Math.random() * 20
+    ));
+  }
+}
+
+// ─── Text Popup ─────────────────────────────────────────
+class TextPopup {
+  constructor(x, y, text, color, size = 28) {
+    this.x = x; this.y = y; this.text = text; this.color = color;
+    this.size = size; this.life = 40; this.maxLife = 40;
+  }
+  update(dt) { this.y -= 1.2 * dt; this.life -= dt; return this.life > 0; }
+  draw() {
+    const a = this.life / this.maxLife;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 12;
+    ctx.font = `900 ${this.size * (1 + (1 - a) * 0.3)}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(this.text, this.x, this.y);
+  }
+}
+
+// ─── Slice Trail ────────────────────────────────────────
+let trailPoints = [];
+
+function addTrailPoint(x, y) {
+  trailPoints.push({ x, y, life: 15 });
+}
+
+function drawTrail() {
+  if (trailPoints.length < 2) return;
+  for (let w = 0; w < 2; w++) {
+    ctx.beginPath();
+    ctx.moveTo(trailPoints[0].x, trailPoints[0].y);
+    for (let i = 1; i < trailPoints.length; i++) {
+      ctx.lineTo(trailPoints[i].x, trailPoints[i].y);
+    }
+    ctx.strokeStyle = w === 0 ? 'rgba(255,255,255,0.8)' : 'rgba(0,255,200,0.4)';
+    ctx.lineWidth = w === 0 ? 3 : 8;
+    ctx.shadowColor = '#00ffc8';
+    ctx.shadowBlur = w === 0 ? 5 : 15;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+}
+
+function updateTrail(dt) {
+  for (let i = trailPoints.length - 1; i >= 0; i--) {
+    trailPoints[i].life -= dt;
+    if (trailPoints[i].life <= 0) trailPoints.splice(i, 1);
+  }
+}
+
+// ─── Screen Shake ───────────────────────────────────────
+function shake(amount) {
+  shakeX = (Math.random() - 0.5) * amount;
+  shakeY = (Math.random() - 0.5) * amount;
+  shakeDecay = amount;
+}
+
+function flash(color) {
+  flashAlpha = 0.3;
+  flashColor = color;
+}
+
+// ─── Slice Detection ────────────────────────────────────
+let isSlicing = false;
+let lastSliceX, lastSliceY;
+
+function checkSlice(x, y) {
+  if (!gameRunning) return;
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (s.sliced) continue;
+    if (s.contains(x, y)) {
+      const angle = Math.atan2(y - lastSliceY, x - lastSliceX);
+      s.slice(angle);
+
+      if (s.isBomb) {
+        // Hit a bomb!
+        combo = 0;
+        lives--;
+        bombSound();
+        shake(20);
+        flash('#ff2244');
+        spawnParticles(s.x, s.y, '#ff2244', 25);
+        textPopups.push(new TextPopup(s.x, s.y, 'BOOM!', '#ff2244', 36));
+        updateLivesUI();
+        if (lives <= 0) endGame();
+      } else {
+        combo++;
+        const multiplier = Math.min(Math.floor(combo / 3) + 1, 5);
+        const pts = s.points * multiplier;
+        score += pts;
+        sliceSound(combo);
+        spawnParticles(s.x, s.y, s.color, 12 + combo * 2);
+        spawnSliceParticles(s.x, s.y, '#fff', angle);
+
+        let popText = `+${pts}`;
+        if (combo >= 3) popText += ` x${multiplier}`;
+        textPopups.push(new TextPopup(s.x, s.y, popText, s.color, 24 + Math.min(combo, 8) * 2));
+
+        if (combo >= 5) {
+          shake(8 + combo);
+          flash(s.color);
+          bgPulse = 1;
+        } else if (combo >= 3) {
+          shake(5);
+        }
+
+        updateScoreUI();
+      }
+    }
+  }
+}
+
+// ─── Spawning ───────────────────────────────────────────
+function spawnWave() {
+  const count = 1 + Math.floor(Math.random() * (2 + difficulty * 0.5));
+  const hasBomb = Math.random() < Math.min(0.15 + difficulty * 0.03, 0.35);
+  for (let i = 0; i < count; i++) {
+    shapes.push(new Shape(hasBomb && i === 0));
+  }
+}
+
+// ─── UI Updates ─────────────────────────────────────────
+const scoreEl = document.getElementById('scoreVal');
+const comboEl = document.getElementById('comboVal');
+const bestEl = document.getElementById('bestVal');
+const livesEl = document.getElementById('lives');
+const menuEl = document.getElementById('menu');
+const menuBestEl = document.getElementById('menuBest');
+
+function updateScoreUI() {
+  scoreEl.textContent = score;
+  if (combo >= 3) {
+    const mult = Math.min(Math.floor(combo / 3) + 1, 5);
+    comboEl.textContent = `${combo} COMBO x${mult}`;
+    comboEl.style.transform = 'scale(1.15)';
+    setTimeout(() => comboEl.style.transform = 'scale(1)', 100);
+  } else {
+    comboEl.textContent = '';
+  }
+}
+
+function updateLivesUI() {
+  livesEl.innerHTML = '';
+  for (let i = 0; i < LIVES_MAX; i++) {
+    const d = document.createElement('div');
+    d.className = 'life' + (i >= lives ? ' lost' : '');
+    livesEl.appendChild(d);
+  }
+}
+
+// ─── Game Flow ──────────────────────────────────────────
+function startGame() {
+  ensureAudio();
+  score = 0; combo = 0; maxCombo = 0; lives = LIVES_MAX;
+  gameRunning = true; gameOver = false;
+  shapes = []; particles = []; textPopups = []; trailPoints = [];
+  shakeX = 0; shakeY = 0; shakeDecay = 0;
+  spawnTimer = 0; spawnRate = 70; difficulty = 0;
+  flashAlpha = 0; bgPulse = 0;
+  menuEl.classList.add('hidden');
+  updateScoreUI();
+  updateLivesUI();
+  bestEl.textContent = bestScore > 0 ? `Best: ${bestScore}` : '';
+}
+
+function endGame() {
+  gameRunning = false;
+  gameOver = true;
+  gameOverSound();
+  const isNew = score > bestScore;
+  if (isNew) {
+    bestScore = score;
+    localStorage.setItem('sliceStorm_best', bestScore.toString());
+  }
+  // Show menu with results after a short delay
+  setTimeout(() => {
+    menuEl.classList.remove('hidden');
+    menuEl.innerHTML = `
+      <div class="game-over-label">Game Over</div>
+      <div class="final-score">${score}</div>
+      <div class="best-label ${isNew ? 'new-best' : ''}">${isNew ? '★ NEW BEST! ★' : `Best: ${bestScore}`}</div>
+      <button class="play-btn" id="playBtn2">PLAY AGAIN</button>
+      <div class="hint">Swipe to slice &bull; Avoid 💀</div>
+    `;
+    document.getElementById('playBtn2').addEventListener('click', startGame);
+    document.getElementById('playBtn2').addEventListener('touchend', (e) => { e.preventDefault(); startGame(); });
+  }, 800);
+}
+
+// ─── Background ─────────────────────────────────────────
+function drawBackground() {
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.015)';
+  ctx.lineWidth = 1;
+  const gridSize = 60;
+  for (let x = 0; x < W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // bg pulse on combo
+  if (bgPulse > 0) {
+    ctx.fillStyle = `rgba(0,255,200,${bgPulse * 0.05})`;
+    ctx.fillRect(0, 0, W, H);
+    bgPulse *= 0.95;
+    if (bgPulse < 0.01) bgPulse = 0;
+  }
+}
+
+// ─── Main Loop ──────────────────────────────────────────
+let lastTime = 0;
+
+function loop(time) {
+  requestAnimationFrame(loop);
+  const rawDt = (time - lastTime) / 16.667;
+  const dt = Math.min(rawDt, 3); // cap delta
+  lastTime = time;
+
+  // Draw
+  ctx.save();
+  drawBackground();
+
+  // Apply shake
+  if (shakeDecay > 0.5) {
+    ctx.translate(shakeX, shakeY);
+    shakeX *= -0.5; shakeY *= -0.5;
+    shakeDecay *= 0.85;
+  }
+
+  if (gameRunning) {
+    // Difficulty ramp
+    difficulty = Math.min(score / 500, 10);
+    spawnRate = Math.max(35, 70 - difficulty * 3);
+
+    // Spawn
+    spawnTimer += dt;
+    if (spawnTimer >= spawnRate) {
+      spawnTimer = 0;
+      spawnWave();
+    }
+
+    // Update shapes
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      if (!shapes[i].update(dt)) {
+        if (shapes[i].missed) {
+          combo = 0;
+          lives--;
+          missSound();
+          flash('#ff336688');
+          updateLivesUI();
+          updateScoreUI();
+          if (lives <= 0) { endGame(); }
+        }
+        shapes.splice(i, 1);
+      }
+    }
+  }
+
+  // Draw shapes
+  for (const s of shapes) s.draw();
+
+  // Trail
+  drawTrail();
+  updateTrail(dt);
+
+  // Particles
+  ctx.shadowBlur = 0;
+  for (let i = particles.length - 1; i >= 0; i--) {
+    if (!particles[i].update(dt)) { particles.splice(i, 1); continue; }
+    particles[i].draw();
+  }
+
+  // Text popups
+  ctx.shadowBlur = 0;
+  for (let i = textPopups.length - 1; i >= 0; i--) {
+    if (!textPopups[i].update(dt)) { textPopups.splice(i, 1); continue; }
+    textPopups[i].draw();
+  }
+
+  // Flash overlay
+  if (flashAlpha > 0.01) {
+    ctx.globalAlpha = flashAlpha;
+    ctx.fillStyle = flashColor;
+    ctx.fillRect(-50, -50, W + 100, H + 100);
+    flashAlpha *= 0.88;
+  }
+
+  ctx.restore();
+}
+
+requestAnimationFrame(loop);
+
+// ─── Input Handling ─────────────────────────────────────
+function getPos(e) {
+  if (e.touches) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  return { x: e.clientX, y: e.clientY };
+}
+
+function onDown(e) {
+  const p = e.touches ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : { x: e.clientX, y: e.clientY };
+  isSlicing = true;
+  lastSliceX = p.x; lastSliceY = p.y;
+  addTrailPoint(p.x, p.y);
+  ensureAudio();
+}
+
+function onMove(e) {
+  if (!isSlicing) return;
+  e.preventDefault();
+  const p = e.touches ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : { x: e.clientX, y: e.clientY };
+
+  // Interpolate for fast swipes
+  const dx = p.x - lastSliceX, dy = p.y - lastSliceY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const steps = Math.max(1, Math.floor(dist / 15));
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const ix = lastSliceX + dx * t, iy = lastSliceY + dy * t;
+    checkSlice(ix, iy);
+    addTrailPoint(ix, iy);
+  }
+
+  lastSliceX = p.x; lastSliceY = p.y;
+}
+
+function onUp() {
+  isSlicing = false;
+  if (gameRunning) combo = 0;
+  updateScoreUI();
+}
+
+// Touch
+canvas.addEventListener('touchstart', onDown, { passive: true });
+canvas.addEventListener('touchmove', onMove, { passive: false });
+canvas.addEventListener('touchend', onUp, { passive: true });
+canvas.addEventListener('touchcancel', onUp, { passive: true });
+
+// Mouse
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+canvas.addEventListener('mouseup', onUp);
+canvas.addEventListener('mouseleave', onUp);
+
+// Keyboard (desktop alternative: space to restart)
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && (gameOver || !gameRunning)) {
+    e.preventDefault();
+    startGame();
+  }
+});
+
+// ─── Menu ───────────────────────────────────────────────
+menuBestEl.textContent = bestScore > 0 ? `Best: ${bestScore}` : '';
+document.getElementById('playBtn').addEventListener('click', startGame);
+document.getElementById('playBtn').addEventListener('touchend', (e) => { e.preventDefault(); startGame(); });
+
+// Ambient particles on menu
+shapes = []; particles = []; textPopups = [];
+(function menuAmbient() {
+  if (!gameRunning && !gameOver) {
+    if (Math.random() < 0.03) {
+      const s = new Shape(false);
+      s.vy *= 0.7;
+      shapes.push(s);
+    }
+  }
+  setTimeout(menuAmbient, 100);
+})();
+</script>
+</body>
+</html>
