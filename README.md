@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🌀 **[Void Surfer](https://adrrr.github.io/night-projects/void-surfer/)**
+Jeu d'orbite spatial — tu es une particule lumineuse en orbite autour d'anneaux néon qui rétrécissent. Tap/click/espace pour te lancer tangentiellement et atterrir sur un autre anneau. Les anneaux shrinkent progressivement — reste trop longtemps et tu tombes dans le vide ! Système de combo (x2, x3…) pour les atterrissages enchaînés. Physique orbitale réaliste, difficulté progressive, particules explosives, trail lumineux, screen shake, sons Web Audio. High score localStorage. Mobile-first (tap) + desktop (espace/click).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/void-surfer/)
+
 ### ⚔️ **[Slice Storm](https://adrrr.github.io/night-projects/slice-storm/)**
 Fruit Ninja-style — swipe pour trancher les formes géométriques néon qui volent à l'écran. Évite les bombes 💀 sinon tu perds une vie ! Système de combo avec multiplicateurs (x2→x5), trail lumineux sur le swipe, particules explosives, screen shake, sons synthétiques Web Audio. Difficulté progressive (spawn plus rapide, plus de bombes). High score localStorage. Mobile-first (touch swipe) + desktop (souris). Esthétique neon sombre.
 

@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Void Surfer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;width:100%;height:100%}
+#ui{position:absolute;top:0;left:0;width:100%;pointer-events:none;font-family:'Courier New',monospace}
+#score{position:absolute;top:16px;left:50%;transform:translateX(-50%);color:#e0e0ff;font-size:clamp(20px,5vw,32px);text-shadow:0 0 12px rgba(120,80,255,.7)}
+#highscore{position:absolute;top:50px;left:50%;transform:translateX(-50%);color:rgba(180,160,255,.5);font-size:clamp(11px,3vw,15px)}
+#overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:auto}
+#overlay h1{color:#c8b0ff;font-size:clamp(28px,8vw,56px);text-shadow:0 0 30px rgba(150,100,255,.8),0 0 60px rgba(100,50,255,.4);margin-bottom:8px;letter-spacing:4px}
+#overlay .sub{color:rgba(200,180,255,.6);font-size:clamp(12px,3.5vw,18px);margin-bottom:32px}
+#overlay .btn{background:rgba(120,60,255,.25);border:1px solid rgba(150,100,255,.5);color:#d0c0ff;padding:16px 48px;font-size:clamp(16px,4vw,22px);font-family:inherit;cursor:pointer;border-radius:8px;min-width:200px;min-height:52px;transition:background .2s}
+#overlay .btn:active{background:rgba(120,60,255,.5)}
+#overlay .final{color:rgba(255,200,100,.9);font-size:clamp(14px,4vw,20px);margin-bottom:8px}
+#overlay .finalhi{color:rgba(100,255,180,.8);font-size:clamp(12px,3vw,16px);margin-bottom:24px}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="score">0</div>
+  <div id="highscore"></div>
+  <div id="overlay">
+    <h1>VOID SURFER</h1>
+    <div class="sub">Orbit the rings. Tap to jump. Don't fall.</div>
+    <button class="btn" id="startBtn">TAP TO SURF</button>
+  </div>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const scoreEl=document.getElementById('score'),hiEl=document.getElementById('highscore');
+const overlay=document.getElementById('overlay'),startBtn=document.getElementById('startBtn');
+let W,H,dpr;
+
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=W*dpr;canvas.height=H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+resize();window.addEventListener('resize',resize);
+
+// Audio
+const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+function playSound(freq,dur,type='sine',vol=.15,slide=0){
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type=type;o.frequency.setValueAtTime(freq,audioCtx.currentTime);
+  if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(slide,20),audioCtx.currentTime+dur);
+  g.gain.setValueAtTime(vol,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+dur);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start();o.stop(audioCtx.currentTime+dur);
+}
+function sndJump(){playSound(400,.15,'sine',.12,800)}
+function sndLand(){playSound(200,.1,'triangle',.1,100)}
+function sndScore(){playSound(600,.08,'sine',.08,900)}
+function sndDie(){playSound(200,.5,'sawtooth',.15,30)}
+function sndShrink(){playSound(150,.2,'sine',.04,60)}
+
+// Game state
+let rings=[],player=null,particles=[],score=0,highScore=0,combo=0;
+let gameState='menu',shakeX=0,shakeY=0,shakeDur=0;
+let spawnTimer=0,difficultyTimer=0,difficulty=1;
+let bgStars=[];
+
+highScore=parseInt(localStorage.getItem('voidSurferHi'))||0;
+if(highScore)hiEl.textContent='BEST: '+highScore;
+
+// Stars
+for(let i=0;i<80;i++){
+  bgStars.push({x:Math.random(),y:Math.random(),s:Math.random()*1.5+.5,b:Math.random()});
+}
+
+class Ring{
+  constructor(x,y,r){
+    this.x=x;this.y=y;this.r=r;this.maxR=r;
+    this.shrinkRate=.3+difficulty*.12;
+    this.hue=Math.random()*60+240; // purple-blue range
+    this.alpha=1;this.dead=false;
+    this.pulse=0;this.landed=false;
+    this.age=0;
+  }
+  update(dt){
+    this.age+=dt;
+    this.r-=this.shrinkRate*dt;
+    this.pulse*=.93;
+    if(this.r<8){this.dead=true;sndShrink();}
+    this.alpha=Math.min(1,this.r/30);
+  }
+  draw(){
+    ctx.save();
+    const glow=this.landed?.4:.15;
+    ctx.strokeStyle=`hsla(${this.hue},80%,65%,${this.alpha*(0.6+this.pulse*0.4)})`;
+    ctx.lineWidth=2+this.pulse*3;
+    ctx.shadowColor=`hsla(${this.hue},90%,60%,${glow*this.alpha})`;
+    ctx.shadowBlur=15+this.pulse*20;
+    ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.stroke();
+    // inner glow
+    ctx.strokeStyle=`hsla(${this.hue},60%,80%,${this.alpha*(.15+this.pulse*.2)})`;
+    ctx.lineWidth=1;ctx.shadowBlur=5;
+    ctx.beginPath();ctx.arc(this.x,this.y,this.r*.7,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class Player{
+  constructor(ring){
+    this.ring=ring;
+    this.angle=0;
+    this.speed=2.5; // rad/s
+    this.x=0;this.y=0;
+    this.flying=false;
+    this.vx=0;this.vy=0;
+    this.trail=[];
+    this.alive=true;
+    this.size=6;
+    ring.landed=true;
+  }
+  update(dt){
+    if(!this.alive)return;
+    if(!this.flying){
+      if(this.ring.dead){this.die();return;}
+      this.angle+=this.speed*dt;
+      this.x=this.ring.x+Math.cos(this.angle)*this.ring.r;
+      this.y=this.ring.y+Math.sin(this.angle)*this.ring.r;
+    }else{
+      this.vy+=400*dt; // gravity
+      this.x+=this.vx*dt;
+      this.y+=this.vy*dt;
+      // check landing on rings
+      for(const ring of rings){
+        if(ring===this.ring||ring.dead)continue;
+        const dx=this.x-ring.x,dy=this.y-ring.y;
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        if(Math.abs(dist-ring.r)<this.size+8){
+          this.land(ring,dx,dy,dist);
+          return;
+        }
+      }
+      // out of bounds
+      if(this.x<-50||this.x>W+50||this.y>H+50){this.die();}
+    }
+    // trail
+    this.trail.push({x:this.x,y:this.y,a:1});
+    if(this.trail.length>25)this.trail.shift();
+    for(const t of this.trail)t.a*=.88;
+  }
+  land(ring,dx,dy,dist){
+    this.flying=false;
+    this.ring.landed=false;
+    this.ring=ring;
+    ring.landed=true;
+    ring.pulse=1;
+    this.angle=Math.atan2(dy,dx);
+    // keep same orbit direction as velocity
+    const tangentX=-Math.sin(this.angle);
+    const tangentY=Math.cos(this.angle);
+    const dot=this.vx*tangentX+this.vy*tangentY;
+    this.speed=Math.abs(this.speed)*(dot>=0?1:-1);
+    sndLand();
+    combo++;
+    const pts=combo;
+    score+=pts;
+    if(combo>1)sndScore();
+    scoreEl.textContent=score;
+    // particles
+    for(let i=0;i<8;i++){
+      const a=Math.random()*Math.PI*2;
+      particles.push({x:this.x,y:this.y,vx:Math.cos(a)*80+this.vx*.2,vy:Math.sin(a)*80+this.vy*.2,life:1,hue:ring.hue,s:Math.random()*3+1});
+    }
+    // combo text particle
+    if(combo>1){
+      particles.push({x:this.x,y:this.y-20,vx:0,vy:-40,life:1.5,text:'x'+combo,hue:50,s:0});
+    }
+  }
+  jump(){
+    if(this.flying||!this.alive)return;
+    audioCtx.resume();
+    this.flying=true;
+    this.ring.landed=false;
+    const tangentX=-Math.sin(this.angle)*Math.sign(this.speed);
+    const tangentY=Math.cos(this.angle)*Math.sign(this.speed);
+    const launchSpeed=280+difficulty*15;
+    this.vx=tangentX*launchSpeed;
+    this.vy=tangentY*launchSpeed-80; // slight upward bias
+    sndJump();
+    // jump particles
+    for(let i=0;i<5;i++){
+      const a=this.angle+Math.PI+(.5-Math.random())*.8;
+      particles.push({x:this.x,y:this.y,vx:Math.cos(a)*60,vy:Math.sin(a)*60,life:.6,hue:280,s:2});
+    }
+  }
+  die(){
+    if(!this.alive)return;
+    this.alive=false;
+    sndDie();
+    shake(8,.3);
+    for(let i=0;i<30;i++){
+      const a=Math.random()*Math.PI*2;
+      const sp=Math.random()*150+50;
+      particles.push({x:this.x,y:this.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1.5,hue:0,s:Math.random()*4+1});
+    }
+    setTimeout(()=>{
+      if(score>highScore){highScore=score;localStorage.setItem('voidSurferHi',highScore);}
+      showGameOver();
+    },800);
+  }
+  draw(){
+    if(!this.alive)return;
+    // trail
+    ctx.save();
+    for(let i=0;i<this.trail.length-1;i++){
+      const t=this.trail[i];
+      ctx.fillStyle=`rgba(180,140,255,${t.a*.3})`;
+      ctx.beginPath();ctx.arc(t.x,t.y,2,0,Math.PI*2);ctx.fill();
+    }
+    // player glow
+    ctx.shadowColor='rgba(200,160,255,.8)';ctx.shadowBlur=20;
+    ctx.fillStyle='#e0d0ff';
+    ctx.beginPath();ctx.arc(this.x,this.y,this.size,0,Math.PI*2);ctx.fill();
+    // bright core
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#fff';
+    ctx.beginPath();ctx.arc(this.x,this.y,this.size*.5,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+}
+
+function shake(amount,dur){shakeX=amount;shakeY=amount;shakeDur=dur;}
+
+function spawnRing(){
+  const margin=60;
+  const minR=35+Math.random()*20;
+  const maxR=55+Math.random()*30-difficulty*2;
+  const r=Math.max(minR,maxR);
+  let x,y,ok,tries=0;
+  do{
+    x=margin+Math.random()*(W-margin*2);
+    y=margin+Math.random()*(H-margin*2);
+    ok=true;
+    for(const ring of rings){
+      const dx=x-ring.x,dy=y-ring.y;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<ring.r+r+30){ok=false;break;}
+    }
+    tries++;
+  }while(!ok&&tries<30);
+  if(ok||tries>=30){
+    rings.push(new Ring(x,y,r));
+  }
+}
+
+function initGame(){
+  rings=[];particles=[];score=0;combo=0;
+  difficulty=1;difficultyTimer=0;spawnTimer=0;
+  scoreEl.textContent='0';
+  // spawn initial rings
+  const cx=W/2,cy=H/2;
+  const startRing=new Ring(cx,cy,55);
+  rings.push(startRing);
+  for(let i=0;i<4;i++)spawnRing();
+  player=new Player(startRing);
+  gameState='playing';
+  overlay.classList.add('hidden');
+}
+
+function showGameOver(){
+  gameState='dead';
+  overlay.classList.remove('hidden');
+  overlay.innerHTML=`
+    <h1>VOID SURFER</h1>
+    <div class="final">SCORE: ${score}</div>
+    <div class="finalhi">${score>=highScore?'NEW BEST!':'BEST: '+highScore}</div>
+    <button class="btn" id="restartBtn">TAP TO RETRY</button>
+  `;
+  hiEl.textContent='BEST: '+highScore;
+  document.getElementById('restartBtn').addEventListener('click',initGame);
+  document.getElementById('restartBtn').addEventListener('touchend',e=>{e.preventDefault();initGame();});
+}
+
+// Input
+function doJump(){
+  if(gameState==='playing'&&player)player.jump();
+}
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW'){e.preventDefault();doJump();}
+});
+canvas.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  if(gameState==='playing')doJump();
+});
+startBtn.addEventListener('click',()=>{audioCtx.resume();initGame();});
+startBtn.addEventListener('touchend',e=>{e.preventDefault();audioCtx.resume();initGame();});
+
+// Game loop
+let lastTime=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  const dt=Math.min((ts-lastTime)/1000,.05);
+  lastTime=ts;
+
+  ctx.save();
+  // shake
+  if(shakeDur>0){
+    shakeDur-=dt;
+    const sx=(Math.random()-.5)*shakeX*2;
+    const sy=(Math.random()-.5)*shakeY*2;
+    ctx.translate(sx,sy);
+    shakeX*=.9;shakeY*=.9;
+  }
+
+  // clear with slight trail
+  ctx.fillStyle='rgba(10,10,15,.35)';
+  ctx.fillRect(0,0,W,H);
+
+  // stars
+  for(const s of bgStars){
+    s.b+=dt*.3;
+    const b=Math.sin(s.b)*.3+.5;
+    ctx.fillStyle=`rgba(180,170,220,${b*.3})`;
+    ctx.fillRect(s.x*W,s.y*H,s.s,s.s);
+  }
+
+  if(gameState==='playing'){
+    // difficulty ramp
+    difficultyTimer+=dt;
+    if(difficultyTimer>8){difficultyTimer=0;difficulty=Math.min(difficulty+.3,6);}
+
+    // spawn rings
+    spawnTimer-=dt;
+    if(spawnTimer<=0){
+      spawnTimer=Math.max(1.2,3-difficulty*.25);
+      if(rings.length<8)spawnRing();
+    }
+
+    // keep minimum rings
+    if(rings.filter(r=>!r.dead).length<3)spawnRing();
+
+    // update rings
+    for(const ring of rings)ring.update(dt);
+    rings=rings.filter(r=>!r.dead);
+
+    // update player
+    if(player)player.update(dt);
+
+    // update particles
+    for(const p of particles){
+      p.x+=p.vx*dt;p.y+=p.vy*dt;
+      p.life-=dt;
+      if(!p.text)p.vy+=100*dt; // gravity on non-text particles
+    }
+    particles=particles.filter(p=>p.life>0);
+  }
+
+  // Draw rings
+  for(const ring of rings)ring.draw();
+  // Draw particles
+  for(const p of particles){
+    if(p.text){
+      ctx.save();
+      ctx.fillStyle=`hsla(${p.hue},90%,70%,${Math.min(1,p.life)})`;
+      ctx.font=`bold ${clamp(14,4,20)}px 'Courier New',monospace`;
+      ctx.textAlign='center';
+      ctx.fillText(p.text,p.x,p.y);
+      ctx.restore();
+    }else{
+      ctx.fillStyle=`hsla(${p.hue},80%,65%,${Math.min(1,p.life)})`;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.s*p.life,0,Math.PI*2);ctx.fill();
+    }
+  }
+  // Draw player
+  if(player)player.draw();
+
+  // Vignette
+  const grd=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.3,W/2,H/2,Math.max(W,H)*.75);
+  grd.addColorStop(0,'transparent');
+  grd.addColorStop(1,'rgba(5,0,15,.5)');
+  ctx.fillStyle=grd;ctx.fillRect(0,0,W,H);
+
+  ctx.restore();
+}
+
+function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
