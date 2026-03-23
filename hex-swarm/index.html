@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Hex Swarm</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0a0a12;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #fff;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#ui {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+}
+#ui > * { pointer-events: auto; }
+.bar-wrap {
+  flex: 1;
+  max-width: 400px;
+  height: 22px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 11px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 11px;
+  transition: width 0.3s ease;
+}
+.bar-fill.player { background: linear-gradient(90deg, #00e5ff, #00ffa3); }
+.bar-fill.enemy { background: linear-gradient(90deg, #ff2060, #ff6020); }
+.bar-label {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 11px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  white-space: nowrap;
+}
+#stats {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+#stats span { opacity: 0.7; }
+#boost-bar-wrap {
+  position: absolute;
+  bottom: 16px; left: 50%;
+  transform: translateX(-50%);
+  width: min(280px, 70vw);
+  height: 10px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 5px;
+  overflow: hidden;
+  z-index: 10;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+#boost-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00e5ff, #00ffa3);
+  border-radius: 5px;
+  transition: width 0.15s;
+  box-shadow: 0 0 8px rgba(0,229,255,0.5);
+}
+#boost-label {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.6;
+  z-index: 10;
+  white-space: nowrap;
+}
+#overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6,6,12,0.92);
+  z-index: 20;
+  gap: 16px;
+  padding: 20px;
+  text-align: center;
+}
+#overlay.hidden { display: none; }
+#overlay h1 {
+  font-size: clamp(28px, 7vw, 52px);
+  font-weight: 900;
+  letter-spacing: -1px;
+  background: linear-gradient(135deg, #00e5ff, #00ffa3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+#overlay h2 {
+  font-size: clamp(18px, 4vw, 28px);
+  font-weight: 700;
+}
+#overlay .sub {
+  font-size: clamp(13px, 3vw, 16px);
+  opacity: 0.6;
+  max-width: 320px;
+  line-height: 1.5;
+}
+#overlay .score-line {
+  font-size: clamp(14px, 3.5vw, 18px);
+  opacity: 0.8;
+}
+.btn {
+  padding: 14px 36px;
+  font-size: 17px;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  background: linear-gradient(135deg, #00e5ff, #00ffa3);
+  color: #0a0a12;
+  min-width: 180px;
+  min-height: 50px;
+  transition: transform 0.15s, box-shadow 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: scale(0.95); }
+.btn.secondary {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+#level-display {
+  font-size: 13px;
+  opacity: 0.5;
+  font-weight: 600;
+}
+#win-text { color: #00ffa3; }
+#lose-text { color: #ff4060; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="bar-wrap">
+    <div class="bar-fill player" id="player-bar" style="width:10%"></div>
+    <div class="bar-fill enemy" id="enemy-bar" style="width:10%; position:absolute; top:0; right:0;"></div>
+    <div class="bar-label" id="bar-label">10% vs 10%</div>
+  </div>
+  <div id="stats">
+    <span id="level-display">LVL 1</span>
+    <span>🏆 <span id="best-score">0</span></span>
+  </div>
+</div>
+<div id="boost-label">⚡ TAP YOUR HEXES TO BOOST</div>
+<div id="boost-bar-wrap"><div id="boost-fill" style="width:100%"></div></div>
+<div id="overlay">
+  <h1>HEX SWARM</h1>
+  <div class="sub">Tap your hexes to boost growth.<br>Dominate 75% of the board to win.</div>
+  <button class="btn" id="start-btn">PLAY</button>
+  <div class="score-line">Best streak: <span id="menu-best">0</span></div>
+</div>
+<script>
+'use strict';
+
+// ─── CANVAS SETUP ───
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (grid.length) buildGrid();
+}
+window.addEventListener('resize', resize);
+
+// ─── AUDIO ───
+let audioCtx;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playSound(freq, dur, type = 'sine', vol = 0.15, detune = 0) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  osc.detune.value = detune;
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur);
+}
+
+function sndBoost() { playSound(880, 0.12, 'sine', 0.12); playSound(1320, 0.1, 'sine', 0.08); }
+function sndSpread() { playSound(220 + Math.random() * 200, 0.15, 'triangle', 0.04); }
+function sndCapture() { playSound(660, 0.2, 'square', 0.06); playSound(990, 0.15, 'sine', 0.05); }
+function sndWin() {
+  [0, 100, 200, 350].forEach((d, i) => setTimeout(() => playSound(440 * (1 + i * 0.25), 0.4, 'sine', 0.12), d));
+}
+function sndLose() {
+  [0, 120, 240].forEach((d, i) => setTimeout(() => playSound(300 - i * 60, 0.3, 'sawtooth', 0.08), d));
+}
+
+// ─── GAME STATE ───
+const OWNER_NONE = 0, OWNER_PLAYER = 1, OWNER_ENEMY = 2;
+const COLORS = {
+  [OWNER_NONE]: { base: '#1a1a2e', glow: '#2a2a3e' },
+  [OWNER_PLAYER]: { base: '#00e5ff', glow: '#00ffa3', dark: '#004d55' },
+  [OWNER_ENEMY]: { base: '#ff2060', glow: '#ff6020', dark: '#55101a' }
+};
+
+let grid = [];
+let hexSize, gridCols, gridRows, offsetX, offsetY;
+let level = 1;
+let boostEnergy = 100;
+const BOOST_MAX = 100;
+const BOOST_COST = 12;
+const BOOST_REGEN = 8; // per second
+let gameState = 'menu'; // menu, playing, won, lost
+let spreadTimer = 0;
+let spreadInterval = 0.8; // seconds between spreads
+let particles = [];
+let shakeAmount = 0;
+let bestStreak = parseInt(localStorage.getItem('hexswarm_best') || '0');
+let currentStreak = 0;
+let gameTime = 0;
+
+// ─── HEX GRID ───
+function hexWidth() { return hexSize * 2; }
+function hexHeight() { return Math.sqrt(3) * hexSize; }
+
+function buildGrid() {
+  const padding = 10;
+  const availW = W - padding * 2;
+  const availH = H - 70 - 50; // top UI + bottom boost bar
+
+  // Determine grid size based on level
+  const baseCols = Math.min(9 + level, 16);
+  const baseRows = Math.min(8 + level, 14);
+
+  // Size hex to fit
+  const sizeByW = availW / (baseCols * 1.5 + 0.5);
+  const sizeByH = availH / ((baseRows + 0.5) * Math.sqrt(3));
+  hexSize = Math.min(sizeByW, sizeByH);
+  hexSize = Math.max(hexSize, 14);
+
+  gridCols = Math.min(baseCols, Math.floor((availW) / (hexSize * 1.5)) );
+  gridRows = Math.min(baseRows, Math.floor((availH) / (hexSize * Math.sqrt(3))) );
+
+  const totalW = gridCols * hexSize * 1.5 + hexSize * 0.5;
+  const totalH = (gridRows + 0.5) * hexHeight();
+  offsetX = (W - totalW) / 2 + hexSize;
+  offsetY = (H - totalH) / 2 + hexHeight() / 2 + 20;
+
+  grid = [];
+  for (let r = 0; r < gridRows; r++) {
+    for (let c = 0; c < gridCols; c++) {
+      const x = offsetX + c * hexSize * 1.5;
+      const y = offsetY + r * hexHeight() + (c % 2 === 1 ? hexHeight() / 2 : 0);
+      grid.push({
+        col: c, row: r, x, y,
+        owner: OWNER_NONE,
+        strength: 0,
+        pulse: 0,
+        captureAnim: 0,
+        neighbors: []
+      });
+    }
+  }
+
+  // Link neighbors
+  for (let i = 0; i < grid.length; i++) {
+    const h = grid[i];
+    grid[i].neighbors = grid.filter(other => {
+      if (other === h) return false;
+      const dx = other.x - h.x;
+      const dy = other.y - h.y;
+      return Math.sqrt(dx * dx + dy * dy) < hexSize * 1.9;
+    });
+  }
+}
+
+function initGame() {
+  buildGrid();
+  boostEnergy = BOOST_MAX;
+  spreadTimer = 0;
+  gameTime = 0;
+  particles = [];
+  shakeAmount = 0;
+
+  spreadInterval = Math.max(0.35, 0.85 - level * 0.04);
+
+  // Place player at bottom center with a cluster of hexes
+  let bestP = null, bestScore = -Infinity;
+  for (const h of grid) {
+    const score = h.y - Math.abs(h.x - W / 2) * 0.5;
+    if (score > bestScore) { bestScore = score; bestP = h; }
+  }
+  bestP.owner = OWNER_PLAYER;
+  bestP.strength = 4;
+  // Give player a starting cluster of neighbors
+  const playerNeighbors = bestP.neighbors.filter(n => n.owner === OWNER_NONE);
+  const clusterSize = Math.min(4, playerNeighbors.length);
+  for (let i = 0; i < clusterSize; i++) {
+    playerNeighbors[i].owner = OWNER_PLAYER;
+    playerNeighbors[i].strength = 3;
+  }
+
+  // Place enemies at top corners — more enemies at higher levels
+  const numEnemies = Math.min(1 + Math.floor(level / 3), 3);
+  const enemyCandidates = [...grid].sort((a, b) => {
+    const sa = -a.y + Math.abs(a.x - W / 2) * 0.3;
+    const sb = -b.y + Math.abs(b.x - W / 2) * 0.3;
+    return sb - sa;
+  });
+
+  // Find spread out enemy starts
+  const enemyStarts = [];
+  for (const h of enemyCandidates) {
+    if (h.owner !== OWNER_NONE) continue;
+    const tooClose = enemyStarts.some(e => {
+      const dx = e.x - h.x; const dy = e.y - h.y;
+      return Math.sqrt(dx * dx + dy * dy) < hexSize * 4;
+    });
+    if (tooClose) continue;
+    enemyStarts.push(h);
+    if (enemyStarts.length >= numEnemies) break;
+  }
+  enemyStarts.forEach(h => {
+    h.owner = OWNER_ENEMY;
+    h.strength = 1 + Math.floor(level / 3);
+  });
+
+  gameState = 'playing';
+}
+
+// ─── SPREAD LOGIC ───
+function doSpread() {
+  const toConvert = [];
+
+  const ENEMY_GRACE_PERIOD = 3.5; // seconds before enemies start spreading
+
+  for (const h of grid) {
+    if (h.owner === OWNER_NONE) continue;
+    const owner = h.owner;
+    const str = h.strength;
+
+    // Enemy grace period — enemies don't spread early on
+    if (owner === OWNER_ENEMY && gameTime < ENEMY_GRACE_PERIOD) continue;
+
+    // Spread to random neighbor
+    const targets = h.neighbors.filter(n => n.owner !== owner);
+    if (targets.length === 0) continue;
+
+    // Higher strength = more likely to spread, and to more neighbors
+    const spreadCount = Math.min(targets.length, Math.floor(str / 2) + 1);
+    const shuffled = targets.sort(() => Math.random() - 0.5).slice(0, spreadCount);
+
+    for (const target of shuffled) {
+      // Player spreads more easily at low strength
+      const baseChance = owner === OWNER_PLAYER ? 0.4 + str * 0.1 : 0.2 + str * 0.08;
+      if (Math.random() < baseChance) {
+        toConvert.push({ hex: target, newOwner: owner, from: h });
+      }
+    }
+  }
+
+  for (const { hex, newOwner, from } of toConvert) {
+    if (hex.owner === OWNER_NONE) {
+      hex.owner = newOwner;
+      hex.strength = 1;
+      hex.captureAnim = 1;
+      spawnCaptureParticles(hex.x, hex.y, newOwner, 3);
+      sndSpread();
+    } else if (hex.owner !== newOwner) {
+      hex.strength -= 1;
+      if (hex.strength <= 0) {
+        hex.owner = newOwner;
+        hex.strength = 1;
+        hex.captureAnim = 1;
+        spawnCaptureParticles(hex.x, hex.y, newOwner, 6);
+        sndCapture();
+        shakeAmount = Math.min(shakeAmount + 2, 6);
+      }
+    }
+  }
+
+  // Strengthen existing hexes slightly
+  for (const h of grid) {
+    if (h.owner !== OWNER_NONE && h.strength < 5 + level) {
+      if (Math.random() < 0.15) h.strength += 0.5;
+    }
+  }
+}
+
+// ─── PARTICLES ───
+function spawnCaptureParticles(x, y, owner, count) {
+  const color = owner === OWNER_PLAYER ? COLORS[OWNER_PLAYER] : COLORS[OWNER_ENEMY];
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 30 + Math.random() * 80;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0.4 + Math.random() * 0.4,
+      maxLife: 0.4 + Math.random() * 0.4,
+      size: 2 + Math.random() * 3,
+      color: Math.random() > 0.5 ? color.base : color.glow
+    });
+  }
+}
+
+function spawnBoostParticles(x, y) {
+  for (let i = 0; i < 8; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 50 + Math.random() * 100;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0.3 + Math.random() * 0.3,
+      maxLife: 0.3 + Math.random() * 0.3,
+      size: 3 + Math.random() * 4,
+      color: Math.random() > 0.5 ? '#00e5ff' : '#00ffa3'
+    });
+  }
+}
+
+// ─── INPUT ───
+function getHexAt(px, py) {
+  let best = null, bestDist = Infinity;
+  for (const h of grid) {
+    const dx = px - h.x;
+    const dy = py - h.y;
+    const d = dx * dx + dy * dy;
+    if (d < bestDist && d < hexSize * hexSize) {
+      bestDist = d;
+      best = h;
+    }
+  }
+  return best;
+}
+
+function handleTap(px, py) {
+  if (gameState !== 'playing') return;
+  initAudio();
+  const hex = getHexAt(px, py);
+  if (!hex) return;
+
+  if (hex.owner === OWNER_PLAYER) {
+    // Boost
+    if (boostEnergy >= BOOST_COST) {
+      boostEnergy -= BOOST_COST;
+      hex.strength += 2;
+      hex.pulse = 1;
+      spawnBoostParticles(hex.x, hex.y);
+      sndBoost();
+      shakeAmount = Math.min(shakeAmount + 1.5, 5);
+    }
+  } else if (hex.owner === OWNER_NONE) {
+    // Attack neutral — cheaper
+    if (boostEnergy >= BOOST_COST * 0.7) {
+      const nearPlayer = hex.neighbors.some(n => n.owner === OWNER_PLAYER);
+      if (nearPlayer) {
+        boostEnergy -= BOOST_COST * 0.7;
+        hex.owner = OWNER_PLAYER;
+        hex.strength = 1;
+        hex.captureAnim = 1;
+        spawnCaptureParticles(hex.x, hex.y, OWNER_PLAYER, 5);
+        sndCapture();
+      }
+    }
+  } else {
+    // Attack enemy hex — costs more
+    if (boostEnergy >= BOOST_COST) {
+      const nearPlayer = hex.neighbors.some(n => n.owner === OWNER_PLAYER);
+      if (nearPlayer) {
+        boostEnergy -= BOOST_COST;
+        hex.strength -= 2;
+        hex.pulse = 1;
+        shakeAmount = Math.min(shakeAmount + 3, 8);
+        spawnCaptureParticles(hex.x, hex.y, OWNER_PLAYER, 4);
+        sndBoost();
+        if (hex.strength <= 0) {
+          hex.owner = OWNER_PLAYER;
+          hex.strength = 1;
+          hex.captureAnim = 1;
+          sndCapture();
+        }
+      }
+    }
+  }
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  handleTap(e.clientX, e.clientY);
+});
+
+// Start / restart buttons
+document.getElementById('start-btn').addEventListener('click', () => {
+  initAudio();
+  level = 1;
+  currentStreak = 0;
+  document.getElementById('overlay').classList.add('hidden');
+  initGame();
+});
+
+// ─── GAME LOOP ───
+let lastTime = 0;
+
+function update(dt) {
+  if (gameState !== 'playing') return;
+
+  gameTime += dt;
+  boostEnergy = Math.min(BOOST_MAX, boostEnergy + BOOST_REGEN * dt);
+  shakeAmount *= Math.max(0, 1 - dt * 8);
+
+  // Spread timer
+  spreadTimer += dt;
+  if (spreadTimer >= spreadInterval) {
+    spreadTimer -= spreadInterval;
+    doSpread();
+  }
+
+  // Animate
+  for (const h of grid) {
+    if (h.pulse > 0) h.pulse = Math.max(0, h.pulse - dt * 3);
+    if (h.captureAnim > 0) h.captureAnim = Math.max(0, h.captureAnim - dt * 2.5);
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.95;
+    p.vy *= 0.95;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Check win/lose
+  const total = grid.length;
+  const playerCount = grid.filter(h => h.owner === OWNER_PLAYER).length;
+  const enemyCount = grid.filter(h => h.owner === OWNER_ENEMY).length;
+  const playerPct = playerCount / total;
+  const enemyPct = enemyCount / total;
+
+  updateUI(playerPct, enemyPct);
+
+  if (playerPct >= 0.75) {
+    gameState = 'won';
+    currentStreak++;
+    if (currentStreak > bestStreak) {
+      bestStreak = currentStreak;
+      localStorage.setItem('hexswarm_best', bestStreak);
+    }
+    sndWin();
+    setTimeout(showEndScreen, 600);
+  } else if (enemyPct >= 0.75) {
+    gameState = 'lost';
+    sndLose();
+    shakeAmount = 10;
+    setTimeout(showEndScreen, 600);
+  } else if (playerCount === 0 && gameTime > 8) {
+    gameState = 'lost';
+    sndLose();
+    setTimeout(showEndScreen, 600);
+  }
+}
+
+function updateUI(pp, ep) {
+  const ppPct = Math.round(pp * 100);
+  const epPct = Math.round(ep * 100);
+  document.getElementById('player-bar').style.width = ppPct + '%';
+  document.getElementById('enemy-bar').style.width = epPct + '%';
+  document.getElementById('bar-label').textContent = ppPct + '% vs ' + epPct + '%';
+  document.getElementById('boost-fill').style.width = (boostEnergy / BOOST_MAX * 100) + '%';
+  document.getElementById('level-display').textContent = 'LVL ' + level;
+  document.getElementById('best-score').textContent = bestStreak;
+}
+
+function showEndScreen() {
+  const overlay = document.getElementById('overlay');
+  overlay.classList.remove('hidden');
+  if (gameState === 'won') {
+    overlay.innerHTML = `
+      <h2 id="win-text">BOARD DOMINATED!</h2>
+      <div class="sub">Level ${level} cleared in ${Math.round(gameTime)}s<br>Streak: ${currentStreak}</div>
+      <button class="btn" id="next-btn">NEXT LEVEL</button>
+      <button class="btn secondary" id="menu-btn2">MENU</button>
+      <div class="score-line">Best streak: ${bestStreak}</div>
+    `;
+    document.getElementById('next-btn').addEventListener('click', () => {
+      level++;
+      overlay.classList.add('hidden');
+      initGame();
+    });
+    document.getElementById('menu-btn2').addEventListener('click', () => {
+      showMenu();
+    });
+  } else {
+    overlay.innerHTML = `
+      <h2 id="lose-text">SWARM OVERWHELMED</h2>
+      <div class="sub">Reached level ${level}<br>Streak: ${currentStreak}</div>
+      <button class="btn" id="retry-btn">RETRY</button>
+      <button class="btn secondary" id="menu-btn3">MENU</button>
+      <div class="score-line">Best streak: ${bestStreak}</div>
+    `;
+    document.getElementById('retry-btn').addEventListener('click', () => {
+      initAudio();
+      currentStreak = 0;
+      overlay.classList.add('hidden');
+      initGame();
+    });
+    document.getElementById('menu-btn3').addEventListener('click', () => {
+      showMenu();
+    });
+  }
+}
+
+function showMenu() {
+  const overlay = document.getElementById('overlay');
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <h1>HEX SWARM</h1>
+    <div class="sub">Tap your hexes to boost growth.<br>Dominate 75% of the board to win.</div>
+    <button class="btn" id="start-btn2">PLAY</button>
+    <div class="score-line">Best streak: ${bestStreak}</div>
+  `;
+  document.getElementById('start-btn2').addEventListener('click', () => {
+    initAudio();
+    level = 1;
+    currentStreak = 0;
+    overlay.classList.add('hidden');
+    initGame();
+  });
+}
+
+// ─── RENDERING ───
+function drawHex(x, y, size, fill, stroke, lineWidth) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 180 * (60 * i - 30);
+    const hx = x + size * Math.cos(angle);
+    const hy = y + size * Math.sin(angle);
+    if (i === 0) ctx.moveTo(hx, hy);
+    else ctx.lineTo(hx, hy);
+  }
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth || 1; ctx.stroke(); }
+}
+
+function render(time) {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient
+  const bgGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.7);
+  bgGrad.addColorStop(0, '#12122a');
+  bgGrad.addColorStop(1, '#0a0a12');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Screen shake
+  const sx = (Math.random() - 0.5) * shakeAmount;
+  const sy = (Math.random() - 0.5) * shakeAmount;
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  const t = time / 1000;
+
+  // Draw hexes
+  for (const h of grid) {
+    const colors = COLORS[h.owner];
+    const breathe = h.owner !== OWNER_NONE ? Math.sin(t * 3 + h.col * 0.5 + h.row * 0.3) * 0.08 : 0;
+    const captureScale = h.captureAnim > 0 ? 1 + h.captureAnim * 0.3 : 1;
+    const pulseScale = h.pulse > 0 ? 1 + h.pulse * 0.2 : 1;
+    const s = hexSize * 0.9 * (1 + breathe) * captureScale * pulseScale;
+
+    // Glow for owned hexes
+    if (h.owner !== OWNER_NONE) {
+      const glowSize = s * 1.3;
+      const alpha = 0.15 + breathe * 0.5;
+      ctx.globalAlpha = alpha;
+      drawHex(h.x, h.y, glowSize, colors.glow, null);
+      ctx.globalAlpha = 1;
+    }
+
+    // Main hex
+    if (h.owner !== OWNER_NONE) {
+      const grad = ctx.createRadialGradient(h.x, h.y - s * 0.3, 0, h.x, h.y, s);
+      grad.addColorStop(0, colors.base);
+      grad.addColorStop(1, colors.dark);
+      drawHex(h.x, h.y, s, grad, colors.base + '40', 1.5);
+
+      // Strength indicator — inner ring
+      if (h.strength > 2) {
+        ctx.globalAlpha = 0.3;
+        drawHex(h.x, h.y, s * 0.4, null, colors.glow, 1);
+        ctx.globalAlpha = 1;
+      }
+      if (h.strength > 4) {
+        ctx.globalAlpha = 0.25;
+        drawHex(h.x, h.y, s * 0.2, colors.glow, null);
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      drawHex(h.x, h.y, s, colors.base, '#ffffff10', 0.5);
+    }
+
+    // Capture ripple
+    if (h.captureAnim > 0) {
+      ctx.globalAlpha = h.captureAnim * 0.4;
+      const rippleSize = s * (1 + (1 - h.captureAnim) * 1.5);
+      drawHex(h.x, h.y, rippleSize, null, COLORS[h.owner].base, 2);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Particles
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+function frame(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.1);
+  lastTime = time;
+  update(dt);
+  render(time);
+  requestAnimationFrame(frame);
+}
+
+// ─── INIT ───
+resize();
+buildGrid();
+document.getElementById('menu-best').textContent = bestStreak;
+document.getElementById('best-score').textContent = bestStreak;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

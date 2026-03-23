@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🐝 **[Hex Swarm](https://adrrr.github.io/night-projects/hex-swarm/)**
+Jeu de conquête territoriale sur grille hexagonale — tu commences avec un cluster de hexes cyan, l'ennemi (rouge) se développe en face. Tape sur tes hexes pour booster leur croissance et envahir les hexes neutres. Domine 75% du plateau pour gagner ! Difficulté progressive (plus d'ennemis, grille plus grande), barre de boost avec cooldown, système de streak et levels. Esthétique néon sombre, animations de pulse/glow, particules de capture, screen shake, sons Web Audio. High score localStorage. Mobile-first (tap) + desktop (click).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/hex-swarm/)
+
 ### 🌀 **[Void Surfer](https://adrrr.github.io/night-projects/void-surfer/)**
 Jeu d'orbite spatial — tu es une particule lumineuse en orbite autour d'anneaux néon qui rétrécissent. Tap/click/espace pour te lancer tangentiellement et atterrir sur un autre anneau. Les anneaux shrinkent progressivement — reste trop longtemps et tu tombes dans le vide ! Système de combo (x2, x3…) pour les atterrissages enchaînés. Physique orbitale réaliste, difficulté progressive, particules explosives, trail lumineux, screen shake, sons Web Audio. High score localStorage. Mobile-first (tap) + desktop (espace/click).
 
