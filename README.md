@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🌈 **[Color Gravity](https://adrrr.github.io/night-projects/color-gravity/)**
+Puzzle-action avec un puits de gravité — contrôle une zone d'attraction/répulsion pour rassembler des orbes colorées. Match 3+ orbes de la même couleur pour les faire exploser ! Toggle attract/repel (tap/espace), système de 3 vies, combos avec multiplicateurs, niveaux progressifs (plus de couleurs, spawn plus rapide). Orbes avec gradient radial, highlight spéculaire, particules, ring effects, screen shake, Web Audio synthétique. High score localStorage. Mobile-first (double-tap toggle) + desktop (souris + espace).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/color-gravity/)
+
 ### 🐝 **[Hex Swarm](https://adrrr.github.io/night-projects/hex-swarm/)**
 Jeu de conquête territoriale sur grille hexagonale — tu commences avec un cluster de hexes cyan, l'ennemi (rouge) se développe en face. Tape sur tes hexes pour booster leur croissance et envahir les hexes neutres. Domine 75% du plateau pour gagner ! Difficulté progressive (plus d'ennemis, grille plus grande), barre de boost avec cooldown, système de streak et levels. Esthétique néon sombre, animations de pulse/glow, particules de capture, screen shake, sons Web Audio. High score localStorage. Mobile-first (tap) + desktop (click).
 
