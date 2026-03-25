@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<title>MAGMA MERGE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0a0a0a;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#gameCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#ui {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 12px 16px;
+  pointer-events: none;
+  z-index: 10;
+}
+#ui > div { pointer-events: auto; }
+.score-display {
+  color: #ff6633;
+  font-size: 28px;
+  font-weight: 800;
+  text-shadow: 0 0 20px rgba(255,102,51,0.6);
+  letter-spacing: 1px;
+}
+.score-label {
+  color: #aa5533;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+.high-score {
+  color: #ffaa33;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+  text-shadow: 0 0 10px rgba(255,170,51,0.4);
+}
+#overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5,5,5,0.92);
+  z-index: 20;
+  opacity: 1;
+  transition: opacity 0.3s;
+}
+#overlay.hidden { opacity: 0; pointer-events: none; }
+#overlay h1 {
+  font-size: clamp(36px, 8vw, 64px);
+  font-weight: 900;
+  background: linear-gradient(180deg, #ff3300, #ff8800, #ffcc00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  margin-bottom: 8px;
+  letter-spacing: 3px;
+}
+#overlay .subtitle {
+  color: #886644;
+  font-size: clamp(13px, 3vw, 16px);
+  margin-bottom: 32px;
+  text-align: center;
+  padding: 0 20px;
+  line-height: 1.5;
+}
+#overlay .final-score {
+  color: #ff6633;
+  font-size: clamp(40px, 10vw, 72px);
+  font-weight: 900;
+  text-shadow: 0 0 40px rgba(255,102,51,0.6);
+  margin-bottom: 4px;
+}
+#overlay .final-label {
+  color: #aa5533;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  margin-bottom: 24px;
+}
+.btn {
+  background: linear-gradient(135deg, #ff4400, #ff7700);
+  color: #fff;
+  border: none;
+  padding: 16px 48px;
+  font-size: 20px;
+  font-weight: 700;
+  border-radius: 50px;
+  cursor: pointer;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  box-shadow: 0 4px 30px rgba(255,68,0,0.4);
+  min-height: 54px;
+  min-width: 200px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 15px rgba(255,68,0,0.6);
+}
+.new-high {
+  color: #ffcc00;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  text-shadow: 0 0 20px rgba(255,204,0,0.5);
+  animation: pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes pulse {
+  from { opacity: 0.7; transform: scale(1); }
+  to { opacity: 1; transform: scale(1.05); }
+}
+.legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #887766;
+  font-size: 12px;
+}
+.legend-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+}
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<div id="ui">
+  <div>
+    <div class="score-label">Score</div>
+    <div class="score-display" id="scoreDisplay">0</div>
+  </div>
+  <div>
+    <div class="high-score" id="highDisplay">BEST: 0</div>
+  </div>
+</div>
+<div id="overlay">
+  <h1>MAGMA MERGE</h1>
+  <div class="subtitle">Drop &amp; merge magma before it cools to stone!</div>
+  <div class="legend">
+    <div class="legend-item"><span class="legend-dot" style="background:radial-gradient(circle at 35% 35%, #ff6644, #cc2200)"></span> Hot</div>
+    <div class="legend-item"><span class="legend-dot" style="background:radial-gradient(circle at 35% 35%, #ff9933, #cc6600)"></span> Warm</div>
+    <div class="legend-item"><span class="legend-dot" style="background:radial-gradient(circle at 35% 35%, #ffdd44, #bb9900)"></span> Cool</div>
+    <div class="legend-item"><span class="legend-dot" style="background:radial-gradient(circle at 35% 35%, #888888, #555555)"></span> Stone</div>
+  </div>
+  <br>
+  <button class="btn" id="startBtn">DROP IT</button>
+</div>
+
+<script>
+// ===================== AUDIO ENGINE =====================
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let actx = null;
+function ensureAudio() {
+  if (!actx) actx = new AudioCtx();
+  if (actx.state === 'suspended') actx.resume();
+}
+
+function playDrop() {
+  if (!actx) return;
+  const o = actx.createOscillator();
+  const g = actx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(300, actx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(120, actx.currentTime + 0.15);
+  g.gain.setValueAtTime(0.25, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.15);
+  o.connect(g).connect(actx.destination);
+  o.start(); o.stop(actx.currentTime + 0.15);
+}
+
+function playMerge(size) {
+  if (!actx) return;
+  const freq = 200 + size * 80;
+  const o = actx.createOscillator();
+  const g = actx.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(freq, actx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(freq * 1.8, actx.currentTime + 0.12);
+  o.frequency.exponentialRampToValueAtTime(freq * 0.5, actx.currentTime + 0.35);
+  g.gain.setValueAtTime(0.3, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.35);
+  o.connect(g).connect(actx.destination);
+  o.start(); o.stop(actx.currentTime + 0.35);
+  // Add harmonic
+  const o2 = actx.createOscillator();
+  const g2 = actx.createGain();
+  o2.type = 'sine';
+  o2.frequency.setValueAtTime(freq * 2, actx.currentTime);
+  o2.frequency.exponentialRampToValueAtTime(freq * 0.8, actx.currentTime + 0.2);
+  g2.gain.setValueAtTime(0.12, actx.currentTime);
+  g2.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.2);
+  o2.connect(g2).connect(actx.destination);
+  o2.start(); o2.stop(actx.currentTime + 0.2);
+}
+
+function playSolidify() {
+  if (!actx) return;
+  const o = actx.createOscillator();
+  const g = actx.createGain();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(80, actx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(30, actx.currentTime + 0.3);
+  g.gain.setValueAtTime(0.15, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.3);
+  o.connect(g).connect(actx.destination);
+  o.start(); o.stop(actx.currentTime + 0.3);
+}
+
+function playGameOver() {
+  if (!actx) return;
+  [0, 0.15, 0.3, 0.5].forEach((t, i) => {
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(200 - i * 40, actx.currentTime + t);
+    g.gain.setValueAtTime(0.2, actx.currentTime + t);
+    g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + t + 0.18);
+    o.connect(g).connect(actx.destination);
+    o.start(actx.currentTime + t);
+    o.stop(actx.currentTime + t + 0.18);
+  });
+}
+
+// ===================== CANVAS SETUP =====================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let W, H, GAME_LEFT, GAME_RIGHT, GAME_TOP, GAME_BOTTOM, GAME_W;
+const DROP_ZONE_H = 70;
+const WALL_THICKNESS = 4;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Game area: centered, max 420px wide
+  GAME_W = Math.min(420, W - 16);
+  GAME_LEFT = (W - GAME_W) / 2;
+  GAME_RIGHT = GAME_LEFT + GAME_W;
+  GAME_TOP = DROP_ZONE_H + 50;
+  GAME_BOTTOM = H - 10;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ===================== GAME STATE =====================
+const PHASES = [
+  { name: 'hot',   colors: ['#ff2200','#ff4422','#ff3311'], glow: '#ff4400', coolTime: 6 },
+  { name: 'warm',  colors: ['#ff7700','#ff9933','#ff8822'], glow: '#ff8800', coolTime: 6 },
+  { name: 'cool',  colors: ['#ffcc22','#ffdd44','#eebb00'], glow: '#ffcc00', coolTime: 6 },
+  { name: 'stone', colors: ['#666666','#777777','#888888'], glow: '#555555', coolTime: Infinity },
+];
+
+// Radii for merge sizes 1..6
+const SIZES = [16, 22, 30, 40, 52, 66];
+const GRAVITY = 600;
+const DAMPING = 0.45;
+const FRICTION = 0.97;
+const MERGE_SPEED = 4;
+
+let blobs = [];
+let particles = [];
+let score = 0;
+let highScore = parseInt(localStorage.getItem('magmaMergeHigh') || '0');
+let gameState = 'menu'; // menu, playing, gameover
+let dropX = W / 2;
+let nextPhase = 0;
+let nextSize = 0;
+let canDrop = true;
+let dropCooldown = 0;
+let shakeAmount = 0;
+let dangerTimer = 0; // time blobs have been above danger line
+const DANGER_LINE_Y = GAME_TOP + 40;
+const OVERFLOW_TIME = 1.5; // seconds above danger line before game over
+
+document.getElementById('highDisplay').textContent = 'BEST: ' + highScore;
+
+function randomPhase() {
+  // Weight toward hot
+  const r = Math.random();
+  if (r < 0.55) return 0;
+  if (r < 0.85) return 1;
+  return 2;
+}
+
+function newBlobPreview() {
+  nextPhase = randomPhase();
+  nextSize = 0;
+}
+newBlobPreview();
+
+// ===================== BLOB CLASS =====================
+class Blob {
+  constructor(x, y, phase, sizeIdx) {
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.phase = phase;
+    this.sizeIdx = sizeIdx;
+    this.r = SIZES[sizeIdx];
+    this.coolTimer = PHASES[phase].coolTime;
+    this.alive = true;
+    this.merging = false;
+    this.mergeTarget = null;
+    this.born = performance.now();
+    this.flash = 0;
+  }
+
+  get isStone() { return this.phase >= 3; }
+
+  update(dt) {
+    if (this.merging) {
+      // Move toward merge target
+      const t = this.mergeTarget;
+      const dx = t.x - this.x;
+      const dy = t.y - this.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 3) {
+        this.alive = false;
+        return;
+      }
+      const speed = MERGE_SPEED * dt * 600;
+      this.x += (dx / d) * Math.min(speed, d);
+      this.y += (dy / d) * Math.min(speed, d);
+      this.r = Math.max(this.r - dt * 40, 4);
+      return;
+    }
+
+    // Gravity
+    this.vy += GRAVITY * dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.vx *= FRICTION;
+
+    // Wall collisions
+    if (this.x - this.r < GAME_LEFT) {
+      this.x = GAME_LEFT + this.r;
+      this.vx = Math.abs(this.vx) * DAMPING;
+    }
+    if (this.x + this.r > GAME_RIGHT) {
+      this.x = GAME_RIGHT - this.r;
+      this.vx = -Math.abs(this.vx) * DAMPING;
+    }
+    // Floor
+    if (this.y + this.r > GAME_BOTTOM) {
+      this.y = GAME_BOTTOM - this.r;
+      this.vy = -Math.abs(this.vy) * DAMPING;
+      if (Math.abs(this.vy) < 20) this.vy = 0;
+      this.vx *= 0.92;
+    }
+
+    // Cooling
+    if (!this.isStone) {
+      this.coolTimer -= dt;
+      if (this.coolTimer <= 0) {
+        this.phase++;
+        if (this.phase < 3) {
+          this.coolTimer = PHASES[this.phase].coolTime;
+        } else {
+          this.coolTimer = Infinity;
+          playSolidify();
+          // Stone particles
+          for (let i = 0; i < 8; i++) {
+            const a = Math.random() * Math.PI * 2;
+            particles.push(new Particle(this.x, this.y, Math.cos(a) * 60, Math.sin(a) * 60, '#888', 0.6));
+          }
+        }
+      }
+    }
+
+    if (this.flash > 0) this.flash -= dt * 4;
+  }
+
+  draw() {
+    const p = PHASES[this.phase];
+    const ci = Math.floor(Math.random() * p.colors.length);
+
+    // Glow
+    if (!this.isStone) {
+      const glowR = this.r * 2.2;
+      const grd = ctx.createRadialGradient(this.x, this.y, this.r * 0.3, this.x, this.y, glowR);
+      grd.addColorStop(0, p.glow + '44');
+      grd.addColorStop(1, p.glow + '00');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Body
+    const bodyGrd = ctx.createRadialGradient(this.x - this.r * 0.25, this.y - this.r * 0.3, this.r * 0.1, this.x, this.y, this.r);
+    bodyGrd.addColorStop(0, p.colors[0]);
+    bodyGrd.addColorStop(0.6, p.colors[1]);
+    bodyGrd.addColorStop(1, p.colors[2] || p.colors[1]);
+    ctx.fillStyle = bodyGrd;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight
+    if (!this.isStone) {
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.beginPath();
+      ctx.ellipse(this.x - this.r * 0.2, this.y - this.r * 0.25, this.r * 0.45, this.r * 0.3, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Flash on merge
+    if (this.flash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${this.flash * 0.5})`;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r * 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Cooling indicator bar
+    if (!this.isStone && this.phase < 3) {
+      const totalCool = PHASES[this.phase].coolTime;
+      const pct = this.coolTimer / totalCool;
+      const barW = this.r * 1.4;
+      const barH = 3;
+      const bx = this.x - barW / 2;
+      const by = this.y + this.r + 5;
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillRect(bx, by, barW, barH);
+      const nextP = PHASES[this.phase + 1];
+      ctx.fillStyle = nextP ? nextP.glow : '#888';
+      ctx.fillRect(bx, by, barW * (1 - pct), barH);
+    }
+  }
+}
+
+// ===================== PARTICLE CLASS =====================
+class Particle {
+  constructor(x, y, vx, vy, color, life) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.color = color;
+    this.life = life;
+    this.maxLife = life;
+    this.r = 2 + Math.random() * 3;
+  }
+  update(dt) {
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.vy += 200 * dt;
+    this.life -= dt;
+  }
+  draw() {
+    const a = this.life / this.maxLife;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * a, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// Score popup
+class ScorePopup {
+  constructor(x, y, pts) {
+    this.x = x; this.y = y;
+    this.pts = pts;
+    this.life = 1;
+  }
+  update(dt) {
+    this.y -= 50 * dt;
+    this.life -= dt;
+  }
+  draw() {
+    ctx.globalAlpha = this.life;
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = `bold ${14 + this.pts}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.fillText('+' + this.pts, this.x, this.y);
+    ctx.globalAlpha = 1;
+  }
+}
+let popups = [];
+
+// ===================== COLLISION & MERGING =====================
+function resolveCollisions() {
+  for (let i = 0; i < blobs.length; i++) {
+    const a = blobs[i];
+    if (!a.alive || a.merging) continue;
+    for (let j = i + 1; j < blobs.length; j++) {
+      const b = blobs[j];
+      if (!b.alive || b.merging) continue;
+
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = a.r + b.r;
+
+      if (dist < minDist && dist > 0.01) {
+        // Separate
+        const overlap = (minDist - dist) / 2;
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        if (a.vy === 0 && a.y + a.r >= GAME_BOTTOM - 1) {
+          b.x += nx * overlap * 2;
+          b.y += ny * overlap * 2;
+        } else if (b.vy === 0 && b.y + b.r >= GAME_BOTTOM - 1) {
+          a.x -= nx * overlap * 2;
+          a.y -= ny * overlap * 2;
+        } else {
+          a.x -= nx * overlap;
+          a.y -= ny * overlap;
+          b.x += nx * overlap;
+          b.y += ny * overlap;
+        }
+
+        // Bounce
+        const relVx = a.vx - b.vx;
+        const relVy = a.vy - b.vy;
+        const relDot = relVx * nx + relVy * ny;
+        if (relDot > 0) {
+          const massA = a.r * a.r;
+          const massB = b.r * b.r;
+          const totalMass = massA + massB;
+          const impulse = relDot * DAMPING;
+          a.vx -= (impulse * 2 * massB / totalMass) * nx;
+          a.vy -= (impulse * 2 * massB / totalMass) * ny;
+          b.vx += (impulse * 2 * massA / totalMass) * nx;
+          b.vy += (impulse * 2 * massA / totalMass) * ny;
+        }
+
+        // Try merge: same phase, same size, not stone, both settled enough
+        if (a.phase === b.phase && a.sizeIdx === b.sizeIdx && !a.isStone && !b.isStone) {
+          // Merge b into a
+          b.merging = true;
+          b.mergeTarget = a;
+          const newSize = Math.min(a.sizeIdx + 1, SIZES.length - 1);
+          const pts = (newSize + 1) * (newSize + 1) * 10;
+          score += pts;
+          document.getElementById('scoreDisplay').textContent = score;
+
+          a.sizeIdx = newSize;
+          a.r = SIZES[newSize];
+          a.coolTimer = PHASES[a.phase].coolTime; // Reset cooling!
+          a.flash = 1;
+
+          playMerge(newSize);
+          shakeAmount = Math.min(3 + newSize * 1.5, 12);
+
+          // Merge particles
+          const color = PHASES[a.phase].glow;
+          for (let k = 0; k < 10 + newSize * 3; k++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 40 + Math.random() * 100;
+            particles.push(new Particle(
+              a.x, a.y,
+              Math.cos(angle) * speed,
+              Math.sin(angle) * speed,
+              color, 0.5 + Math.random() * 0.4
+            ));
+          }
+          popups.push(new ScorePopup(a.x, a.y - a.r - 10, pts));
+        }
+      }
+    }
+  }
+}
+
+// ===================== INPUT =====================
+function getInputX(e) {
+  if (e.touches) return e.touches[0].clientX;
+  return e.clientX;
+}
+
+function clampDropX(x) {
+  const minR = SIZES[nextSize];
+  return Math.max(GAME_LEFT + minR + 2, Math.min(GAME_RIGHT - minR - 2, x));
+}
+
+let pointerDown = false;
+
+function handlePointerStart(e) {
+  e.preventDefault();
+  ensureAudio();
+  if (gameState !== 'playing') return;
+  pointerDown = true;
+  dropX = clampDropX(getInputX(e));
+}
+
+function handlePointerMove(e) {
+  e.preventDefault();
+  if (gameState !== 'playing') return;
+  if (pointerDown || !e.touches) {
+    dropX = clampDropX(getInputX(e));
+  }
+}
+
+function handlePointerEnd(e) {
+  e.preventDefault();
+  if (gameState !== 'playing') return;
+  if (pointerDown && canDrop) {
+    dropBlob();
+  }
+  pointerDown = false;
+}
+
+canvas.addEventListener('mousedown', handlePointerStart);
+canvas.addEventListener('mousemove', handlePointerMove);
+canvas.addEventListener('mouseup', handlePointerEnd);
+canvas.addEventListener('touchstart', handlePointerStart, { passive: false });
+canvas.addEventListener('touchmove', handlePointerMove, { passive: false });
+canvas.addEventListener('touchend', handlePointerEnd, { passive: false });
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (gameState !== 'playing') {
+    if (e.code === 'Space' || e.code === 'Enter') {
+      ensureAudio();
+      startGame();
+    }
+    return;
+  }
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+    dropX = clampDropX(dropX - 20);
+  } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+    dropX = clampDropX(dropX + 20);
+  } else if (e.code === 'Space' || e.code === 'Enter') {
+    if (canDrop) dropBlob();
+  }
+});
+
+function dropBlob() {
+  if (!canDrop) return;
+  const b = new Blob(dropX, GAME_TOP - 10, nextPhase, nextSize);
+  b.vy = 80;
+  blobs.push(b);
+  playDrop();
+  canDrop = false;
+  dropCooldown = 0.35;
+  newBlobPreview();
+}
+
+// ===================== GAME FLOW =====================
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+startBtn.addEventListener('click', () => { ensureAudio(); startGame(); });
+startBtn.addEventListener('touchend', (e) => { e.preventDefault(); ensureAudio(); startGame(); });
+
+function startGame() {
+  if (gameState === 'playing') return;
+  blobs = [];
+  particles = [];
+  popups = [];
+  score = 0;
+  dangerTimer = 0;
+  document.getElementById('scoreDisplay').textContent = '0';
+  dropX = W / 2;
+  canDrop = true;
+  dropCooldown = 0;
+  newBlobPreview();
+  gameState = 'playing';
+  overlay.classList.add('hidden');
+}
+
+function endGame() {
+  gameState = 'gameover';
+  playGameOver();
+  shakeAmount = 15;
+
+  const isNewHigh = score > highScore;
+  if (isNewHigh) {
+    highScore = score;
+    localStorage.setItem('magmaMergeHigh', highScore);
+    document.getElementById('highDisplay').textContent = 'BEST: ' + highScore;
+  }
+
+  setTimeout(() => {
+    overlay.innerHTML = `
+      <h1>GAME OVER</h1>
+      <div class="final-score">${score}</div>
+      <div class="final-label">Points</div>
+      ${isNewHigh ? '<div class="new-high">NEW HIGH SCORE!</div>' : ''}
+      <button class="btn" id="restartBtn">AGAIN</button>
+    `;
+    overlay.classList.remove('hidden');
+    const rb = document.getElementById('restartBtn');
+    rb.addEventListener('click', () => { ensureAudio(); startGame(); });
+    rb.addEventListener('touchend', (e) => { e.preventDefault(); ensureAudio(); startGame(); });
+  }, 800);
+}
+
+// ===================== GAME LOOP =====================
+let lastTime = 0;
+
+function gameLoop(time) {
+  requestAnimationFrame(gameLoop);
+  const dt = Math.min((time - lastTime) / 1000, 0.033); // cap at ~30fps dt
+  lastTime = time;
+
+  if (gameState !== 'playing' && gameState !== 'gameover') {
+    drawMenu(time);
+    return;
+  }
+
+  // Update
+  if (gameState === 'playing') {
+    if (!canDrop) {
+      dropCooldown -= dt;
+      if (dropCooldown <= 0) canDrop = true;
+    }
+
+    // Check danger: any blob resting above danger line
+    let inDanger = false;
+    for (const b of blobs) {
+      if (!b.alive || b.merging) continue;
+      if ((b.y - b.r) < DANGER_LINE_Y && Math.abs(b.vy) < 30 && (performance.now() - b.born) > 1000) {
+        inDanger = true;
+        break;
+      }
+    }
+    if (inDanger) {
+      dangerTimer += dt;
+      if (dangerTimer >= OVERFLOW_TIME) {
+        endGame();
+      }
+    } else {
+      dangerTimer = Math.max(0, dangerTimer - dt * 2);
+    }
+  }
+
+  for (const b of blobs) b.update(dt);
+  resolveCollisions();
+  // Second pass for stability
+  resolveCollisions();
+  blobs = blobs.filter(b => b.alive);
+
+  for (const p of particles) p.update(dt);
+  particles = particles.filter(p => p.life > 0);
+
+  for (const p of popups) p.update(dt);
+  popups = popups.filter(p => p.life > 0);
+
+  if (shakeAmount > 0) shakeAmount *= 0.9;
+  if (shakeAmount < 0.2) shakeAmount = 0;
+
+  // Draw
+  draw(time);
+}
+
+function drawMenu(time) {
+  ctx.clearRect(0, 0, W, H);
+  // Animated lava background
+  drawBackground(time);
+}
+
+function draw(time) {
+  ctx.save();
+  // Screen shake
+  if (shakeAmount > 0) {
+    ctx.translate(
+      (Math.random() - 0.5) * shakeAmount * 2,
+      (Math.random() - 0.5) * shakeAmount * 2
+    );
+  }
+
+  ctx.clearRect(-20, -20, W + 40, H + 40);
+  drawBackground(time);
+
+  // Game container
+  ctx.fillStyle = 'rgba(10,5,2,0.85)';
+  ctx.fillRect(GAME_LEFT - WALL_THICKNESS, GAME_TOP, GAME_W + WALL_THICKNESS * 2, GAME_BOTTOM - GAME_TOP + WALL_THICKNESS);
+
+  // Walls glow
+  const wallGrd = ctx.createLinearGradient(GAME_LEFT, GAME_TOP, GAME_LEFT, GAME_BOTTOM);
+  wallGrd.addColorStop(0, '#ff440066');
+  wallGrd.addColorStop(0.5, '#ff220033');
+  wallGrd.addColorStop(1, '#ff660066');
+  ctx.fillStyle = wallGrd;
+  ctx.fillRect(GAME_LEFT - WALL_THICKNESS, GAME_TOP, WALL_THICKNESS, GAME_BOTTOM - GAME_TOP);
+  ctx.fillRect(GAME_RIGHT, GAME_TOP, WALL_THICKNESS, GAME_BOTTOM - GAME_TOP);
+  ctx.fillRect(GAME_LEFT - WALL_THICKNESS, GAME_BOTTOM, GAME_W + WALL_THICKNESS * 2, WALL_THICKNESS);
+
+  // Danger line
+  const dangerAlpha = dangerTimer > 0 ? 0.3 + Math.sin(time * 0.01) * 0.2 : 0.08;
+  ctx.strokeStyle = `rgba(255,0,0,${dangerAlpha})`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([8, 6]);
+  ctx.beginPath();
+  ctx.moveTo(GAME_LEFT, DANGER_LINE_Y);
+  ctx.lineTo(GAME_RIGHT, DANGER_LINE_Y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Danger warning flash
+  if (dangerTimer > 0) {
+    const flashAlpha = (dangerTimer / OVERFLOW_TIME) * 0.15 * (0.5 + 0.5 * Math.sin(time * 0.015));
+    ctx.fillStyle = `rgba(255,0,0,${flashAlpha})`;
+    ctx.fillRect(GAME_LEFT, GAME_TOP, GAME_W, GAME_BOTTOM - GAME_TOP);
+  }
+
+  // Clip to game area for blobs
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(GAME_LEFT, GAME_TOP - 30, GAME_W, GAME_BOTTOM - GAME_TOP + 30);
+  ctx.clip();
+
+  // Draw blobs (stone first, then active)
+  const stoneBlobs = blobs.filter(b => b.isStone);
+  const activeBlobs = blobs.filter(b => !b.isStone);
+  for (const b of stoneBlobs) b.draw();
+  for (const b of activeBlobs) b.draw();
+
+  ctx.restore();
+
+  // Particles (above clip)
+  for (const p of particles) p.draw();
+
+  // Score popups
+  for (const p of popups) p.draw();
+
+  // Drop preview
+  if (gameState === 'playing' && canDrop) {
+    const previewY = GAME_TOP - 25;
+    const pr = SIZES[nextSize];
+    const pp = PHASES[nextPhase];
+
+    // Guide line
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 8]);
+    ctx.beginPath();
+    ctx.moveTo(dropX, previewY + pr);
+    ctx.lineTo(dropX, GAME_BOTTOM);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Preview blob
+    const pGrd = ctx.createRadialGradient(dropX - pr * 0.2, previewY - pr * 0.2, pr * 0.1, dropX, previewY, pr);
+    pGrd.addColorStop(0, pp.colors[0]);
+    pGrd.addColorStop(1, pp.colors[1]);
+    ctx.fillStyle = pGrd;
+    ctx.beginPath();
+    ctx.arc(dropX, previewY, pr, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Glow
+    const pgGrd = ctx.createRadialGradient(dropX, previewY, pr * 0.3, dropX, previewY, pr * 1.8);
+    pgGrd.addColorStop(0, pp.glow + '33');
+    pgGrd.addColorStop(1, pp.glow + '00');
+    ctx.fillStyle = pgGrd;
+    ctx.beginPath();
+    ctx.arc(dropX, previewY, pr * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawBackground(time) {
+  // Dark gradient background
+  const bgGrd = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrd.addColorStop(0, '#0a0505');
+  bgGrd.addColorStop(0.5, '#0d0808');
+  bgGrd.addColorStop(1, '#120a05');
+  ctx.fillStyle = bgGrd;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle heat shimmer at bottom
+  const t = time * 0.001;
+  ctx.fillStyle = 'rgba(255,50,0,0.015)';
+  for (let i = 0; i < 5; i++) {
+    const x = W * 0.5 + Math.sin(t + i * 1.3) * W * 0.3;
+    const y = H - 50 + Math.cos(t * 0.7 + i) * 30;
+    ctx.beginPath();
+    ctx.arc(x, y, 80 + Math.sin(t + i) * 20, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
