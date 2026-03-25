@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🌋 **[Magma Merge](https://adrrr.github.io/night-projects/magma-merge/)**
+Puzzle physique inspiré Suika Game — drop des blobs de magma colorés qui fusionnent quand même couleur + même taille. Le twist : le magma refroidit progressivement (rouge → orange → jaune → pierre). Les pierres ne fusionnent plus et prennent de la place permanente. Fusionne avant que ça solidifie ! Physique réaliste (gravité, rebonds, collisions), glow effects magma, cooling bars, particules, screen shake, Web Audio. High score localStorage. Mobile-first (touch) + desktop (clavier + souris).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/magma-merge/)
+
 ### 🌈 **[Color Gravity](https://adrrr.github.io/night-projects/color-gravity/)**
 Puzzle-action avec un puits de gravité — contrôle une zone d'attraction/répulsion pour rassembler des orbes colorées. Match 3+ orbes de la même couleur pour les faire exploser ! Toggle attract/repel (tap/espace), système de 3 vies, combos avec multiplicateurs, niveaux progressifs (plus de couleurs, spawn plus rapide). Orbes avec gradient radial, highlight spéculaire, particules, ring effects, screen shake, Web Audio synthétique. High score localStorage. Mobile-first (double-tap toggle) + desktop (souris + espace).
 
