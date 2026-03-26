@@ -314,3 +314,8 @@ Jeu gravitationnel addictif — tu contrôles un trou noir au centre de l'écran
 Puzzle de timing addictif — des orbes flottent à l'écran, pulsant entre dim et bright à des rythmes différents. Tap une orbe à son pic de luminosité pour l'enflammer — l'explosion se propage en chaîne aux orbes voisines aussi au pic ! Élimine toutes les orbes avec le minimum de taps pour maximiser ton score. Réactions en chaîne satisfaisantes avec shockwaves, particules, screen shake. Répulseurs dès le level 4. Web Audio synth, high score localStorage, esthétique dark/neon cyan.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/cascade-pulse/)
+
+### 🏓 **[Gravity Pong](https://adrrr.github.io/night-projects/gravity-pong/)**
+Twist sur le breakout classique — la gravité courbe la trajectoire de la balle ! Contrôle un paddle en bas pour détruire des briques en haut, mais chaque rebond suit une trajectoire parabolique imprévisible. Niveaux progressifs : gravité latérale, mode lune (faible gravité), gravité dynamique qui shift en temps réel. Obstacles hexagonaux dès le level 3. Powerups (slow-mo, magnet paddle, extra life, wider paddle). Système de combo, particules, trail lumineux, screen shake, Web Audio. High score localStorage. Mobile-first (touch drag) + desktop (souris + clavier).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/gravity-pong/)
