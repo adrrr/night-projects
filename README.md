@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🔄 **[Gravity Switch](https://adrrr.github.io/night-projects/gravity-switch/)**
+Flappy Bird meets gravity flip — tu es un diamant néon qui tombe sous la gravité. Tape/espace/click pour INVERSER la gravité et passer entre les obstacles. Plus tu survis, plus ça accélère. Mécanique un-tap ultra simple, feedback instantané, particules au flip, trail coloré, screen shake à la mort, sons synthétiques Web Audio. High score localStorage. Mobile-first (tap) + desktop (espace/click). Esthétique dark/neon.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/gravity-switch/)
+
 ### 🌋 **[Magma Merge](https://adrrr.github.io/night-projects/magma-merge/)**
 Puzzle physique inspiré Suika Game — drop des blobs de magma colorés qui fusionnent quand même couleur + même taille. Le twist : le magma refroidit progressivement (rouge → orange → jaune → pierre). Les pierres ne fusionnent plus et prennent de la place permanente. Fusionne avant que ça solidifie ! Physique réaliste (gravité, rebonds, collisions), glow effects magma, cooling bars, particules, screen shake, Web Audio. High score localStorage. Mobile-first (touch) + desktop (clavier + souris).
 
