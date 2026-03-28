@@ -320,6 +320,11 @@ Puzzle de timing addictif — des orbes flottent à l'écran, pulsant entre dim 
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/cascade-pulse/)
 
+### 🪐 **[Orbit Merge](https://adrrr.github.io/night-projects/orbit-merge/)**
+Jeu de fusion orbital style Suika Game dans l'espace — des planètes orbitent autour d'une étoile centrale. Tap pour relâcher une planète tangentiellement, et quand deux planètes de même taille se percutent, elles fusionnent en une plus grosse ! 10 tiers cosmiques (Pebble → Rock → Moon → Mars → Earth → Neptune → Saturn → Jupiter → Red Giant → STAR). Gravité légère vers le centre, rebonds sur l'arène et entre planètes, combos multiplicateurs. Si 10 planètes s'accumulent en orbite → game over. Screen shake, particle effects, trails, glow, sons Web Audio. High score localStorage. Mobile-first (touch) + desktop (clic + clavier).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/orbit-merge/)
+
 ### 🏓 **[Gravity Pong](https://adrrr.github.io/night-projects/gravity-pong/)**
 Twist sur le breakout classique — la gravité courbe la trajectoire de la balle ! Contrôle un paddle en bas pour détruire des briques en haut, mais chaque rebond suit une trajectoire parabolique imprévisible. Niveaux progressifs : gravité latérale, mode lune (faible gravité), gravité dynamique qui shift en temps réel. Obstacles hexagonaux dès le level 3. Powerups (slow-mo, magnet paddle, extra life, wider paddle). Système de combo, particules, trail lumineux, screen shake, Web Audio. High score localStorage. Mobile-first (touch drag) + desktop (souris + clavier).
 
