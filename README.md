@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🎨 **[Color Switch](https://adrrr.github.io/night-projects/color-switch/)**
+Saute à travers des obstacles colorés rotatifs — anneaux, barres glissantes, portes mobiles, diamants et pulsars. Tu ne passes que par le segment qui matche ta couleur actuelle ! Pickups de changement de couleur entre chaque obstacle, combo system, vitesse progressive. 5 types d'obstacles variés, particules, screen shake, Web Audio. High score localStorage. Mobile-first (tap) + desktop (espace/click). Esthétique dark/neon.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/color-switch/)
+
 ### 🔄 **[Gravity Switch](https://adrrr.github.io/night-projects/gravity-switch/)**
 Flappy Bird meets gravity flip — tu es un diamant néon qui tombe sous la gravité. Tape/espace/click pour INVERSER la gravité et passer entre les obstacles. Plus tu survis, plus ça accélère. Mécanique un-tap ultra simple, feedback instantané, particules au flip, trail coloré, screen shake à la mort, sons synthétiques Web Audio. High score localStorage. Mobile-first (tap) + desktop (espace/click). Esthétique dark/neon.
 
