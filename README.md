@@ -334,3 +334,8 @@ Jeu de fusion orbital style Suika Game dans l'espace — des planètes orbitent 
 Twist sur le breakout classique — la gravité courbe la trajectoire de la balle ! Contrôle un paddle en bas pour détruire des briques en haut, mais chaque rebond suit une trajectoire parabolique imprévisible. Niveaux progressifs : gravité latérale, mode lune (faible gravité), gravité dynamique qui shift en temps réel. Obstacles hexagonaux dès le level 3. Powerups (slow-mo, magnet paddle, extra life, wider paddle). Système de combo, particules, trail lumineux, screen shake, Web Audio. High score localStorage. Mobile-first (touch drag) + desktop (souris + clavier).
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/gravity-pong/)
+
+### 🔦 **[Laser Reflect](https://adrrr.github.io/night-projects/laser-reflect/)**
+Puzzle-action avec des miroirs et un laser — un émetteur tire un rayon et tu dois rotater les miroirs (/ et \) pour guider le faisceau à travers toutes les cibles. Preview en temps réel du trajet laser (ligne pointillée) qui update quand tu tournes un miroir. Auto-fire countdown de 8s qui ajoute de l'urgence. Niveaux progressifs : plus de cibles, miroirs et obstacles. Combo scoring, particules explosives sur les cibles touchées, screen shake, effets de glow multicouche sur le laser, Web Audio. High score localStorage. Mobile-first (tap to rotate) + desktop (clic + espace/R). Esthétique dark/neon.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/laser-reflect/)
