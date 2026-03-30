@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>LASER REFLECT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a12;font-family:'Courier New',monospace;color:#fff;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#ui{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10}
+#topBar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px}
+#topBar>div{pointer-events:auto}
+.label{font-size:11px;color:#556;text-transform:uppercase;letter-spacing:2px}
+.val{font-size:22px;font-weight:bold;color:#0ff}
+#levelLabel .val{color:#f0f}
+#msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;opacity:0;transition:opacity .3s}
+#msg h1{font-size:clamp(28px,8vw,56px);text-shadow:0 0 30px #0ff,0 0 60px #0ff;margin-bottom:8px}
+#msg p{font-size:clamp(14px,3.5vw,20px);color:#8af}
+#bottomBar{position:absolute;bottom:0;left:0;width:100%;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
+#bottomBar>*{pointer-events:auto}
+#fireBtn{width:clamp(56px,15vw,80px);height:clamp(56px,15vw,80px);border-radius:50%;border:2px solid #f04;background:rgba(255,0,60,.15);color:#f04;font-size:clamp(10px,2.8vw,14px);font-weight:bold;font-family:inherit;cursor:pointer;text-transform:uppercase;letter-spacing:1px;transition:all .15s;display:flex;align-items:center;justify-content:center}
+#fireBtn:active,#fireBtn.pulse{background:rgba(255,0,60,.5);transform:scale(1.1);box-shadow:0 0 30px rgba(255,0,60,.6)}
+#fireBtn.charging{border-color:#ff0;color:#ff0;background:rgba(255,255,0,.1)}
+#hint{font-size:clamp(11px,2.8vw,13px);color:#445;text-align:center;max-width:200px}
+#restartBtn{padding:10px 20px;border:1px solid #334;background:rgba(255,255,255,.05);color:#889;font-family:inherit;font-size:13px;border-radius:6px;cursor:pointer}
+#restartBtn:active{background:rgba(255,255,255,.15)}
+#titleScreen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:#0a0a12}
+#titleScreen h1{font-size:clamp(36px,10vw,64px);background:linear-gradient(90deg,#0ff,#f0f);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-shadow:none;margin-bottom:4px}
+#titleScreen .sub{color:#556;font-size:clamp(12px,3vw,16px);letter-spacing:4px;margin-bottom:40px}
+#playBtn{padding:16px 48px;border:2px solid #0ff;background:rgba(0,255,255,.08);color:#0ff;font-family:inherit;font-size:clamp(16px,4vw,22px);font-weight:bold;border-radius:8px;cursor:pointer;letter-spacing:3px;transition:all .2s;pointer-events:auto}
+#playBtn:active{background:rgba(0,255,255,.3);transform:scale(1.05)}
+#titleScreen .hi{color:#445;font-size:13px;margin-top:24px}
+</style>
+</head>
+<body>
+<div id="titleScreen">
+<h1>LASER REFLECT</h1>
+<div class="sub">MIRROR PUZZLE</div>
+<button id="playBtn">PLAY</button>
+<div class="hi" id="titleHi"></div>
+</div>
+<canvas id="c"></canvas>
+<div id="ui">
+<div id="topBar">
+<div id="scoreLabel"><div class="label">Score</div><div class="val" id="scoreVal">0</div></div>
+<div id="levelLabel"><div class="label">Level</div><div class="val" id="levelVal">1</div></div>
+<div id="bestLabel"><div class="label">Best</div><div class="val" id="bestVal">0</div></div>
+</div>
+<div id="msg"><h1 id="msgTitle"></h1><p id="msgSub"></p></div>
+<div id="bottomBar">
+<button id="restartBtn">↺ RESTART</button>
+<div id="hint">Tap mirrors to rotate</div>
+<button id="fireBtn">FIRE</button>
+</div>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,COLS,ROWS,CELL,GRID_X,GRID_Y;
+
+// Audio
+const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+function playTone(freq,dur,type='sine',vol=.15){
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type=type;o.frequency.value=freq;
+  g.gain.setValueAtTime(vol,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+dur);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start();o.stop(audioCtx.currentTime+dur);
+}
+function sndRotate(){playTone(800,.08,'square',.08);playTone(1200,.06,'square',.06)}
+function sndHit(){playTone(1600,.15,'sine',.12);setTimeout(()=>playTone(2400,.1,'sine',.1),50)}
+function sndFire(){playTone(200,.3,'sawtooth',.1);playTone(400,.2,'square',.06)}
+function sndWin(){[0,100,200,300].forEach((d,i)=>setTimeout(()=>playTone(800+i*200,.2,'sine',.1),d))}
+function sndFail(){playTone(200,.3,'square',.1);setTimeout(()=>playTone(150,.4,'square',.08),150)}
+function sndPlace(){playTone(600,.06,'triangle',.1)}
+
+// Game state
+let grid=[],mirrors=[],targets=[],obstacles=[],emitter=null,
+    score=0,level=1,best=parseInt(localStorage.getItem('lr_best'))||0,
+    laserPath=[],laserProgress=0,laserFiring=false,laserDone=false,
+    hitTargets=new Set(),particles=[],shakeX=0,shakeY=0,shakeMag=0,
+    gameState='title',selectedMirror=-1,autoFireTimer=0,AUTO_FIRE_TIME=8,
+    msgTimer=0,comboCount=0,previewPath=[],previewHits=new Set();
+
+const MIRROR_TYPES=['/','\\']; // forward slash = deflect, backslash = deflect other way
+const DIR={UP:[0,-1],DOWN:[0,1],LEFT:[-1,0],RIGHT:[1,0]};
+
+function resize(){
+  const dpr=window.devicePixelRatio||1;
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=W*dpr;canvas.height=H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const maxGrid=Math.min(W-64,H-220,500);
+  COLS=Math.max(4,Math.min(7,Math.floor(maxGrid/60)));
+  ROWS=COLS;
+  CELL=Math.floor(maxGrid/COLS);
+  GRID_X=Math.floor((W-COLS*CELL)/2);
+  GRID_Y=Math.floor((H-ROWS*CELL)/2)+10;
+}
+window.addEventListener('resize',()=>{resize()});
+
+function initLevel(){
+  grid=[];mirrors=[];targets=[];obstacles=[];hitTargets.clear();
+  laserPath=[];laserProgress=0;laserFiring=false;laserDone=false;
+  selectedMirror=-1;autoFireTimer=AUTO_FIRE_TIME;comboCount=0;
+
+  const numTargets=Math.min(2+Math.floor(level/2),6);
+  const numMirrors=numTargets+1+Math.floor(level/3);
+  const numObstacles=Math.max(0,Math.floor((level-3)/2));
+
+  // Place emitter on a random edge
+  const side=Math.floor(Math.random()*4);
+  let ex,ey,edir;
+  switch(side){
+    case 0:ex=0;ey=Math.floor(Math.random()*ROWS);edir=[1,0];break;
+    case 1:ex=COLS-1;ey=Math.floor(Math.random()*ROWS);edir=[-1,0];break;
+    case 2:ex=Math.floor(Math.random()*COLS);ey=0;edir=[0,1];break;
+    case 3:ex=Math.floor(Math.random()*COLS);ey=ROWS-1;edir=[0,-1];break;
+  }
+  emitter={x:ex,y:ey,dir:edir};
+
+  const used=new Set();
+  used.add(ex+','+ey);
+
+  function randFree(){
+    let tries=0;
+    while(tries<200){
+      const x=Math.floor(Math.random()*COLS),y=Math.floor(Math.random()*ROWS);
+      const k=x+','+y;
+      if(!used.has(k)){used.add(k);return{x,y}}
+      tries++;
+    }
+    return null;
+  }
+
+  for(let i=0;i<numTargets;i++){
+    const p=randFree();
+    if(p)targets.push({...p,hit:false,glow:0});
+  }
+
+  for(let i=0;i<numObstacles;i++){
+    const p=randFree();
+    if(p)obstacles.push({...p});
+  }
+
+  for(let i=0;i<numMirrors;i++){
+    const p=randFree();
+    if(p)mirrors.push({...p,type:Math.random()<.5?0:1,placed:true,glow:0});
+  }
+
+  document.getElementById('levelVal').textContent=level;
+  document.getElementById('scoreVal').textContent=score;
+  document.getElementById('bestVal').textContent=best;
+}
+
+function reflect(dir,mirrorType){
+  // type 0 = / mirror, type 1 = \ mirror
+  if(mirrorType===0){
+    // / mirror: (dx,dy) -> (-dy,-dx)
+    return[-dir[1],-dir[0]];
+  }else{
+    // \ mirror: (dx,dy) -> (dy,dx)
+    return[dir[1],dir[0]];
+  }
+}
+
+function traceLaser(){
+  laserPath=[];hitTargets.clear();
+  let x=emitter.x,y=emitter.y,dx=emitter.dir[0],dy=emitter.dir[1];
+  // start from outside grid
+  let sx=x-dx,sy=y-dy;
+  laserPath.push({x:sx,y:sy});
+
+  let steps=0,maxSteps=200;
+  while(steps<maxSteps){
+    // Move
+    x=sx+dx;y=sy+dy;
+    if(x<0||x>=COLS||y<0||y>=ROWS){
+      laserPath.push({x,y});
+      break;
+    }
+
+    // Check obstacle
+    const obs=obstacles.find(o=>o.x===x&&o.y===y);
+    if(obs){
+      laserPath.push({x,y});
+      break;
+    }
+
+    // Check target
+    const tgt=targets.find(t=>t.x===x&&t.y===y);
+    if(tgt){
+      hitTargets.add(targets.indexOf(tgt));
+      laserPath.push({x,y});
+      // Laser passes through targets
+      sx=x;sy=y;steps++;continue;
+    }
+
+    // Check mirror
+    const mir=mirrors.find(m=>m.x===x&&m.y===y);
+    if(mir){
+      laserPath.push({x,y});
+      const nd=reflect([dx,dy],mir.type);
+      dx=nd[0];dy=nd[1];
+      sx=x;sy=y;steps++;continue;
+    }
+
+    laserPath.push({x,y});
+    sx=x;sy=y;steps++;
+  }
+}
+
+function tracePreview(){
+  previewPath=[];previewHits.clear();
+  if(!emitter)return;
+  let x=emitter.x,y=emitter.y,dx=emitter.dir[0],dy=emitter.dir[1];
+  let sx=x-dx,sy=y-dy;
+  previewPath.push({x:sx,y:sy});
+  let steps=0;
+  while(steps<200){
+    x=sx+dx;y=sy+dy;
+    if(x<0||x>=COLS||y<0||y>=ROWS){previewPath.push({x,y});break}
+    const obs=obstacles.find(o=>o.x===x&&o.y===y);
+    if(obs){previewPath.push({x,y});break}
+    const tgt=targets.find(t=>t.x===x&&t.y===y);
+    if(tgt){previewHits.add(targets.indexOf(tgt));previewPath.push({x,y});sx=x;sy=y;steps++;continue}
+    const mir=mirrors.find(m=>m.x===x&&m.y===y);
+    if(mir){previewPath.push({x,y});const nd=reflect([dx,dy],mir.type);dx=nd[0];dy=nd[1];sx=x;sy=y;steps++;continue}
+    previewPath.push({x,y});sx=x;sy=y;steps++;
+  }
+}
+
+function fireLaser(){
+  if(laserFiring)return;
+  audioCtx.resume();
+  sndFire();
+  traceLaser();
+  laserFiring=true;laserProgress=0;laserDone=false;
+  autoFireTimer=AUTO_FIRE_TIME;
+}
+
+function spawnParticles(wx,wy,color,count=12){
+  for(let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2,spd=1+Math.random()*4;
+    particles.push({x:wx,y:wy,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,
+      life:1,color,size:2+Math.random()*3});
+  }
+}
+
+function gridToWorld(gx,gy){
+  return{x:GRID_X+gx*CELL+CELL/2,y:GRID_Y+gy*CELL+CELL/2};
+}
+
+function worldToGrid(wx,wy){
+  const gx=Math.floor((wx-GRID_X)/CELL),gy=Math.floor((wy-GRID_Y)/CELL);
+  return{x:gx,y:gy};
+}
+
+// Input
+function handleTap(wx,wy){
+  if(gameState==='title')return;
+  if(gameState==='win'||gameState==='fail'){
+    if(gameState==='win')nextLevel();
+    else restartLevel();
+    return;
+  }
+  if(laserFiring)return;
+  audioCtx.resume();
+
+  const g=worldToGrid(wx,wy);
+  if(g.x<0||g.x>=COLS||g.y<0||g.y>=ROWS)return;
+
+  // Check if tapped a mirror
+  const mi=mirrors.findIndex(m=>m.x===g.x&&m.y===g.y);
+  if(mi>=0){
+    mirrors[mi].type=(mirrors[mi].type+1)%2;
+    mirrors[mi].glow=1;
+    sndRotate();
+    return;
+  }
+}
+
+canvas.addEventListener('pointerdown',(e)=>{
+  e.preventDefault();
+  handleTap(e.clientX,e.clientY);
+});
+
+document.getElementById('fireBtn').addEventListener('pointerdown',(e)=>{
+  e.preventDefault();e.stopPropagation();
+  if(gameState==='play')fireLaser();
+});
+
+document.getElementById('restartBtn').addEventListener('pointerdown',(e)=>{
+  e.preventDefault();e.stopPropagation();
+  if(gameState==='play'||gameState==='fail')restartLevel();
+});
+
+document.getElementById('playBtn').addEventListener('pointerdown',(e)=>{
+  e.preventDefault();
+  audioCtx.resume();
+  startGame();
+});
+
+document.addEventListener('keydown',(e)=>{
+  if(e.code==='Space'){
+    e.preventDefault();
+    if(gameState==='title')startGame();
+    else if(gameState==='play')fireLaser();
+    else if(gameState==='win')nextLevel();
+    else if(gameState==='fail')restartLevel();
+  }
+  if(e.code==='KeyR'&&(gameState==='play'||gameState==='fail'))restartLevel();
+});
+
+function startGame(){
+  gameState='play';score=0;level=1;
+  document.getElementById('titleScreen').style.display='none';
+  resize();initLevel();tracePreview();
+}
+
+function restartLevel(){
+  gameState='play';hideMsg();initLevel();
+}
+
+function nextLevel(){
+  level++;gameState='play';hideMsg();initLevel();
+}
+
+function showMsg(title,sub){
+  const m=document.getElementById('msg');
+  document.getElementById('msgTitle').textContent=title;
+  document.getElementById('msgSub').textContent=sub;
+  m.style.opacity='1';msgTimer=0;
+}
+
+function hideMsg(){
+  document.getElementById('msg').style.opacity='0';
+}
+
+// Update
+let lastTime=0;
+function update(dt){
+  // Shake decay
+  if(shakeMag>0){
+    shakeMag*=.9;
+    shakeX=(Math.random()-.5)*shakeMag;
+    shakeY=(Math.random()-.5)*shakeMag;
+    if(shakeMag<.5){shakeMag=0;shakeX=0;shakeY=0}
+  }
+
+  // Particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx;p.y+=p.vy;
+    p.vx*=.96;p.vy*=.96;
+    p.life-=dt*2.5;
+    if(p.life<=0)particles.splice(i,1);
+  }
+
+  // Mirror glow decay
+  mirrors.forEach(m=>{if(m.glow>0)m.glow=Math.max(0,m.glow-dt*3)});
+
+  if(gameState!=='play')return;
+
+  // Update preview path
+  if(!laserFiring)tracePreview();
+
+  // Auto fire timer
+  if(!laserFiring){
+    autoFireTimer-=dt;
+    const btn=document.getElementById('fireBtn');
+    if(autoFireTimer<=1.5){
+      btn.classList.add('charging');
+    }else{
+      btn.classList.remove('charging');
+    }
+    if(autoFireTimer<=0){
+      fireLaser();
+    }
+  }
+
+  // Laser animation
+  if(laserFiring){
+    const speed=12;// segments per second
+    laserProgress+=dt*speed;
+
+    // Check for newly reached targets
+    const reachedIdx=Math.min(Math.floor(laserProgress),laserPath.length-1);
+    for(let i=0;i<=reachedIdx&&i<laserPath.length;i++){
+      const pt=laserPath[i];
+      targets.forEach((t,ti)=>{
+        if(t.x===pt.x&&t.y===pt.y&&!t.hit&&hitTargets.has(ti)){
+          t.hit=true;t.glow=1;
+          const wp=gridToWorld(t.x,t.y);
+          spawnParticles(wp.x,wp.y,'#0ff',20);
+          spawnParticles(wp.x,wp.y,'#f0f',10);
+          sndHit();
+          comboCount++;
+          score+=100*comboCount;
+        }
+      });
+    }
+
+    if(laserProgress>=laserPath.length-1&&!laserDone){
+      laserDone=true;
+      // Check win
+      const allHit=targets.every(t=>t.hit);
+      if(allHit){
+        setTimeout(()=>{
+          gameState='win';
+          const bonus=Math.floor(autoFireTimer*50);
+          score+=bonus+level*200;
+          if(score>best){best=score;localStorage.setItem('lr_best',best)}
+          document.getElementById('scoreVal').textContent=score;
+          document.getElementById('bestVal').textContent=best;
+          shakeMag=12;
+          sndWin();
+          showMsg('PERFECT!','Tap to continue → Level '+(level+1));
+        },400);
+      }else{
+        setTimeout(()=>{
+          gameState='fail';
+          sndFail();
+          shakeMag=6;
+          const missed=targets.filter(t=>!t.hit).length;
+          showMsg('MISSED '+missed,'Tap to retry');
+        },400);
+      }
+
+      // Reset laser after a delay
+      setTimeout(()=>{
+        if(gameState==='play'){
+          laserFiring=false;laserProgress=0;laserPath=[];
+          autoFireTimer=AUTO_FIRE_TIME;
+          document.getElementById('fireBtn').classList.remove('charging');
+        }
+      },1200);
+    }
+  }
+
+  document.getElementById('scoreVal').textContent=score;
+}
+
+// Draw
+function drawGrid(){
+  ctx.save();
+  ctx.translate(shakeX,shakeY);
+
+  // Grid lines
+  ctx.strokeStyle='rgba(40,40,80,.4)';
+  ctx.lineWidth=1;
+  for(let x=0;x<=COLS;x++){
+    ctx.beginPath();ctx.moveTo(GRID_X+x*CELL,GRID_Y);
+    ctx.lineTo(GRID_X+x*CELL,GRID_Y+ROWS*CELL);ctx.stroke();
+  }
+  for(let y=0;y<=ROWS;y++){
+    ctx.beginPath();ctx.moveTo(GRID_X,GRID_Y+y*CELL);
+    ctx.lineTo(GRID_X+COLS*CELL,GRID_Y+y*CELL);ctx.stroke();
+  }
+
+  // Obstacles
+  obstacles.forEach(o=>{
+    const wp=gridToWorld(o.x,o.y);
+    ctx.fillStyle='#1a1a2e';
+    ctx.strokeStyle='#334';
+    ctx.lineWidth=2;
+    const s=CELL*.4;
+    ctx.fillRect(wp.x-s,wp.y-s,s*2,s*2);
+    ctx.strokeRect(wp.x-s,wp.y-s,s*2,s*2);
+  });
+
+  // Targets
+  targets.forEach((t,i)=>{
+    const wp=gridToWorld(t.x,t.y);
+    const r=CELL*.3;
+    const glow=t.hit?1:(.3+Math.sin(Date.now()*.004+i)*0.15);
+
+    ctx.save();
+    if(t.hit){
+      ctx.shadowColor='#0ff';ctx.shadowBlur=20;
+    }
+
+    // Diamond shape
+    ctx.beginPath();
+    ctx.moveTo(wp.x,wp.y-r);
+    ctx.lineTo(wp.x+r,wp.y);
+    ctx.lineTo(wp.x,wp.y+r);
+    ctx.lineTo(wp.x-r,wp.y);
+    ctx.closePath();
+
+    ctx.fillStyle=t.hit?`rgba(0,255,255,${glow})`:`rgba(255,0,255,${glow*.5})`;
+    ctx.fill();
+    ctx.strokeStyle=t.hit?'#0ff':'#f0f';
+    ctx.lineWidth=2;
+    ctx.stroke();
+
+    // Inner
+    const r2=r*.4;
+    ctx.beginPath();
+    ctx.moveTo(wp.x,wp.y-r2);
+    ctx.lineTo(wp.x+r2,wp.y);
+    ctx.lineTo(wp.x,wp.y+r2);
+    ctx.lineTo(wp.x-r2,wp.y);
+    ctx.closePath();
+    ctx.fillStyle=t.hit?'#fff':'#f0f';
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // Mirrors
+  mirrors.forEach(m=>{
+    const wp=gridToWorld(m.x,m.y);
+    const s=CELL*.35;
+    const glow=m.glow;
+
+    ctx.save();
+    if(glow>0){
+      ctx.shadowColor='#0ff';ctx.shadowBlur=glow*15;
+    }
+
+    ctx.strokeStyle=glow>.5?'#fff':`rgba(0,220,255,${.6+glow*.4})`;
+    ctx.lineWidth=3;
+    ctx.lineCap='round';
+    ctx.beginPath();
+    if(m.type===0){
+      // / mirror
+      ctx.moveTo(wp.x-s,wp.y+s);
+      ctx.lineTo(wp.x+s,wp.y-s);
+    }else{
+      // \ mirror
+      ctx.moveTo(wp.x-s,wp.y-s);
+      ctx.lineTo(wp.x+s,wp.y+s);
+    }
+    ctx.stroke();
+
+    // Mirror base circles
+    ctx.fillStyle=`rgba(0,200,255,${.3+glow*.5})`;
+    ctx.beginPath();ctx.arc(wp.x,wp.y,4,0,Math.PI*2);ctx.fill();
+
+    ctx.restore();
+  });
+
+  // Emitter
+  {
+    const wp=gridToWorld(emitter.x,emitter.y);
+    const pulse=.5+Math.sin(Date.now()*.006)*.2;
+    ctx.save();
+    ctx.shadowColor='#f00';ctx.shadowBlur=10+pulse*10;
+    ctx.fillStyle=`rgba(255,30,30,${.6+pulse*.4})`;
+    ctx.beginPath();ctx.arc(wp.x,wp.y,CELL*.25,0,Math.PI*2);ctx.fill();
+
+    // Direction indicator
+    ctx.strokeStyle='#f44';ctx.lineWidth=3;ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(wp.x,wp.y);
+    ctx.lineTo(wp.x+emitter.dir[0]*CELL*.35,wp.y+emitter.dir[1]*CELL*.35);
+    ctx.stroke();
+
+    ctx.fillStyle='#fff';
+    ctx.beginPath();ctx.arc(wp.x,wp.y,3,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  // Preview path (shown when not firing)
+  if(!laserFiring&&gameState==='play'&&previewPath.length>1){
+    ctx.save();
+    ctx.setLineDash([4,8]);
+    ctx.strokeStyle='rgba(255,60,60,.2)';
+    ctx.lineWidth=2;
+    ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.beginPath();
+    const pp0=gridToWorld(previewPath[0].x,previewPath[0].y);
+    ctx.moveTo(pp0.x,pp0.y);
+    for(let i=1;i<previewPath.length;i++){
+      const pp=gridToWorld(previewPath[i].x,previewPath[i].y);
+      ctx.lineTo(pp.x,pp.y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Preview target highlights
+    previewHits.forEach(ti=>{
+      const t=targets[ti];
+      if(t&&!t.hit){
+        const wp=gridToWorld(t.x,t.y);
+        ctx.beginPath();ctx.arc(wp.x,wp.y,CELL*.35,0,Math.PI*2);
+        ctx.strokeStyle='rgba(0,255,255,.3)';ctx.lineWidth=2;ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+
+  // Laser beam
+  if(laserFiring&&laserPath.length>1){
+    const maxSeg=Math.min(laserProgress,laserPath.length-1);
+    const fullSegs=Math.floor(maxSeg);
+
+    // Glow layer
+    for(let pass=0;pass<3;pass++){
+      const widths=[8,4,1.5];
+      const alphas=[.15,.4,1];
+      const colors=['#f00','#f44','#fff'];
+
+      ctx.strokeStyle=colors[pass];
+      ctx.lineWidth=widths[pass];
+      ctx.globalAlpha=alphas[pass];
+      ctx.lineCap='round';ctx.lineJoin='round';
+
+      ctx.beginPath();
+      const p0=gridToWorld(laserPath[0].x,laserPath[0].y);
+      ctx.moveTo(p0.x,p0.y);
+
+      for(let i=1;i<=fullSegs;i++){
+        const p=gridToWorld(laserPath[i].x,laserPath[i].y);
+        ctx.lineTo(p.x,p.y);
+      }
+
+      // Partial segment
+      if(fullSegs<laserPath.length-1){
+        const frac=maxSeg-fullSegs;
+        const a=gridToWorld(laserPath[fullSegs].x,laserPath[fullSegs].y);
+        const b=gridToWorld(laserPath[fullSegs+1].x,laserPath[fullSegs+1].y);
+        ctx.lineTo(a.x+(b.x-a.x)*frac,a.y+(b.y-a.y)*frac);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+
+    // Beam head glow
+    if(fullSegs<laserPath.length){
+      let hx,hy;
+      if(fullSegs<laserPath.length-1){
+        const frac=maxSeg-fullSegs;
+        const a=gridToWorld(laserPath[fullSegs].x,laserPath[fullSegs].y);
+        const b=gridToWorld(laserPath[fullSegs+1].x,laserPath[fullSegs+1].y);
+        hx=a.x+(b.x-a.x)*frac;hy=a.y+(b.y-a.y)*frac;
+      }else{
+        const last=gridToWorld(laserPath[fullSegs].x,laserPath[fullSegs].y);
+        hx=last.x;hy=last.y;
+      }
+      const grad=ctx.createRadialGradient(hx,hy,0,hx,hy,15);
+      grad.addColorStop(0,'rgba(255,255,255,.8)');
+      grad.addColorStop(.5,'rgba(255,80,80,.3)');
+      grad.addColorStop(1,'rgba(255,0,0,0)');
+      ctx.fillStyle=grad;
+      ctx.beginPath();ctx.arc(hx,hy,15,0,Math.PI*2);ctx.fill();
+    }
+  }
+
+  // Particles
+  particles.forEach(p=>{
+    ctx.globalAlpha=p.life;
+    ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill();
+  });
+  ctx.globalAlpha=1;
+
+  // Auto fire countdown
+  if(gameState==='play'&&!laserFiring){
+    const t=Math.ceil(autoFireTimer);
+    ctx.fillStyle=autoFireTimer<=1.5?'rgba(255,255,0,.6)':'rgba(100,100,150,.4)';
+    ctx.font=`${Math.min(16,CELL*.3)}px 'Courier New'`;
+    ctx.textAlign='center';
+    ctx.fillText(`Auto-fire in ${t}s`,W/2,GRID_Y-12);
+  }
+
+  ctx.restore();
+}
+
+function render(ts){
+  const dt=Math.min((ts-lastTime)/1000,.05);
+  lastTime=ts;
+
+  update(dt);
+
+  ctx.clearRect(0,0,W,H);
+
+  // Background subtle grid
+  ctx.fillStyle='#0a0a12';
+  ctx.fillRect(0,0,W,H);
+
+  // Vignette
+  const vg=ctx.createRadialGradient(W/2,H/2,W*.2,W/2,H/2,W*.8);
+  vg.addColorStop(0,'rgba(10,10,18,0)');
+  vg.addColorStop(1,'rgba(0,0,0,.5)');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+
+  if(gameState!=='title')drawGrid();
+
+  requestAnimationFrame(render);
+}
+
+// Title screen
+document.getElementById('titleHi').textContent=best>0?'Best: '+best:'';
+
+resize();
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
