@@ -339,3 +339,8 @@ Twist sur le breakout classique — la gravité courbe la trajectoire de la ball
 Puzzle-action avec des miroirs et un laser — un émetteur tire un rayon et tu dois rotater les miroirs (/ et \) pour guider le faisceau à travers toutes les cibles. Preview en temps réel du trajet laser (ligne pointillée) qui update quand tu tournes un miroir. Auto-fire countdown de 8s qui ajoute de l'urgence. Niveaux progressifs : plus de cibles, miroirs et obstacles. Combo scoring, particules explosives sur les cibles touchées, screen shake, effets de glow multicouche sur le laser, Web Audio. High score localStorage. Mobile-first (tap to rotate) + desktop (clic + espace/R). Esthétique dark/neon.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/laser-reflect/)
+
+### 💣 **[Fuse Chain](https://adrrr.github.io/night-projects/fuse-chain/)**
+Puzzle de réaction en chaîne — des bombes sont placées sur une grille. Tape une bombe pour l'exploser : des étincelles filent dans 4 directions et déclenchent les bombes touchées, créant des réactions en chaîne. Objectif : clearer TOUTES les bombes en un seul tap initial ! Niveaux procéduraux solvables avec difficulté progressive (grille + nombre de bombes croissants). Chain combo scoring, particules explosives, screen shake, spark trails colorés, Web Audio (explosions, chain tones montants, jingles win/fail). High score localStorage. Mobile-first (touch) + desktop (clic). Esthétique dark/neon.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/fuse-chain/)
