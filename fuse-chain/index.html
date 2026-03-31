@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>FUSE CHAIN</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:'Courier New',monospace;color:#fff;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#ui{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:flex;flex-direction:column;align-items:center}
+#topbar{display:flex;justify-content:space-between;align-items:center;width:100%;padding:12px 16px;pointer-events:auto}
+#topbar>div{min-width:80px}
+.label{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:2px}
+.val{font-size:22px;font-weight:bold;color:#ff6b35}
+#level-val{color:#00e5ff}
+#combo-val{color:#ff2d7b}
+#center-msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;opacity:0;transition:opacity .3s}
+#center-msg h1{font-size:clamp(28px,8vw,56px);text-transform:uppercase;letter-spacing:4px;text-shadow:0 0 30px currentColor}
+#center-msg p{font-size:clamp(14px,4vw,20px);margin-top:12px;color:#888}
+#tap-hint{position:absolute;bottom:15%;left:50%;transform:translateX(-50%);font-size:clamp(13px,3.5vw,16px);color:#555;letter-spacing:1px;pointer-events:none;animation:pulse 2s infinite}
+#restart-btn{position:absolute;bottom:24px;right:24px;pointer-events:auto;background:none;border:1px solid #333;color:#666;font-family:inherit;font-size:14px;padding:10px 18px;border-radius:8px;cursor:pointer;letter-spacing:1px}
+#restart-btn:active{background:#222;color:#fff}
+#sound-btn{position:absolute;bottom:24px;left:24px;pointer-events:auto;background:none;border:1px solid #333;color:#666;font-family:inherit;font-size:18px;width:44px;height:44px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+@keyframes pulse{0%,100%{opacity:.4}50%{opacity:.8}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="topbar">
+    <div><div class="label">Level</div><div class="val" id="level-val">1</div></div>
+    <div style="text-align:center"><div class="label">Score</div><div class="val" id="score-val">0</div></div>
+    <div style="text-align:right"><div class="label">Best</div><div class="val" id="best-val">0</div></div>
+  </div>
+  <div id="center-msg"><h1 id="msg-title"></h1><p id="msg-sub"></p></div>
+  <div id="tap-hint">TAP A BOMB TO START THE CHAIN</div>
+  <button id="restart-btn">RESTART</button>
+  <button id="sound-btn">&#x1f50a;</button>
+</div>
+<script>
+const C=document.getElementById('c'),X=C.getContext('2d');
+const levelEl=document.getElementById('level-val'),scoreEl=document.getElementById('score-val'),bestEl=document.getElementById('best-val');
+const msgEl=document.getElementById('center-msg'),msgTitle=document.getElementById('msg-title'),msgSub=document.getElementById('msg-sub');
+const tapHint=document.getElementById('tap-hint'),restartBtn=document.getElementById('restart-btn'),soundBtn=document.getElementById('sound-btn');
+
+let W,H,DPR,COLS,ROWS,CELL,OX,OY;
+let level=1,score=0,best=parseInt(localStorage.getItem('fusechain_best'))||0;
+let bombs=[],sparks=[],particles=[],explosions=[],shakeX=0,shakeY=0,shakeT=0;
+let state='ready'; // ready, chain, result
+let bombsTotal=0,bombsHit=0,chainMax=0,chainCur=0;
+let soundOn=true;
+let animFrame=0;
+
+bestEl.textContent=best;
+
+// Audio
+const actx=new (window.AudioContext||window.webkitAudioContext)();
+function resumeAudio(){if(actx.state==='suspended')actx.resume()}
+
+function playTone(freq,dur,vol=.3,type='square'){
+  if(!soundOn)return;
+  const o=actx.createOscillator(),g=actx.createGain();
+  o.type=type;o.frequency.value=freq;
+  g.gain.setValueAtTime(vol,actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+dur);
+  o.connect(g);g.connect(actx.destination);
+  o.start();o.stop(actx.currentTime+dur);
+}
+function sndExplode(pitch=1){
+  if(!soundOn)return;
+  const dur=.25;
+  const o=actx.createOscillator(),g=actx.createGain(),f=actx.createBiquadFilter();
+  o.type='sawtooth';o.frequency.value=80*pitch;
+  f.type='lowpass';f.frequency.value=800*pitch;f.Q.value=2;
+  g.gain.setValueAtTime(.4,actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+dur);
+  o.connect(f);f.connect(g);g.connect(actx.destination);
+  o.start();o.stop(actx.currentTime+dur);
+  // noise layer
+  const buf=actx.createBuffer(1,actx.sampleRate*.15|0,actx.sampleRate);
+  const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  const n=actx.createBufferSource(),ng=actx.createGain();
+  n.buffer=buf;ng.gain.setValueAtTime(.2,actx.currentTime);
+  ng.gain.exponentialRampToValueAtTime(.001,actx.currentTime+.15);
+  n.connect(ng);ng.connect(actx.destination);n.start();
+}
+function sndChain(combo){
+  if(!soundOn)return;
+  const freq=220*Math.pow(1.122,Math.min(combo,20));
+  playTone(freq,.15,.25,'sine');
+  setTimeout(()=>playTone(freq*1.5,.1,.15,'sine'),50);
+}
+function sndWin(){
+  if(!soundOn)return;
+  [0,4,7,12].forEach((n,i)=>setTimeout(()=>playTone(330*Math.pow(2,n/12),.3,.2,'sine'),i*100));
+}
+function sndFail(){
+  if(!soundOn)return;
+  playTone(200,.3,.25,'sawtooth');
+  setTimeout(()=>playTone(150,.4,.25,'sawtooth'),150);
+}
+
+// Resize
+function resize(){
+  DPR=window.devicePixelRatio||1;
+  W=window.innerWidth;H=window.innerHeight;
+  C.width=W*DPR;C.height=H*DPR;
+  X.setTransform(DPR,0,0,DPR,0,0);
+
+  const maxCols=Math.min(10,Math.floor(level/3)+4);
+  const maxRows=Math.min(12,Math.floor(level/3)+5);
+  const maxCell=Math.min(Math.floor((W-32)/maxCols),Math.floor((H-160)/maxRows));
+  CELL=Math.max(36,Math.min(maxCell,64));
+  COLS=maxCols;ROWS=maxRows;
+  OX=(W-COLS*CELL)/2;
+  OY=(H-ROWS*CELL)/2+20;
+}
+window.addEventListener('resize',resize);
+
+// Level generation
+function genLevel(){
+  bombs=[];sparks=[];particles=[];explosions=[];
+  bombsHit=0;chainMax=0;chainCur=0;
+  state='ready';
+  tapHint.style.opacity='';
+  msgEl.style.opacity='0';
+
+  resize();
+
+  // Number of bombs scales with level
+  const numBombs=Math.min(3+level,Math.floor(COLS*ROWS*0.4));
+  bombsTotal=numBombs;
+
+  // Generate solvable puzzle: place bombs that form a chain
+  const grid=new Set();
+  // Start from random cell, do random walk + branches
+  const startC=Math.floor(Math.random()*COLS),startR=Math.floor(Math.random()*ROWS);
+  const key=(c,r)=>c+','+r;
+  const queue=[{c:startC,r:startR}];
+  grid.add(key(startC,startR));
+
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+
+  while(grid.size<numBombs&&queue.length>0){
+    const idx=Math.random()<.6?queue.length-1:Math.floor(Math.random()*queue.length);
+    const cur=queue[idx];
+    // Pick random direction, extend
+    const shuffled=[...dirs].sort(()=>Math.random()-.5);
+    let placed=false;
+    for(const[dc,dr]of shuffled){
+      // Walk 1-3 cells in this direction
+      const dist=1+Math.floor(Math.random()*Math.min(3,Math.max(COLS,ROWS)-2));
+      const nc=cur.c+dc*dist,nr=cur.r+dr*dist;
+      if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS&&!grid.has(key(nc,nr))){
+        // Check that spark from cur can reach nc,nr (same row or col, with no bombs blocking unless they're part of chain)
+        // Actually for solvability, we need them aligned on row or col
+        const ac=cur.c+dc*dist,ar=cur.r+dr*dist;
+        grid.add(key(ac,ar));
+        queue.push({c:ac,r:ar});
+        placed=true;
+        if(grid.size>=numBombs)break;
+      }
+    }
+    if(!placed)queue.splice(idx,1);
+  }
+
+  // If we didn't get enough, add some aligned to existing
+  const existing=[...grid].map(k=>{const[c,r]=k.split(',').map(Number);return{c,r}});
+  let attempts=0;
+  while(grid.size<numBombs&&attempts<500){
+    attempts++;
+    const ref=existing[Math.floor(Math.random()*existing.length)];
+    const dir=dirs[Math.floor(Math.random()*4)];
+    const dist=1+Math.floor(Math.random()*4);
+    const nc=ref.c+dir[0]*dist,nr=ref.r+dir[1]*dist;
+    if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS&&!grid.has(key(nc,nr))){
+      grid.add(key(nc,nr));
+      existing.push({c:nc,r:nr});
+    }
+  }
+
+  bombsTotal=grid.size;
+
+  for(const k of grid){
+    const[c,r]=k.split(',').map(Number);
+    bombs.push({
+      c,r,
+      x:OX+c*CELL+CELL/2,
+      y:OY+r*CELL+CELL/2,
+      alive:true,
+      pulse:Math.random()*Math.PI*2,
+      fuseT:0,
+      exploding:false
+    });
+  }
+
+  levelEl.textContent=level;
+}
+
+// Spark class
+function addSpark(x,y,dx,dy,chain){
+  sparks.push({x,y,dx:dx*CELL*8,dy:dy*CELL*8,chain,life:1,trail:[]});
+}
+
+// Explosion
+function addExplosion(x,y,chain){
+  explosions.push({x,y,t:0,maxR:CELL*1.2,chain});
+  // Particles
+  const count=12+chain*3;
+  const hue=(chain*40+10)%360;
+  for(let i=0;i<count;i++){
+    const a=Math.PI*2*i/count+Math.random()*.3;
+    const spd=100+Math.random()*200;
+    particles.push({
+      x,y,
+      vx:Math.cos(a)*spd,
+      vy:Math.sin(a)*spd,
+      life:1,
+      decay:.8+Math.random()*.8,
+      size:2+Math.random()*3,
+      hue,
+      sat:80+Math.random()*20
+    });
+  }
+  // Screen shake
+  shakeT=.3;
+  const mag=Math.min(3+chain*1.5,15);
+  shakeX=(Math.random()-.5)*mag;
+  shakeY=(Math.random()-.5)*mag;
+}
+
+// Explode a bomb
+function explodeBomb(bomb,chain){
+  if(!bomb.alive)return;
+  bomb.alive=false;
+  bomb.exploding=true;
+  bombsHit++;
+  chainCur=chain;
+  if(chain>chainMax)chainMax=chain;
+
+  sndExplode(.8+chain*.15);
+  sndChain(chain);
+  addExplosion(bomb.x,bomb.y,chain);
+
+  // Send sparks in 4 directions
+  addSpark(bomb.x,bomb.y,1,0,chain+1);
+  addSpark(bomb.x,bomb.y,-1,0,chain+1);
+  addSpark(bomb.x,bomb.y,0,1,chain+1);
+  addSpark(bomb.x,bomb.y,0,-1,chain+1);
+}
+
+// Input
+function getPos(e){
+  const r=C.getBoundingClientRect();
+  const t=e.touches?e.touches[0]:e;
+  return{x:t.clientX-r.left,y:t.clientY-r.top};
+}
+
+function handleTap(px,py){
+  resumeAudio();
+  if(state==='result'){
+    if(bombsHit===bombsTotal){
+      level++;
+    }
+    genLevel();
+    return;
+  }
+  if(state!=='ready')return;
+
+  // Find closest bomb to tap
+  let closest=null,closestDist=Infinity;
+  for(const b of bombs){
+    const d=Math.hypot(b.x-px,b.y-py);
+    if(d<CELL&&d<closestDist){
+      closest=b;closestDist=d;
+    }
+  }
+
+  if(!closest)return;
+
+  state='chain';
+  tapHint.style.opacity='0';
+  explodeBomb(closest,1);
+}
+
+C.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  const p=getPos(e);
+  handleTap(p.x,p.y);
+});
+
+restartBtn.addEventListener('click',e=>{
+  e.stopPropagation();
+  resumeAudio();
+  level=1;score=0;scoreEl.textContent=0;
+  genLevel();
+});
+
+soundBtn.addEventListener('click',e=>{
+  e.stopPropagation();
+  resumeAudio();
+  soundOn=!soundOn;
+  soundBtn.textContent=soundOn?'\u{1F50A}':'\u{1F507}';
+});
+
+// Check chain done
+function checkChainDone(){
+  if(state!=='chain')return;
+  if(sparks.length>0)return;
+  // All sparks done
+  state='result';
+
+  const cleared=bombsHit===bombsTotal;
+  if(cleared){
+    const levelScore=bombsTotal*10+chainMax*25;
+    score+=levelScore;
+    if(score>best){best=score;localStorage.setItem('fusechain_best',best);bestEl.textContent=best}
+    scoreEl.textContent=score;
+
+    msgTitle.style.color='#00e5ff';
+    msgTitle.textContent='CLEARED!';
+    msgSub.textContent=`+${levelScore} pts — Chain x${chainMax} — Tap to continue`;
+    sndWin();
+
+    // Victory particles
+    for(let i=0;i<40;i++){
+      const a=Math.PI*2*Math.random();
+      const spd=50+Math.random()*300;
+      particles.push({
+        x:W/2+Math.random()*200-100,y:H/2+Math.random()*100-50,
+        vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,
+        life:1,decay:.3+Math.random()*.4,
+        size:2+Math.random()*4,
+        hue:Math.random()*360,sat:90
+      });
+    }
+  }else{
+    msgTitle.style.color='#ff2d7b';
+    msgTitle.textContent='MISS';
+    msgSub.textContent=`${bombsHit}/${bombsTotal} bombs — Tap to retry`;
+    sndFail();
+  }
+  msgEl.style.opacity='1';
+}
+
+// Main loop
+let lastT=0;
+function loop(t){
+  const dt=Math.min((t-lastT)/1000,.05);
+  lastT=t;
+  animFrame++;
+
+  X.save();
+  X.clearRect(0,0,W,H);
+
+  // Shake
+  if(shakeT>0){
+    shakeT-=dt;
+    const f=shakeT/.3;
+    X.translate(shakeX*f,shakeY*f);
+  }
+
+  // Draw grid (subtle)
+  X.strokeStyle='#1a1a2e';
+  X.lineWidth=.5;
+  for(let c=0;c<=COLS;c++){
+    X.beginPath();X.moveTo(OX+c*CELL,OY);X.lineTo(OX+c*CELL,OY+ROWS*CELL);X.stroke();
+  }
+  for(let r=0;r<=ROWS;r++){
+    X.beginPath();X.moveTo(OX,OY+r*CELL);X.lineTo(OX+COLS*CELL,OY+r*CELL);X.stroke();
+  }
+
+  // Draw bombs
+  for(const b of bombs){
+    if(!b.alive){
+      if(b.exploding){
+        b.fuseT+=dt*4;
+        if(b.fuseT<1){
+          // Fading explosion circle
+          X.globalAlpha=1-b.fuseT;
+          X.fillStyle='#fff';
+          X.beginPath();
+          X.arc(b.x,b.y,CELL*.4*(1+b.fuseT),0,Math.PI*2);
+          X.fill();
+          X.globalAlpha=1;
+        }
+      }
+      continue;
+    }
+
+    b.pulse+=dt*3;
+    const s=1+Math.sin(b.pulse)*.08;
+    const r=CELL*.32*s;
+
+    // Glow
+    const grd=X.createRadialGradient(b.x,b.y,r*.3,b.x,b.y,r*2.5);
+    grd.addColorStop(0,'rgba(255,107,53,.25)');
+    grd.addColorStop(1,'rgba(255,107,53,0)');
+    X.fillStyle=grd;
+    X.beginPath();X.arc(b.x,b.y,r*2.5,0,Math.PI*2);X.fill();
+
+    // Bomb body
+    const bgrd=X.createRadialGradient(b.x-r*.2,b.y-r*.3,0,b.x,b.y,r);
+    bgrd.addColorStop(0,'#ff8c42');
+    bgrd.addColorStop(.7,'#ff6b35');
+    bgrd.addColorStop(1,'#cc4400');
+    X.fillStyle=bgrd;
+    X.beginPath();X.arc(b.x,b.y,r,0,Math.PI*2);X.fill();
+
+    // Fuse wick
+    const wickLen=r*.7;
+    const wickX=b.x+Math.cos(-Math.PI*.3)*r;
+    const wickY=b.y+Math.sin(-Math.PI*.3)*r;
+    X.strokeStyle='#aaa';
+    X.lineWidth=1.5;
+    X.beginPath();
+    X.moveTo(wickX,wickY);
+    X.quadraticCurveTo(wickX+wickLen*.3,wickY-wickLen*.8,wickX+wickLen*.6,wickY-wickLen*.5);
+    X.stroke();
+
+    // Spark at wick tip
+    const tipX=wickX+wickLen*.6,tipY=wickY-wickLen*.5;
+    const sparkR=2+Math.sin(b.pulse*3)*1.5;
+    X.fillStyle=`hsl(${40+Math.sin(b.pulse*5)*20},100%,${70+Math.sin(b.pulse*7)*20}%)`;
+    X.beginPath();X.arc(tipX,tipY,sparkR,0,Math.PI*2);X.fill();
+
+    // Inner highlight
+    X.fillStyle='rgba(255,255,255,.15)';
+    X.beginPath();X.arc(b.x-r*.2,b.y-r*.25,r*.35,0,Math.PI*2);X.fill();
+  }
+
+  // Update & draw sparks
+  for(let i=sparks.length-1;i>=0;i--){
+    const s=sparks[i];
+    s.x+=s.dx*dt;
+    s.y+=s.dy*dt;
+
+    // Trail
+    s.trail.push({x:s.x,y:s.y,a:1});
+    if(s.trail.length>12)s.trail.shift();
+
+    // Check bounds
+    if(s.x<OX-CELL||s.x>OX+COLS*CELL+CELL||s.y<OY-CELL||s.y>OY+ROWS*CELL+CELL){
+      sparks.splice(i,1);continue;
+    }
+
+    // Check bomb hits
+    for(const b of bombs){
+      if(!b.alive)continue;
+      if(Math.hypot(s.x-b.x,s.y-b.y)<CELL*.5){
+        explodeBomb(b,s.chain);
+        sparks.splice(i,1);
+        i=-1;break; // spark consumed — restart outer loop effectively
+      }
+    }
+    if(i<0)continue;
+
+    // Draw spark trail
+    const hue=(s.chain*50+10)%360;
+    for(let j=0;j<s.trail.length;j++){
+      const t=s.trail[j];
+      const a=j/s.trail.length;
+      t.a*=.92;
+      X.fillStyle=`hsla(${hue},100%,70%,${a*.8})`;
+      X.beginPath();X.arc(t.x,t.y,2+a*3,0,Math.PI*2);X.fill();
+    }
+
+    // Draw spark head
+    X.fillStyle=`hsl(${hue},100%,85%)`;
+    X.shadowColor=`hsl(${hue},100%,60%)`;
+    X.shadowBlur=15;
+    X.beginPath();X.arc(s.x,s.y,4,0,Math.PI*2);X.fill();
+    X.shadowBlur=0;
+  }
+
+  // Explosions
+  for(let i=explosions.length-1;i>=0;i--){
+    const e=explosions[i];
+    e.t+=dt*3;
+    if(e.t>1){explosions.splice(i,1);continue}
+    const r=e.maxR*e.t;
+    const hue=(e.chain*50+10)%360;
+    X.globalAlpha=(1-e.t)*.6;
+    X.strokeStyle=`hsl(${hue},100%,60%)`;
+    X.lineWidth=3*(1-e.t);
+    X.beginPath();X.arc(e.x,e.y,r,0,Math.PI*2);X.stroke();
+    X.globalAlpha=1;
+  }
+
+  // Particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx*dt;
+    p.y+=p.vy*dt;
+    p.vy+=300*dt; // gravity
+    p.vx*=.99;
+    p.life-=p.decay*dt;
+    if(p.life<=0){particles.splice(i,1);continue}
+    X.globalAlpha=p.life;
+    X.fillStyle=`hsl(${p.hue},${p.sat}%,60%)`;
+    X.beginPath();X.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);X.fill();
+    X.globalAlpha=1;
+  }
+
+  // Chain counter during chain
+  if(state==='chain'&&bombsHit>1){
+    X.save();
+    X.font=`bold ${clamp(24,7,40)}px 'Courier New',monospace`;
+    X.textAlign='center';
+    X.fillStyle='#ff6b35';
+    X.shadowColor='#ff6b35';
+    X.shadowBlur=20;
+    X.fillText(`CHAIN x${bombsHit}`,W/2,OY-20);
+    X.shadowBlur=0;
+    X.restore();
+  }
+
+  // Remaining bombs counter
+  if(state==='chain'||state==='ready'){
+    const remaining=bombs.filter(b=>b.alive).length;
+    X.save();
+    X.font=`13px 'Courier New',monospace`;
+    X.textAlign='center';
+    X.fillStyle='#444';
+    X.fillText(`${remaining} bomb${remaining!==1?'s':''} remaining`,W/2,OY+ROWS*CELL+28);
+    X.restore();
+  }
+
+  X.restore();
+
+  // Check if chain is done
+  if(state==='chain'&&sparks.length===0){
+    checkChainDone();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+function clamp(base,vw,max){return Math.min(Math.max(base,W*vw/100),max)}
+
+// Start
+genLevel();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
