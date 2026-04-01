@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>MAGNET BOUNCE</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0a12;
+    font-family: 'Courier New', monospace;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  #ui {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    pointer-events: none;
+    z-index: 10;
+    padding: env(safe-area-inset-top, 12px) 16px 0 16px;
+  }
+  #hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    color: #fff;
+    font-size: 16px;
+    text-shadow: 0 0 8px rgba(0,200,255,0.6);
+  }
+  #hud .score { font-size: 28px; font-weight: bold; color: #0ff; }
+  #hud .hi { font-size: 13px; color: #888; }
+  #hud .magnets { font-size: 16px; color: #ff6090; }
+  #mode-toggle {
+    position: absolute;
+    bottom: max(env(safe-area-inset-bottom, 16px), 16px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    pointer-events: all;
+    display: flex;
+    gap: 12px;
+  }
+  .mode-btn {
+    min-width: 64px;
+    min-height: 50px;
+    padding: 10px 18px;
+    border: 2px solid;
+    border-radius: 14px;
+    background: rgba(10,10,18,0.85);
+    color: #fff;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: transform 0.1s, box-shadow 0.15s;
+  }
+  .mode-btn:active { transform: scale(0.93); }
+  .mode-btn.attract { border-color: #0af; color: #0af; box-shadow: 0 0 12px rgba(0,170,255,0.3); }
+  .mode-btn.attract.active { background: rgba(0,170,255,0.25); box-shadow: 0 0 20px rgba(0,170,255,0.5); }
+  .mode-btn.repulse { border-color: #f44; color: #f44; box-shadow: 0 0 12px rgba(255,68,68,0.3); }
+  .mode-btn.repulse.active { background: rgba(255,68,68,0.25); box-shadow: 0 0 20px rgba(255,68,68,0.5); }
+  #overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(6,6,14,0.92);
+    z-index: 30;
+    color: #fff;
+    text-align: center;
+    padding: 24px;
+    backdrop-filter: blur(8px);
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 {
+    font-size: clamp(32px, 8vw, 56px);
+    letter-spacing: 4px;
+    color: #0ff;
+    text-shadow: 0 0 30px rgba(0,255,255,0.5);
+    margin-bottom: 8px;
+  }
+  #overlay .sub {
+    font-size: clamp(13px, 3vw, 17px);
+    color: #88a;
+    margin-bottom: 30px;
+    line-height: 1.5;
+  }
+  #overlay .final-score {
+    font-size: clamp(40px, 10vw, 72px);
+    color: #ff6090;
+    text-shadow: 0 0 30px rgba(255,96,144,0.5);
+    font-weight: bold;
+    margin-bottom: 6px;
+  }
+  #overlay .new-hi { font-size: 18px; color: #ffd700; text-shadow: 0 0 16px rgba(255,215,0,0.6); margin-bottom: 20px; }
+  .play-btn {
+    min-width: 180px;
+    min-height: 56px;
+    padding: 16px 36px;
+    font-size: 20px;
+    font-family: inherit;
+    font-weight: bold;
+    border: 2px solid #0ff;
+    border-radius: 16px;
+    background: rgba(0,255,255,0.1);
+    color: #0ff;
+    cursor: pointer;
+    text-shadow: 0 0 12px rgba(0,255,255,0.5);
+    box-shadow: 0 0 24px rgba(0,255,255,0.2);
+    transition: transform 0.1s, background 0.15s;
+    letter-spacing: 2px;
+  }
+  .play-btn:active { transform: scale(0.95); background: rgba(0,255,255,0.2); }
+  #instructions {
+    font-size: clamp(12px, 2.8vw, 15px);
+    color: #667;
+    margin-top: 20px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div id="hud">
+    <div>
+      <div class="score" id="scoreDisplay">0</div>
+      <div class="hi" id="hiDisplay">HI: 0</div>
+    </div>
+    <div class="magnets" id="magnetDisplay">&#9679; 5</div>
+  </div>
+</div>
+
+<div id="mode-toggle">
+  <button class="mode-btn attract active" id="btnAttract" ontouchstart="">PULL</button>
+  <button class="mode-btn repulse" id="btnRepulse" ontouchstart="">PUSH</button>
+</div>
+
+<canvas id="c"></canvas>
+
+<div id="overlay">
+  <h1>MAGNET BOUNCE</h1>
+  <div class="sub">
+    Tap to place magnets.<br>
+    Guide the ball to collect orbs.<br>
+    Don't let it hit the edges!
+  </div>
+  <div class="final-score" id="finalScore" style="display:none"></div>
+  <div class="new-hi" id="newHi" style="display:none">NEW HIGH SCORE!</div>
+  <button class="play-btn" id="playBtn" ontouchstart="">PLAY</button>
+  <div id="instructions">
+    <strong>PULL</strong> = attract (blue) &nbsp;|&nbsp; <strong>PUSH</strong> = repulse (red)<br>
+    Keyboard: <strong>1</strong> / <strong>2</strong> to switch &nbsp;|&nbsp; <strong>Space</strong> to restart
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const scoreDisplay = document.getElementById('scoreDisplay');
+  const hiDisplay = document.getElementById('hiDisplay');
+  const magnetDisplay = document.getElementById('magnetDisplay');
+  const finalScore = document.getElementById('finalScore');
+  const newHi = document.getElementById('newHi');
+  const playBtn = document.getElementById('playBtn');
+  const btnAttract = document.getElementById('btnAttract');
+  const btnRepulse = document.getElementById('btnRepulse');
+
+  let W, H, dpr;
+  let hiScore = parseInt(localStorage.getItem('magnetBounceHi')) || 0;
+  hiDisplay.textContent = 'HI: ' + hiScore;
+
+  // Audio
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  function playTone(freq, dur, vol, type) {
+    const g = audioCtx.createGain();
+    const o = audioCtx.createOscillator();
+    o.type = type || 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  }
+  function sfxCollect() {
+    playTone(880, 0.15, 0.15, 'sine');
+    playTone(1320, 0.2, 0.1, 'sine');
+  }
+  function sfxPlace() { playTone(220, 0.08, 0.08, 'triangle'); }
+  function sfxDie() {
+    playTone(120, 0.4, 0.2, 'sawtooth');
+    playTone(80, 0.5, 0.15, 'square');
+  }
+  function sfxSwitch() { playTone(600, 0.05, 0.06, 'sine'); }
+
+  // State
+  let mode = 'attract'; // attract or repulse
+  let state = 'menu'; // menu, play, dead
+  let ball, magnets, orbs, particles, trail, score, magnetCount, shakeTime, shakeIntensity;
+  let borderPulse = 0;
+  const MAX_MAGNETS = 12;
+  const MAGNET_LIFETIME = 6000; // ms
+  const MAGNET_RADIUS = 18;
+  const BALL_RADIUS = 8;
+  const ORB_RADIUS = 12;
+  const MAGNET_STRENGTH = 280;
+  const SAFE_MARGIN = 30;
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function init() {
+    const speed = 1.2;
+    const angle = Math.random() * Math.PI * 2;
+    ball = {
+      x: W / 2, y: H / 2,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      speed: speed,
+      radius: BALL_RADIUS
+    };
+    magnets = [];
+    orbs = [];
+    particles = [];
+    trail = [];
+    score = 0;
+    magnetCount = 5;
+    shakeTime = 0;
+    shakeIntensity = 0;
+    borderPulse = 0;
+    scoreDisplay.textContent = '0';
+    magnetDisplay.innerHTML = '&#9679; ' + magnetCount;
+    spawnOrb();
+    spawnOrb();
+  }
+
+  function spawnOrb() {
+    const m = 50;
+    orbs.push({
+      x: m + Math.random() * (W - m * 2),
+      y: m + Math.random() * (H - m * 2),
+      radius: ORB_RADIUS,
+      t: 0,
+      glow: 0
+    });
+  }
+
+  function placeMagnet(x, y) {
+    if (state !== 'play' || magnetCount <= 0) return;
+    // Don't place near edges (too easy exploit)
+    if (x < 20 || x > W - 20 || y < 20 || y > H - 20) return;
+    magnetCount--;
+    magnetDisplay.innerHTML = '&#9679; ' + magnetCount;
+    magnets.push({
+      x, y,
+      type: mode,
+      born: performance.now(),
+      radius: MAGNET_RADIUS,
+      life: 1
+    });
+    sfxPlace();
+    // particles on place
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * (1 + Math.random() * 2),
+        vy: Math.sin(a) * (1 + Math.random() * 2),
+        life: 0.6,
+        maxLife: 0.6,
+        color: mode === 'attract' ? '#0af' : '#f44',
+        size: 3 + Math.random() * 3
+      });
+    }
+  }
+
+  function addTrail() {
+    trail.push({ x: ball.x, y: ball.y, life: 1 });
+    if (trail.length > 60) trail.shift();
+  }
+
+  function emitCollectParticles(x, y) {
+    for (let i = 0; i < 24; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 2 + Math.random() * 5;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 0.5 + Math.random() * 0.4,
+        maxLife: 0.9,
+        color: ['#0ff', '#0f0', '#ff0', '#f0f', '#fff'][Math.floor(Math.random() * 5)],
+        size: 2 + Math.random() * 4
+      });
+    }
+  }
+
+  function emitDeathParticles() {
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1 + Math.random() * 6;
+      particles.push({
+        x: ball.x, y: ball.y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 0.6 + Math.random() * 0.6,
+        maxLife: 1.2,
+        color: ['#f44', '#f80', '#ff0', '#fff'][Math.floor(Math.random() * 4)],
+        size: 3 + Math.random() * 5
+      });
+    }
+  }
+
+  // Mode toggle
+  function setMode(m) {
+    mode = m;
+    btnAttract.classList.toggle('active', m === 'attract');
+    btnRepulse.classList.toggle('active', m === 'repulse');
+    sfxSwitch();
+  }
+
+  btnAttract.addEventListener('click', (e) => { e.stopPropagation(); setMode('attract'); });
+  btnRepulse.addEventListener('click', (e) => { e.stopPropagation(); setMode('repulse'); });
+  btnAttract.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); setMode('attract'); });
+  btnRepulse.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); setMode('repulse'); });
+
+  // Input
+  function handleInput(x, y) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    placeMagnet(x, y);
+  }
+
+  canvas.addEventListener('click', (e) => {
+    if (state !== 'play') return;
+    handleInput(e.clientX, e.clientY);
+  });
+
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (state !== 'play') return;
+    for (let t of e.changedTouches) {
+      handleInput(t.clientX, t.clientY);
+    }
+  }, { passive: false });
+
+  // Play button
+  function startGame() {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    overlay.classList.add('hidden');
+    state = 'play';
+    init();
+  }
+  playBtn.addEventListener('click', startGame);
+
+  function showDeath() {
+    state = 'dead';
+    let isNew = false;
+    if (score > hiScore) {
+      hiScore = score;
+      localStorage.setItem('magnetBounceHi', hiScore);
+      hiDisplay.textContent = 'HI: ' + hiScore;
+      isNew = true;
+    }
+    setTimeout(() => {
+      overlay.classList.remove('hidden');
+      finalScore.style.display = 'block';
+      finalScore.textContent = score;
+      newHi.style.display = isNew ? 'block' : 'none';
+      overlay.querySelector('h1').textContent = 'GAME OVER';
+      overlay.querySelector('.sub').textContent = 'Tap to play again';
+      playBtn.textContent = 'RETRY';
+    }, 600);
+  }
+
+  // Keyboard
+  window.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      if (state === 'menu' || state === 'dead') startGame();
+    }
+    if (e.key === '1') setMode('attract');
+    if (e.key === '2') setMode('repulse');
+  });
+
+  // Game loop
+  let lastTime = 0;
+  function update(ts) {
+    requestAnimationFrame(update);
+    const dt = Math.min((ts - lastTime) / 1000, 0.05);
+    lastTime = ts;
+
+    resize(); // lightweight if no change
+
+    if (state === 'play') {
+      // Update magnets
+      const now = performance.now();
+      for (let i = magnets.length - 1; i >= 0; i--) {
+        const m = magnets[i];
+        const age = now - m.born;
+        m.life = Math.max(0, 1 - age / MAGNET_LIFETIME);
+        if (m.life <= 0) {
+          magnets.splice(i, 1);
+          continue;
+        }
+        // Apply force on ball
+        const dx = m.x - ball.x;
+        const dy = m.y - ball.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 5) {
+          const force = MAGNET_STRENGTH * m.life / (dist * dist) * dt;
+          const sign = m.type === 'attract' ? 1 : -1;
+          ball.vx += sign * (dx / dist) * force;
+          ball.vy += sign * (dy / dist) * force;
+        }
+      }
+
+      // Cap velocity
+      const maxSpeed = 12;
+      const v = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+      if (v > maxSpeed) {
+        ball.vx = (ball.vx / v) * maxSpeed;
+        ball.vy = (ball.vy / v) * maxSpeed;
+      }
+
+      // Move ball
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Trail
+      addTrail();
+
+      // Border warning pulse
+      const edgeDist = Math.min(ball.x, ball.y, W - ball.x, H - ball.y);
+      borderPulse = Math.max(0, 1 - edgeDist / 60);
+
+      // Check edge collision
+      if (ball.x - ball.radius < 0 || ball.x + ball.radius > W ||
+          ball.y - ball.radius < 0 || ball.y + ball.radius > H) {
+        sfxDie();
+        emitDeathParticles();
+        shakeTime = 0.4;
+        shakeIntensity = 12;
+        showDeath();
+      }
+
+      // Check orb collection
+      for (let i = orbs.length - 1; i >= 0; i--) {
+        const o = orbs[i];
+        o.t += dt;
+        const dx = o.x - ball.x;
+        const dy = o.y - ball.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < ball.radius + o.radius) {
+          score++;
+          scoreDisplay.textContent = score;
+          sfxCollect();
+          emitCollectParticles(o.x, o.y);
+          shakeTime = 0.1;
+          shakeIntensity = 4;
+          orbs.splice(i, 1);
+          // Speed up ball slightly
+          const spFactor = 1.03;
+          ball.vx *= spFactor;
+          ball.vy *= spFactor;
+          // Refill magnets
+          magnetCount = Math.min(magnetCount + 2, 8);
+          magnetDisplay.innerHTML = '&#9679; ' + magnetCount;
+          // Spawn new orb(s)
+          spawnOrb();
+          if (score % 5 === 0) spawnOrb(); // bonus orb every 5
+        }
+      }
+    }
+
+    // Particles (always update for death particles)
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.97;
+      p.vy *= 0.97;
+      p.life -= dt;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Trail fade
+    for (let i = trail.length - 1; i >= 0; i--) {
+      trail[i].life -= dt * 2.5;
+      if (trail[i].life <= 0) trail.splice(i, 1);
+    }
+
+    // Shake decay
+    if (shakeTime > 0) shakeTime -= dt;
+
+    draw(ts);
+  }
+
+  function draw(ts) {
+    ctx.save();
+
+    // Shake
+    if (shakeTime > 0) {
+      const sx = (Math.random() - 0.5) * shakeIntensity * (shakeTime / 0.4);
+      const sy = (Math.random() - 0.5) * shakeIntensity * (shakeTime / 0.4);
+      ctx.translate(sx, sy);
+    }
+
+    // Background
+    ctx.fillStyle = '#0a0a12';
+    ctx.fillRect(-20, -20, W + 40, H + 40);
+
+    // Subtle grid
+    ctx.strokeStyle = 'rgba(40,40,80,0.3)';
+    ctx.lineWidth = 0.5;
+    const gridSize = 40;
+    for (let x = 0; x < W; x += gridSize) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += gridSize) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Border danger glow
+    if (borderPulse > 0 && state === 'play') {
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      const a = borderPulse * 0.4;
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = `rgba(255,50,50,${a})`;
+      ctx.lineWidth = 3 + borderPulse * 4;
+      ctx.strokeRect(1, 1, W - 2, H - 2);
+    }
+
+    // Boundary lines
+    ctx.strokeStyle = state === 'play' ? 'rgba(100,100,180,0.4)' : 'rgba(60,60,100,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(0, 0, W, H);
+
+    // Trail
+    for (let i = 0; i < trail.length; i++) {
+      const t = trail[i];
+      const a = t.life * 0.6;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, BALL_RADIUS * t.life * 0.8, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0,255,255,${a})`;
+      ctx.fill();
+    }
+
+    // Magnets
+    for (const m of magnets) {
+      const isA = m.type === 'attract';
+      const col = isA ? [0, 170, 255] : [255, 68, 68];
+      const a = m.life;
+      // Pulsing ring
+      const pulse = 1 + Math.sin(ts / 200) * 0.15;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.radius * pulse, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${a * 0.7})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Outer glow
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.radius * 1.5 * pulse, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${a * 0.2})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Center dot
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${a})`;
+      ctx.fill();
+      // Field lines
+      ctx.save();
+      ctx.globalAlpha = a * 0.3;
+      const lineCount = 6;
+      for (let i = 0; i < lineCount; i++) {
+        const ang = (i / lineCount) * Math.PI * 2 + ts / 1000 * (isA ? 1 : -1);
+        const r1 = m.radius * 0.6;
+        const r2 = m.radius * 1.4 * pulse;
+        ctx.beginPath();
+        ctx.moveTo(m.x + Math.cos(ang) * r1, m.y + Math.sin(ang) * r1);
+        ctx.lineTo(m.x + Math.cos(ang) * r2, m.y + Math.sin(ang) * r2);
+        ctx.strokeStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Orbs
+    for (const o of orbs) {
+      const glow = Math.sin(o.t * 3) * 0.3 + 0.7;
+      const bobY = Math.sin(o.t * 2) * 3;
+      // Outer glow
+      const grad = ctx.createRadialGradient(o.x, o.y + bobY, 0, o.x, o.y + bobY, o.radius * 3);
+      grad.addColorStop(0, `rgba(0,255,200,${glow * 0.3})`);
+      grad.addColorStop(1, 'rgba(0,255,200,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(o.x - o.radius * 3, o.y + bobY - o.radius * 3, o.radius * 6, o.radius * 6);
+      // Core
+      ctx.beginPath();
+      ctx.arc(o.x, o.y + bobY, o.radius * glow, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0,255,200,${0.8 * glow})`;
+      ctx.shadowColor = '#0fc';
+      ctx.shadowBlur = 20;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // Inner bright spot
+      ctx.beginPath();
+      ctx.arc(o.x, o.y + bobY, o.radius * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${0.7 * glow})`;
+      ctx.fill();
+    }
+
+    // Ball
+    if (state === 'play') {
+      // Glow
+      const bGrad = ctx.createRadialGradient(ball.x, ball.y, 0, ball.x, ball.y, ball.radius * 4);
+      bGrad.addColorStop(0, 'rgba(0,255,255,0.3)');
+      bGrad.addColorStop(1, 'rgba(0,255,255,0)');
+      ctx.fillStyle = bGrad;
+      ctx.fillRect(ball.x - ball.radius * 4, ball.y - ball.radius * 4, ball.radius * 8, ball.radius * 8);
+      // Ball
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = '#0ff';
+      ctx.shadowBlur = 16;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Particles
+    for (const p of particles) {
+      const a = p.life / p.maxLife;
+      ctx.globalAlpha = a;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * a, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  requestAnimationFrame(update);
+})();
+</script>
+</body>
+</html>
