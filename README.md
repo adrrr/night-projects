@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🧲 **[Magnet Bounce](https://adrrr.github.io/night-projects/magnet-bounce/)**
+Place des aimants attracteurs (bleu) ou répulseurs (rouge) pour guider une balle néon vers des orbes lumineux. Chaque orbe collecté accélère la balle et recharge tes aimants. Si la balle touche un bord : game over ! Aimants avec lignes de champ animées, trail néon, particles, border danger glow, screen shake, Web Audio synthétique. High score localStorage. Mobile-first (tap + boutons PULL/PUSH) + desktop (clic + touches 1/2). Esthétique dark/neon.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/magnet-bounce/)
+
 ### 🎨 **[Color Switch](https://adrrr.github.io/night-projects/color-switch/)**
 Saute à travers des obstacles colorés rotatifs — anneaux, barres glissantes, portes mobiles, diamants et pulsars. Tu ne passes que par le segment qui matche ta couleur actuelle ! Pickups de changement de couleur entre chaque obstacle, combo system, vitesse progressive. 5 types d'obstacles variés, particules, screen shake, Web Audio. High score localStorage. Mobile-first (tap) + desktop (espace/click). Esthétique dark/neon.
 
