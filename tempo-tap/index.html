@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>TEMPO TAP</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
+canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;width:100%;pointer-events:none;z-index:10;padding:12px 16px}
+#ui *{pointer-events:none}
+.hud{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.hud-left,.hud-right{display:flex;flex-direction:column;gap:4px}
+.hud-right{align-items:flex-end}
+.score-display{font-size:clamp(28px,6vw,48px);font-weight:900;letter-spacing:-1px;text-shadow:0 0 20px rgba(0,255,200,0.5)}
+.combo-display{font-size:clamp(14px,3vw,20px);font-weight:700;color:#ff6bff;text-shadow:0 0 10px rgba(255,107,255,0.5);min-height:1.2em}
+.lives{display:flex;gap:6px}
+.life{width:clamp(18px,4vw,28px);height:clamp(18px,4vw,28px);border-radius:50%;background:radial-gradient(circle,#ff2266,#cc0044);box-shadow:0 0 10px rgba(255,34,102,0.6);transition:all 0.3s}
+.life.lost{background:#222;box-shadow:none;transform:scale(0.7)}
+.level-display{font-size:clamp(11px,2.5vw,15px);color:#666;font-weight:600;letter-spacing:1px;text-transform:uppercase}
+.hi-score{font-size:clamp(11px,2.5vw,14px);color:#555;font-weight:600}
+#menu{position:fixed;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:#0a0a0f}
+#menu.hidden{display:none}
+.title{font-size:clamp(48px,12vw,96px);font-weight:900;letter-spacing:-3px;background:linear-gradient(135deg,#00ffc8,#6b5bff,#ff2266);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px;animation:titlePulse 2s ease-in-out infinite}
+@keyframes titlePulse{0%,100%{transform:scale(1);filter:brightness(1)}50%{transform:scale(1.03);filter:brightness(1.2)}}
+.subtitle{font-size:clamp(13px,3vw,18px);color:#666;margin-bottom:40px;letter-spacing:2px;text-transform:uppercase}
+.start-btn{pointer-events:auto;background:linear-gradient(135deg,#00ffc8,#00cc9f);color:#0a0a0f;border:none;padding:16px 48px;font-size:clamp(18px,4vw,24px);font-weight:800;border-radius:60px;cursor:pointer;letter-spacing:1px;box-shadow:0 0 30px rgba(0,255,200,0.3);transition:transform 0.15s,box-shadow 0.15s;min-height:56px;min-width:200px}
+.start-btn:active{transform:scale(0.95);box-shadow:0 0 15px rgba(0,255,200,0.5)}
+.final-score{font-size:clamp(16px,4vw,22px);color:#999;margin-bottom:24px;text-align:center}
+.final-score span{color:#00ffc8;font-weight:800;font-size:clamp(36px,8vw,56px);display:block;margin:8px 0}
+.new-hi{color:#ff6bff !important;animation:newHi 0.5s ease-in-out infinite alternate}
+@keyframes newHi{from{text-shadow:0 0 10px rgba(255,107,255,0.3)}to{text-shadow:0 0 25px rgba(255,107,255,0.7)}}
+.instructions{color:#444;font-size:clamp(11px,2.5vw,14px);margin-top:24px;text-align:center;line-height:1.6;max-width:320px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="hud">
+    <div class="hud-left">
+      <div class="score-display" id="scoreEl">0</div>
+      <div class="combo-display" id="comboEl"></div>
+    </div>
+    <div class="hud-right">
+      <div class="lives" id="livesEl"></div>
+      <div class="level-display" id="levelEl">LEVEL 1</div>
+      <div class="hi-score" id="hiScoreEl"></div>
+    </div>
+  </div>
+</div>
+<div id="menu">
+  <div class="title">TEMPO TAP</div>
+  <div class="subtitle">tap at the peak</div>
+  <div class="final-score" id="finalScore" style="display:none"></div>
+  <button class="start-btn" id="startBtn">TAP TO PLAY</button>
+  <div class="instructions">Circles pulse and grow.<br>Tap at <b style="color:#00ffc8">maximum size</b> for points.<br>Miss and you lose a life.</div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const canvas = $('c');
+const ctx = canvas.getContext('2d');
+const menu = $('menu');
+const scoreEl = $('scoreEl');
+const comboEl = $('comboEl');
+const livesEl = $('livesEl');
+const levelEl = $('levelEl');
+const hiScoreEl = $('hiScoreEl');
+const finalScore = $('finalScore');
+const startBtn = $('startBtn');
+
+let W, H, dpr;
+let circles = [];
+let particles = [];
+let feedbacks = [];
+let bgParticles = [];
+let score = 0, combo = 0, maxCombo = 0, lives = 3, level = 1;
+let gameActive = false;
+let spawnTimer = 0;
+let shakeX = 0, shakeY = 0, shakeDecay = 0;
+let flashAlpha = 0, flashColor = '';
+let hiScore = parseInt(localStorage.getItem('tempoTapHi')) || 0;
+let beatPhase = 0;
+let lastTime = 0;
+let audioCtx = null;
+let pendingCircleCount = 0;
+
+// Neon color palette
+const COLORS = [
+  {h:160,s:100,l:50,hex:'#00ffc8'},  // cyan-green
+  {h:250,s:70,l:65,hex:'#6b5bff'},   // purple
+  {h:340,s:100,l:55,hex:'#ff2266'},   // pink-red
+  {h:45,s:100,l:55,hex:'#ffb800'},    // gold
+  {h:195,s:100,l:55,hex:'#00b8ff'},   // blue
+  {h:290,s:80,l:60,hex:'#cc44ff'},    // violet
+];
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Background particles
+function initBgParticles() {
+  bgParticles = [];
+  for (let i = 0; i < 40; i++) {
+    bgParticles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: Math.random() * 2 + 0.5,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      alpha: Math.random() * 0.3 + 0.05,
+      color: COLORS[Math.floor(Math.random() * COLORS.length)]
+    });
+  }
+}
+initBgParticles();
+
+// Web Audio
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playTone(freq, dur, vol = 0.15, type = 'sine') {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur);
+}
+
+function playPerfect() {
+  playTone(880, 0.15, 0.12);
+  playTone(1320, 0.12, 0.08);
+  setTimeout(() => playTone(1760, 0.1, 0.06), 50);
+}
+
+function playGood() {
+  playTone(660, 0.12, 0.1);
+  playTone(880, 0.1, 0.06);
+}
+
+function playMiss() {
+  playTone(150, 0.25, 0.15, 'sawtooth');
+  playTone(120, 0.3, 0.1, 'square');
+}
+
+function playSpawn() {
+  playTone(440 + Math.random() * 200, 0.06, 0.03);
+}
+
+// Circle class
+class Circle {
+  constructor() {
+    const margin = 60;
+    const col = COLORS[Math.floor(Math.random() * COLORS.length)];
+    this.color = col;
+    this.maxR = 30 + Math.random() * 20;
+    this.x = margin + Math.random() * (W - margin * 2);
+    this.y = margin + 60 + Math.random() * (H - margin * 2 - 80);
+    // Ensure circles don't spawn too close to edges on small screens
+    this.x = Math.max(this.maxR + 10, Math.min(W - this.maxR - 10, this.x));
+    this.y = Math.max(this.maxR + 70, Math.min(H - this.maxR - 10, this.y));
+
+    const baseSpeed = 0.6 + level * 0.08;
+    const cycleDur = (Math.PI * 2) / baseSpeed; // full cycle in seconds roughly
+    this.growSpeed = baseSpeed;
+    this.phase = 0; // 0 to PI = grow then shrink
+    this.r = 0;
+    this.alive = true;
+    this.tapped = false;
+    this.opacity = 1;
+    this.ringPhase = 0;
+  }
+
+  update(dt) {
+    if (this.tapped) return;
+    this.phase += this.growSpeed * dt;
+    this.ringPhase += dt * 3;
+    // sine curve: 0 → peak at PI/2 → 0 at PI
+    if (this.phase >= Math.PI) {
+      // expired - miss
+      this.alive = false;
+      return 'expired';
+    }
+    this.r = Math.sin(this.phase) * this.maxR;
+    return null;
+  }
+
+  getPeakProximity() {
+    // How close to peak (PI/2). Returns 0-1 where 1 = perfect
+    const dist = Math.abs(this.phase - Math.PI / 2);
+    return Math.max(0, 1 - dist / (Math.PI / 2));
+  }
+
+  draw(ctx) {
+    if (!this.alive && !this.tapped) return;
+    const {x, y, r, color} = this;
+    if (r <= 0) return;
+
+    const proximity = this.getPeakProximity();
+    const glowIntensity = proximity * 0.6 + 0.2;
+
+    // Outer ring (target size indicator)
+    ctx.save();
+    ctx.globalAlpha = 0.15 + proximity * 0.15;
+    ctx.beginPath();
+    ctx.arc(x, y, this.maxR, 0, Math.PI * 2);
+    ctx.strokeStyle = color.hex;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 6]);
+    ctx.lineDashOffset = -this.ringPhase * 20;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Glow
+    ctx.save();
+    ctx.globalAlpha = glowIntensity * 0.5;
+    const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
+    grd.addColorStop(0, color.hex);
+    grd.addColorStop(1, 'transparent');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Main circle
+    ctx.save();
+    ctx.globalAlpha = 0.7 + proximity * 0.3;
+    const innerGrd = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
+    innerGrd.addColorStop(0, `hsla(${color.h},${color.s}%,${color.l + 20}%,1)`);
+    innerGrd.addColorStop(1, color.hex);
+    ctx.fillStyle = innerGrd;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Border brightens near peak
+    ctx.strokeStyle = `hsla(${color.h},100%,${70 + proximity * 30}%,${0.5 + proximity * 0.5})`;
+    ctx.lineWidth = 2 + proximity * 2;
+    ctx.stroke();
+    ctx.restore();
+
+    // Inner shine
+    if (r > 8) {
+      ctx.save();
+      ctx.globalAlpha = 0.3 + proximity * 0.3;
+      ctx.beginPath();
+      ctx.arc(x - r * 0.25, y - r * 0.25, r * 0.35, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${color.h},100%,90%,0.4)`;
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+// Particle burst
+function spawnParticles(x, y, color, count, speed = 4) {
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.3;
+    const v = speed * (0.5 + Math.random());
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * v,
+      vy: Math.sin(angle) * v,
+      r: 2 + Math.random() * 3,
+      life: 1,
+      decay: 1.5 + Math.random() * 1,
+      color
+    });
+  }
+}
+
+// Feedback text
+function spawnFeedback(x, y, text, color) {
+  feedbacks.push({x, y, text, color, life: 1, vy: -1.5});
+}
+
+// Shake
+function triggerShake(intensity) {
+  shakeDecay = intensity;
+}
+
+// Flash
+function triggerFlash(color, alpha = 0.2) {
+  flashColor = color;
+  flashAlpha = alpha;
+}
+
+// Handle tap/click on circle
+function handleTap(tx, ty) {
+  if (!gameActive) return;
+
+  let hit = false;
+  // Find the circle closest to peak that contains the tap point
+  let bestCircle = null;
+  let bestProx = -1;
+
+  for (const c of circles) {
+    if (!c.alive || c.tapped) continue;
+    const dx = tx - c.x;
+    const dy = ty - c.y;
+    // Generous tap target: use max of actual radius and 30px minimum
+    const hitR = Math.max(c.r + 10, 30);
+    if (dx * dx + dy * dy <= hitR * hitR) {
+      const prox = c.getPeakProximity();
+      if (prox > bestProx) {
+        bestProx = prox;
+        bestCircle = c;
+      }
+    }
+  }
+
+  if (bestCircle) {
+    hit = true;
+    const c = bestCircle;
+    const prox = c.getPeakProximity();
+    c.tapped = true;
+    c.alive = false;
+
+    if (prox > 0.75) {
+      // PERFECT
+      combo++;
+      if (combo > maxCombo) maxCombo = combo;
+      const mult = Math.min(combo, 8);
+      const pts = 3 * mult;
+      score += pts;
+      spawnParticles(c.x, c.y, c.color, 24, 6);
+      spawnFeedback(c.x, c.y, combo > 1 ? `PERFECT! x${mult}` : 'PERFECT!', '#00ffc8');
+      triggerFlash('#00ffc8', 0.12);
+      triggerShake(3);
+      playPerfect();
+    } else if (prox > 0.35) {
+      // GOOD
+      combo++;
+      if (combo > maxCombo) maxCombo = combo;
+      const mult = Math.max(1, Math.floor(combo / 2));
+      score += 1 * mult;
+      spawnParticles(c.x, c.y, c.color, 12, 3);
+      spawnFeedback(c.x, c.y, 'Good', '#ffb800');
+      playGood();
+    } else {
+      // Too early / too late
+      combo = 0;
+      lives--;
+      spawnFeedback(c.x, c.y, 'Too early!', '#ff2266');
+      triggerFlash('#ff2266', 0.15);
+      triggerShake(6);
+      playMiss();
+    }
+
+    updateHUD();
+
+    if (lives <= 0) {
+      gameOver();
+    }
+  }
+}
+
+// Event listeners
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  initAudio();
+  const rect = canvas.getBoundingClientRect();
+  handleTap(e.clientX - rect.left, e.clientY - rect.top);
+});
+
+startBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  initAudio();
+  startGame();
+});
+
+// Prevent scroll/zoom
+document.addEventListener('touchmove', e => e.preventDefault(), {passive: false});
+
+function updateHUD() {
+  scoreEl.textContent = score;
+  scoreEl.style.color = combo >= 5 ? '#ff6bff' : '#00ffc8';
+
+  if (combo >= 2) {
+    comboEl.textContent = `${combo}x COMBO`;
+    comboEl.style.opacity = 1;
+  } else {
+    comboEl.textContent = '';
+  }
+
+  livesEl.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const d = document.createElement('div');
+    d.className = 'life' + (i >= lives ? ' lost' : '');
+    livesEl.appendChild(d);
+  }
+
+  const newLevel = Math.floor(score / 10) + 1;
+  if (newLevel > level) {
+    level = newLevel;
+    triggerFlash('#6b5bff', 0.15);
+    playTone(523, 0.1, 0.08);
+    playTone(659, 0.1, 0.06);
+    setTimeout(() => playTone(784, 0.15, 0.08), 80);
+  }
+  levelEl.textContent = `LEVEL ${level}`;
+
+  hiScoreEl.textContent = hiScore > 0 ? `HI: ${hiScore}` : '';
+}
+
+function startGame() {
+  score = 0; combo = 0; maxCombo = 0; lives = 3; level = 1;
+  circles = []; particles = []; feedbacks = [];
+  spawnTimer = 0; pendingCircleCount = 0;
+  gameActive = true;
+  menu.classList.add('hidden');
+  updateHUD();
+  lastTime = performance.now();
+}
+
+function gameOver() {
+  gameActive = false;
+  const isNew = score > hiScore;
+  if (isNew) {
+    hiScore = score;
+    localStorage.setItem('tempoTapHi', hiScore);
+  }
+
+  // Delay showing menu slightly for dramatic effect
+  setTimeout(() => {
+    finalScore.style.display = 'block';
+    finalScore.innerHTML = `Score<span class="${isNew ? 'new-hi' : ''}">${score}</span>${isNew ? '<div style="color:#ff6bff;font-size:14px;margin-top:4px">NEW HIGH SCORE!</div>' : `Best: ${hiScore}`}<div style="font-size:13px;color:#555;margin-top:8px">Max combo: ${maxCombo}x · Level ${level}</div>`;
+    startBtn.textContent = 'TAP TO RETRY';
+    menu.classList.remove('hidden');
+  }, 600);
+}
+
+function getSpawnInterval() {
+  // Gets faster with level, minimum 0.4s
+  return Math.max(0.4, 1.8 - level * 0.12);
+}
+
+function getMaxCircles() {
+  return Math.min(2 + Math.floor(level / 2), 8);
+}
+
+// Main game loop
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  // Beat phase for background pulse
+  const bpm = 100 + level * 10;
+  beatPhase += dt * bpm / 60 * Math.PI * 2;
+  const beatPulse = Math.sin(beatPhase) * 0.5 + 0.5;
+
+  // Clear with slight trail
+  ctx.save();
+  if (shakeDecay > 0.1) {
+    shakeX = (Math.random() - 0.5) * shakeDecay;
+    shakeY = (Math.random() - 0.5) * shakeDecay;
+    shakeDecay *= 0.85;
+    ctx.translate(shakeX, shakeY);
+  } else {
+    shakeX = shakeY = 0;
+  }
+
+  // Background
+  ctx.fillStyle = `rgba(10,10,15,${0.85 + beatPulse * 0.05})`;
+  ctx.fillRect(-10, -10, W + 20, H + 20);
+
+  // Background vignette
+  const vig = ctx.createRadialGradient(W/2, H/2, W * 0.2, W/2, H/2, W * 0.8);
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+
+  // Background particles
+  for (const p of bgParticles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    if (p.x < 0) p.x = W;
+    if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H;
+    if (p.y > H) p.y = 0;
+    ctx.globalAlpha = p.alpha * (0.5 + beatPulse * 0.5);
+    ctx.fillStyle = p.color.hex;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Flash overlay
+  if (flashAlpha > 0.005) {
+    ctx.globalAlpha = flashAlpha;
+    ctx.fillStyle = flashColor;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+    flashAlpha *= 0.88;
+  }
+
+  if (gameActive) {
+    // Spawn circles
+    spawnTimer -= dt;
+    if (spawnTimer <= 0 && circles.filter(c => c.alive).length < getMaxCircles()) {
+      circles.push(new Circle());
+      playSpawn();
+      spawnTimer = getSpawnInterval();
+
+      // Occasionally spawn pairs at higher levels
+      if (level >= 3 && Math.random() < 0.3) {
+        setTimeout(() => {
+          if (gameActive) {
+            circles.push(new Circle());
+            playSpawn();
+          }
+        }, 150);
+      }
+    }
+
+    // Update circles
+    for (let i = circles.length - 1; i >= 0; i--) {
+      const c = circles[i];
+      if (!c.alive) {
+        circles.splice(i, 1);
+        continue;
+      }
+      const result = c.update(dt);
+      if (result === 'expired') {
+        // Missed!
+        combo = 0;
+        lives--;
+        spawnFeedback(c.x, c.y, 'MISS', '#ff2266');
+        spawnParticles(c.x, c.y, {h:0, s:0, l:40, hex:'#666'}, 6, 2);
+        triggerFlash('#ff2266', 0.1);
+        triggerShake(4);
+        playMiss();
+        circles.splice(i, 1);
+        updateHUD();
+        if (lives <= 0) {
+          gameOver();
+        }
+      }
+    }
+  }
+
+  // Draw circles
+  for (const c of circles) {
+    c.draw(ctx);
+  }
+
+  // Update & draw particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15; // gravity
+    p.vx *= 0.98;
+    p.life -= p.decay * dt;
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    ctx.save();
+    ctx.globalAlpha = p.life * 0.8;
+    ctx.fillStyle = p.color.hex;
+    ctx.shadowColor = p.color.hex;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Update & draw feedback text
+  for (let i = feedbacks.length - 1; i >= 0; i--) {
+    const f = feedbacks[i];
+    f.y += f.vy;
+    f.life -= dt * 1.5;
+    if (f.life <= 0) {
+      feedbacks.splice(i, 1);
+      continue;
+    }
+    ctx.save();
+    ctx.globalAlpha = f.life;
+    ctx.fillStyle = f.color;
+    ctx.font = `800 ${18 + (1 - f.life) * 8}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.shadowColor = f.color;
+    ctx.shadowBlur = 10;
+    ctx.fillText(f.text, f.x, f.y);
+    ctx.restore();
+  }
+
+  // Game over: fade out remaining circles
+  if (!gameActive && circles.length > 0) {
+    for (let i = circles.length - 1; i >= 0; i--) {
+      circles[i].alive = false;
+      circles.splice(i, 1);
+    }
+  }
+
+  ctx.restore();
+}
+
+// Initial HUD
+updateHUD();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

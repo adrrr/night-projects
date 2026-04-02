@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🎯 **[Tempo Tap](https://adrrr.github.io/night-projects/tempo-tap/)**
+Jeu de précision rythmique — des cercles néon pulsent et grandissent à l'écran. Tape au moment EXACT où ils atteignent leur taille maximale ! Perfect timing = +3pts × combo multiplier (jusqu'à x8), Good = +1pt, trop tôt/tard ou miss = perte de vie. Vitesse et nombre de cercles augmentent tous les 10 points. Spawns en paires aux niveaux élevés. Particules, screen shake, flash overlays, background pulsant au BPM, Web Audio synthétique. High score localStorage. Mobile-first (pointer events, tap targets généreux) + desktop (clic). Esthétique dark/neon.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/tempo-tap/)
+
 ### 🧲 **[Magnet Bounce](https://adrrr.github.io/night-projects/magnet-bounce/)**
 Place des aimants attracteurs (bleu) ou répulseurs (rouge) pour guider une balle néon vers des orbes lumineux. Chaque orbe collecté accélère la balle et recharge tes aimants. Si la balle touche un bord : game over ! Aimants avec lignes de champ animées, trail néon, particles, border danger glow, screen shake, Web Audio synthétique. High score localStorage. Mobile-first (tap + boutons PULL/PUSH) + desktop (clic + touches 1/2). Esthétique dark/neon.
 
