@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Prism Pop</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:none;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a12;font-family:'Segoe UI',system-ui,sans-serif}
+canvas{display:block;width:100%;height:100%}
+#ui{position:absolute;top:0;left:0;width:100%;pointer-events:none;padding:env(safe-area-inset-top,12px) 16px 0}
+#ui *{pointer-events:auto}
+.hud{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0}
+.score-area{text-align:left}
+.score-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:2px}
+.score-val{font-size:32px;font-weight:800;color:#fff;line-height:1;text-shadow:0 0 20px rgba(255,255,255,.3)}
+.combo-val{font-size:14px;color:#ff0;font-weight:700;min-height:20px;text-shadow:0 0 10px rgba(255,255,0,.5)}
+.hi-score{text-align:right}
+.hi-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:2px}
+.hi-val{font-size:20px;font-weight:700;color:#aaa;line-height:1.4}
+#game-over{position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,5,15,.85);z-index:10;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#game-over.show{display:flex}
+.go-title{font-size:clamp(36px,8vw,56px);font-weight:900;color:#fff;margin-bottom:8px;text-shadow:0 0 40px rgba(255,100,255,.5)}
+.go-score{font-size:clamp(20px,5vw,32px);color:#ccc;margin-bottom:4px}
+.go-best{font-size:16px;color:#ff0;margin-bottom:32px;min-height:24px}
+.btn{background:linear-gradient(135deg,#ff3cac,#784ba0,#2b86c5);border:none;color:#fff;font-size:18px;font-weight:700;padding:16px 48px;border-radius:50px;cursor:pointer;min-height:54px;min-width:180px;text-transform:uppercase;letter-spacing:2px;box-shadow:0 0 30px rgba(255,60,172,.4);transition:transform .1s}
+.btn:active{transform:scale(.95)}
+#start-screen{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,5,15,.95);z-index:20}
+.start-title{font-size:clamp(42px,10vw,64px);font-weight:900;background:linear-gradient(135deg,#ff3cac,#ff0,#00ff88,#2b86c5,#ff3cac);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:16px;text-align:center;line-height:1.1}
+.start-sub{font-size:clamp(14px,3.5vw,18px);color:#888;margin-bottom:40px;text-align:center;padding:0 24px;max-width:360px;line-height:1.5}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+ <div class="hud">
+  <div class="score-area">
+   <div class="score-label">Score</div>
+   <div class="score-val" id="score">0</div>
+   <div class="combo-val" id="combo"></div>
+  </div>
+  <div class="hi-score">
+   <div class="hi-label">Best</div>
+   <div class="hi-val" id="hiscore">0</div>
+  </div>
+ </div>
+</div>
+<div id="start-screen">
+ <div class="start-title">PRISM POP</div>
+ <div class="start-sub">Tap to shoot prismatic light beams. Match colors to pop bubbles. Chain combos for massive points!</div>
+ <button class="btn" id="start-btn">PLAY</button>
+</div>
+<div id="game-over">
+ <div class="go-title">GAME OVER</div>
+ <div class="go-score" id="go-score">Score: 0</div>
+ <div class="go-best" id="go-best"></div>
+ <button class="btn" id="restart-btn">PLAY AGAIN</button>
+</div>
+<script>
+'use strict';
+const C=document.getElementById('c'),X=C.getContext('2d');
+const scoreEl=document.getElementById('score'),comboEl=document.getElementById('combo'),
+      hiEl=document.getElementById('hiscore'),goScreen=document.getElementById('game-over'),
+      goScore=document.getElementById('go-score'),goBest=document.getElementById('go-best'),
+      startScreen=document.getElementById('start-screen');
+
+let W,H,dpr,playing=false,score=0,hiScore=0,combo=0,comboTimer=0,lives=3,
+    bubbles=[],beams=[],particles=[],floatTexts=[],shakeX=0,shakeY=0,shakeDecay=0,
+    spawnTimer=0,spawnRate=1.8,difficultyTimer=0,gameTime=0,prismAngle=0,lastTap={x:0,y:0};
+
+const COLORS=[
+  {name:'red',   h:'#ff3060',r:255,g:48, b:96},
+  {name:'orange',h:'#ff8800',r:255,g:136,b:0},
+  {name:'yellow',h:'#ffdd00',r:255,g:221,b:0},
+  {name:'green', h:'#00ff88',r:0,  g:255,b:136},
+  {name:'cyan',  h:'#00ddff',r:0,  g:221,b:255},
+  {name:'blue',  h:'#4466ff',r:68, g:102,b:255},
+  {name:'violet',h:'#cc44ff',r:204,g:68, b:255}
+];
+
+// Audio
+const actx=new (window.AudioContext||window.webkitAudioContext)();
+function resumeAudio(){if(actx.state==='suspended')actx.resume()}
+function playPop(freq,vol=.15){
+  const o=actx.createOscillator(),g=actx.createGain(),f=actx.createBiquadFilter();
+  o.type='sine';o.frequency.value=freq;
+  f.type='bandpass';f.frequency.value=freq*2;f.Q.value=2;
+  g.gain.setValueAtTime(vol,actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+.15);
+  o.connect(f);f.connect(g);g.connect(actx.destination);
+  o.start();o.stop(actx.currentTime+.15);
+}
+function playChain(n){
+  const base=300+n*80;
+  for(let i=0;i<Math.min(n,5);i++){
+    setTimeout(()=>playPop(base+i*100,.1+i*.03),i*40);
+  }
+}
+function playBeam(){
+  const o=actx.createOscillator(),g=actx.createGain();
+  o.type='sawtooth';o.frequency.setValueAtTime(800,actx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(200,actx.currentTime+.2);
+  g.gain.setValueAtTime(.06,actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+.25);
+  o.connect(g);g.connect(actx.destination);
+  o.start();o.stop(actx.currentTime+.25);
+}
+function playLose(){
+  const o=actx.createOscillator(),g=actx.createGain();
+  o.type='square';o.frequency.setValueAtTime(200,actx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(80,actx.currentTime+.4);
+  g.gain.setValueAtTime(.1,actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+.5);
+  o.connect(g);g.connect(actx.destination);
+  o.start();o.stop(actx.currentTime+.5);
+}
+
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  C.width=W*dpr;C.height=H*dpr;
+  X.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+function rand(a,b){return Math.random()*(b-a)+a}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function lerp(a,b,t){return a+(b-a)*t}
+
+// Bubbles
+function bubbleRadius(){return Math.min(W,H)*0.042}
+function spawnBubble(){
+  const r=bubbleRadius();
+  const col=COLORS[Math.floor(Math.random()*COLORS.length)];
+  const x=rand(r+10,W-r-10);
+  bubbles.push({
+    x,y:-r,r,color:col,
+    vx:rand(-.3,.3),vy:rand(.4,.8)+gameTime*0.003,
+    wobble:rand(0,Math.PI*2),wobbleSpeed:rand(1.5,3),
+    alpha:1,pop:false,popTimer:0,glow:0
+  });
+}
+
+// Beam (prism ray)
+function shootBeam(tx,ty){
+  resumeAudio();playBeam();
+  const originX=W/2,originY=H+10;
+  const angle=Math.atan2(ty-originY,tx-originX);
+  // Spread 7 color beams in a fan from the aim direction
+  const spread=0.5; // radians total spread
+  const count=COLORS.length;
+  for(let i=0;i<count;i++){
+    const a=angle-spread/2+spread*i/(count-1);
+    const speed=Math.min(W,H)*0.025;
+    beams.push({
+      x:originX,y:originY,
+      vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
+      color:COLORS[i],
+      life:1,trail:[],len:0
+    });
+  }
+}
+
+// Particles
+function spawnParticles(x,y,col,n=12){
+  for(let i=0;i<n;i++){
+    const a=rand(0,Math.PI*2),sp=rand(2,8);
+    particles.push({
+      x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-2,
+      r:rand(2,5),color:col.h,alpha:1,decay:rand(.02,.05)
+    });
+  }
+}
+function spawnRingParticles(x,y,col){
+  for(let i=0;i<20;i++){
+    const a=Math.PI*2*i/20,sp=rand(3,6);
+    particles.push({
+      x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      r:rand(1.5,3),color:col.h,alpha:.8,decay:rand(.025,.04)
+    });
+  }
+}
+function addFloatText(x,y,text,color='#fff'){
+  floatTexts.push({x,y,text,color,alpha:1,vy:-2,timer:60});
+}
+
+function shake(amount){shakeX=rand(-amount,amount);shakeY=rand(-amount,amount);shakeDecay=amount}
+
+// Pop logic with chain reaction
+function popBubble(b,chainDepth=0){
+  if(b.pop)return;
+  b.pop=true;b.popTimer=1;
+  const pts=(1+chainDepth)*10*(1+combo*.5);
+  score+=Math.floor(pts);
+  scoreEl.textContent=score;
+  if(chainDepth>0){
+    combo++;comboTimer=120;
+    comboEl.textContent=combo>1?`${combo}x COMBO!`:'';
+    if(combo>2)shake(3+combo);
+    playChain(chainDepth);
+    addFloatText(b.x,b.y-b.r,`+${Math.floor(pts)}`,b.color.h);
+  }else{
+    playPop(400+COLORS.indexOf(b.color)*80);
+    addFloatText(b.x,b.y-b.r,`+${Math.floor(pts)}`,b.color.h);
+  }
+  spawnParticles(b.x,b.y,b.color,8+chainDepth*4);
+  if(chainDepth<8){
+    spawnRingParticles(b.x,b.y,b.color);
+  }
+  // Chain: pop adjacent same-color bubbles
+  const chainR=b.r*3.2;
+  for(const ob of bubbles){
+    if(!ob.pop&&ob.color===b.color&&dist(b,ob)<chainR){
+      setTimeout(()=>popBubble(ob,chainDepth+1),60+chainDepth*30);
+    }
+  }
+}
+
+// Game state
+function startGame(){
+  score=0;combo=0;comboTimer=0;lives=3;gameTime=0;spawnRate=1.8;difficultyTimer=0;
+  bubbles=[];beams=[];particles=[];floatTexts=[];
+  scoreEl.textContent='0';comboEl.textContent='';
+  playing=true;
+  startScreen.style.display='none';
+  goScreen.classList.remove('show');
+}
+function endGame(){
+  playing=false;
+  if(score>hiScore){hiScore=score;localStorage.setItem('prismPop_hi',hiScore);
+    goBest.textContent='NEW BEST!';goBest.style.color='#ff0';
+  }else{goBest.textContent=`Best: ${hiScore}`;goBest.style.color='#aaa'}
+  hiEl.textContent=hiScore;
+  goScore.textContent=`Score: ${score}`;
+  goScreen.classList.add('show');
+  playLose();
+}
+
+// Input
+function handleTap(px,py){
+  if(!playing)return;
+  resumeAudio();
+  shootBeam(px,py);
+}
+function getPos(e){
+  if(e.touches)return{x:e.touches[0].clientX,y:e.touches[0].clientY};
+  return{x:e.clientX,y:e.clientY};
+}
+C.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  handleTap(e.clientX,e.clientY);
+});
+document.getElementById('start-btn').addEventListener('click',()=>{resumeAudio();startGame()});
+document.getElementById('restart-btn').addEventListener('click',()=>{resumeAudio();startGame()});
+
+// Load hi score
+hiScore=parseInt(localStorage.getItem('prismPop_hi'))||0;
+hiEl.textContent=hiScore;
+
+// Main loop
+let lastTime=0;
+function update(ts){
+  requestAnimationFrame(update);
+  const dt=Math.min((ts-lastTime)/16.67,3);
+  lastTime=ts;
+  if(!playing){drawBG();return}
+
+  gameTime+=dt;
+  difficultyTimer+=dt;
+  if(difficultyTimer>120){difficultyTimer=0;spawnRate=Math.max(.5,spawnRate-.1)}
+
+  // Spawn
+  spawnTimer+=dt;
+  if(spawnTimer>=spawnRate*60/16.67){spawnTimer=0;spawnBubble()}
+
+  // Combo timer
+  if(comboTimer>0){comboTimer-=dt;if(comboTimer<=0){combo=0;comboEl.textContent=''}}
+
+  // Update beams
+  for(let i=beams.length-1;i>=0;i--){
+    const b=beams[i];
+    b.x+=b.vx*dt;b.y+=b.vy*dt;
+    b.trail.push({x:b.x,y:b.y});
+    if(b.trail.length>18)b.trail.shift();
+    b.len+=Math.hypot(b.vx,b.vy)*dt;
+    b.life-=.012*dt;
+    if(b.life<=0||b.x<-50||b.x>W+50||b.y<-50||b.y>H+50){beams.splice(i,1);continue}
+    // Collision with bubbles
+    for(const bub of bubbles){
+      if(!bub.pop&&bub.color.name===b.color.name&&dist(b,bub)<bub.r+6){
+        popBubble(bub);
+        b.life=0;
+      }
+    }
+  }
+
+  // Update bubbles
+  for(let i=bubbles.length-1;i>=0;i--){
+    const b=bubbles[i];
+    if(b.pop){
+      b.popTimer-=.08*dt;
+      if(b.popTimer<=0){bubbles.splice(i,1)}
+      continue;
+    }
+    b.wobble+=b.wobbleSpeed*dt*.02;
+    b.x+=b.vx*dt+Math.sin(b.wobble)*.3;
+    b.y+=b.vy*dt;
+    b.glow=Math.max(0,b.glow-.02*dt);
+    // Hit bottom
+    if(b.y>H+b.r+20){
+      bubbles.splice(i,1);
+      lives--;
+      shake(6);
+      playLose();
+      if(lives<=0)endGame();
+    }
+  }
+
+  // Update particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=.15*dt;
+    p.alpha-=p.decay*dt;
+    if(p.alpha<=0)particles.splice(i,1);
+  }
+
+  // Float texts
+  for(let i=floatTexts.length-1;i>=0;i--){
+    const f=floatTexts[i];
+    f.y+=f.vy*dt;f.timer-=dt;f.alpha=Math.max(0,f.timer/60);
+    if(f.timer<=0)floatTexts.splice(i,1);
+  }
+
+  // Shake decay
+  if(shakeDecay>0){shakeDecay*=.9;if(shakeDecay<.1)shakeDecay=0;
+    shakeX=rand(-shakeDecay,shakeDecay);shakeY=rand(-shakeDecay,shakeDecay);
+  }
+
+  draw();
+}
+
+function drawBG(){
+  X.save();
+  X.setTransform(dpr,0,0,dpr,0,0);
+  X.fillStyle='#0a0a12';
+  X.fillRect(0,0,W,H);
+  // Subtle grid
+  X.strokeStyle='rgba(255,255,255,.02)';X.lineWidth=1;
+  const gs=50;
+  for(let gx=0;gx<W;gx+=gs){X.beginPath();X.moveTo(gx,0);X.lineTo(gx,H);X.stroke()}
+  for(let gy=0;gy<H;gy+=gs){X.beginPath();X.moveTo(0,gy);X.lineTo(W,gy);X.stroke()}
+  X.restore();
+}
+
+function draw(){
+  X.save();
+  X.setTransform(dpr,0,0,dpr,shakeX,shakeY);
+  // BG
+  X.fillStyle='#0a0a12';X.fillRect(-10,-10,W+20,H+20);
+  // Grid
+  X.strokeStyle='rgba(255,255,255,.015)';X.lineWidth=1;
+  const gs=50;
+  for(let gx=0;gx<W;gx+=gs){X.beginPath();X.moveTo(gx,0);X.lineTo(gx,H);X.stroke()}
+  for(let gy=0;gy<H;gy+=gs){X.beginPath();X.moveTo(0,gy);X.lineTo(W,gy);X.stroke()}
+
+  // Lives indicator (bottom)
+  const lifeR=8;
+  for(let i=0;i<3;i++){
+    X.beginPath();
+    X.arc(W/2-30+i*30,H-30,lifeR,0,Math.PI*2);
+    X.fillStyle=i<lives?'#ff3060':'rgba(255,48,96,.2)';
+    X.fill();
+    if(i<lives){
+      X.shadowColor='#ff3060';X.shadowBlur=10;X.fill();X.shadowBlur=0;
+    }
+  }
+
+  // Beams
+  for(const b of beams){
+    if(b.trail.length<2)continue;
+    X.beginPath();
+    X.moveTo(b.trail[0].x,b.trail[0].y);
+    for(let j=1;j<b.trail.length;j++){
+      X.lineTo(b.trail[j].x,b.trail[j].y);
+    }
+    X.strokeStyle=b.color.h;X.lineWidth=3*b.life;
+    X.shadowColor=b.color.h;X.shadowBlur=15*b.life;
+    X.globalAlpha=b.life;
+    X.stroke();
+    X.globalAlpha=1;X.shadowBlur=0;
+    // Beam head glow
+    X.beginPath();
+    X.arc(b.x,b.y,5*b.life,0,Math.PI*2);
+    X.fillStyle=b.color.h;
+    X.shadowColor=b.color.h;X.shadowBlur=20*b.life;
+    X.globalAlpha=b.life;
+    X.fill();
+    X.globalAlpha=1;X.shadowBlur=0;
+  }
+
+  // Bubbles
+  for(const b of bubbles){
+    if(b.pop){
+      // Pop animation
+      X.globalAlpha=b.popTimer;
+      X.beginPath();
+      X.arc(b.x,b.y,b.r*(2-b.popTimer),0,Math.PI*2);
+      X.strokeStyle=b.color.h;X.lineWidth=2;
+      X.shadowColor=b.color.h;X.shadowBlur=20;
+      X.stroke();X.shadowBlur=0;
+      X.globalAlpha=1;
+      continue;
+    }
+    // Outer glow
+    const grd=X.createRadialGradient(b.x,b.y,b.r*.2,b.x,b.y,b.r*1.5);
+    grd.addColorStop(0,b.color.h+'88');
+    grd.addColorStop(.6,b.color.h+'22');
+    grd.addColorStop(1,'transparent');
+    X.fillStyle=grd;
+    X.beginPath();X.arc(b.x,b.y,b.r*1.5,0,Math.PI*2);X.fill();
+    // Main bubble
+    X.beginPath();X.arc(b.x,b.y,b.r,0,Math.PI*2);
+    const bg=X.createRadialGradient(b.x-b.r*.3,b.y-b.r*.3,b.r*.1,b.x,b.y,b.r);
+    bg.addColorStop(0,'rgba(255,255,255,.25)');
+    bg.addColorStop(.5,b.color.h+'cc');
+    bg.addColorStop(1,b.color.h+'66');
+    X.fillStyle=bg;X.fill();
+    X.strokeStyle=b.color.h;X.lineWidth=1.5;X.stroke();
+    // Highlight
+    X.beginPath();X.arc(b.x-b.r*.25,b.y-b.r*.25,b.r*.3,0,Math.PI*2);
+    X.fillStyle='rgba(255,255,255,.2)';X.fill();
+  }
+
+  // Particles
+  for(const p of particles){
+    X.globalAlpha=p.alpha;
+    X.beginPath();X.arc(p.x,p.y,p.r,0,Math.PI*2);
+    X.fillStyle=p.color;
+    X.shadowColor=p.color;X.shadowBlur=8;
+    X.fill();
+    X.shadowBlur=0;
+  }
+  X.globalAlpha=1;
+
+  // Float texts
+  for(const f of floatTexts){
+    X.globalAlpha=f.alpha;
+    X.font='bold 16px system-ui,sans-serif';
+    X.textAlign='center';
+    X.fillStyle=f.color;
+    X.shadowColor=f.color;X.shadowBlur=10;
+    X.fillText(f.text,f.x,f.y);
+    X.shadowBlur=0;
+  }
+  X.globalAlpha=1;
+
+  // Prism emitter indicator at bottom center
+  const ex=W/2,ey=H-6;
+  const prGrd=X.createLinearGradient(ex-30,ey,ex+30,ey);
+  COLORS.forEach((c,i)=>{prGrd.addColorStop(i/(COLORS.length-1),c.h)});
+  X.beginPath();X.moveTo(ex,ey-12);X.lineTo(ex-18,ey+4);X.lineTo(ex+18,ey+4);X.closePath();
+  X.fillStyle=prGrd;X.globalAlpha=.7;X.fill();X.globalAlpha=1;
+
+  X.restore();
+}
+
+requestAnimationFrame(update);
+</script>
+</body>
+</html>

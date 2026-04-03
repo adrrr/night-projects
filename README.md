@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🔮 **[Prism Pop](https://adrrr.github.io/night-projects/prism-pop/)**
+Jeu de tir prismatique — tape n'importe où pour envoyer un éventail de 7 faisceaux arc-en-ciel depuis le bas de l'écran. Chaque rayon ne peut éclater qu'une bulle de sa couleur ! Réactions en chaîne quand des bulles adjacentes matchent, combos multiplicateurs, screen shake. 3 vies — chaque bulle qui touche le bas en coûte une. Difficulté croissante, Web Audio synthétique, particles, glow effects. High score localStorage. Mobile-first + desktop.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/prism-pop/)
+
 ### 🎯 **[Tempo Tap](https://adrrr.github.io/night-projects/tempo-tap/)**
 Jeu de précision rythmique — des cercles néon pulsent et grandissent à l'écran. Tape au moment EXACT où ils atteignent leur taille maximale ! Perfect timing = +3pts × combo multiplier (jusqu'à x8), Good = +1pt, trop tôt/tard ou miss = perte de vie. Vitesse et nombre de cercles augmentent tous les 10 points. Spawns en paires aux niveaux élevés. Particules, screen shake, flash overlays, background pulsant au BPM, Web Audio synthétique. High score localStorage. Mobile-first (pointer events, tap targets généreux) + desktop (clic). Esthétique dark/neon.
 
