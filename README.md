@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🚀 **[Lane Shift](https://adrrr.github.io/night-projects/lane-shift/)**
+Jeu d’arcade néon — pilote un vaisseau sur une autoroute lumineuse et change de voie en une tape. Le twist : la route elle-même mute en plein run (nouvelles voies, collapse, rotation), donc il faut réagir en temps réel. Obstacles, gemmes, combos, brève invincibilité, screen shake, Web Audio synthétique, high score localStorage. Mobile-first (tap/swipe) + desktop (clavier/clic).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/lane-shift/)
+
 ### 🔮 **[Prism Pop](https://adrrr.github.io/night-projects/prism-pop/)**
 Jeu de tir prismatique — tape n'importe où pour envoyer un éventail de 7 faisceaux arc-en-ciel depuis le bas de l'écran. Chaque rayon ne peut éclater qu'une bulle de sa couleur ! Réactions en chaîne quand des bulles adjacentes matchent, combos multiplicateurs, screen shake. 3 vies — chaque bulle qui touche le bas en coûte une. Difficulté croissante, Web Audio synthétique, particles, glow effects. High score localStorage. Mobile-first + desktop.
 
