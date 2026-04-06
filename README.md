@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🌗 **[Phase Flip](https://adrrr.github.io/night-projects/phase-flip/)**
+Jeu de réflexes chromatique — des anneaux néon foncent vers le centre, et tu dois inverser ta phase (cyan/magenta) au bon moment pour traverser ceux de la même couleur. Une seule action, rounds ultra courts, combo system, screen shake, flash overlays, particules et Web Audio synthétique. High score localStorage. Mobile-first (tap) + desktop (espace/clic).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/phase-flip/)
+
 ### 🚀 **[Lane Shift](https://adrrr.github.io/night-projects/lane-shift/)**
 Jeu d’arcade néon — pilote un vaisseau sur une autoroute lumineuse et change de voie en une tape. Le twist : la route elle-même mute en plein run (nouvelles voies, collapse, rotation), donc il faut réagir en temps réel. Obstacles, gemmes, combos, brève invincibilité, screen shake, Web Audio synthétique, high score localStorage. Mobile-first (tap/swipe) + desktop (clavier/clic).
 
