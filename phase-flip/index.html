@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Phase Flip</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0a0f;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// ── Setup ──────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, cx, cy, maxR;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cx = W / 2; cy = H / 2;
+  maxR = Math.max(W, H) * 0.75;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Audio ──────────────────────────────────────────────────────
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, dur, vol = 0.15, type = 'sine') {
+  if (!audioCtx) return;
+  const g = audioCtx.createGain();
+  const o = audioCtx.createOscillator();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+
+function sfxFlip() { playTone(880, 0.08, 0.12, 'square'); playTone(1320, 0.06, 0.08, 'sine'); }
+function sfxScore() { playTone(660, 0.1, 0.1); playTone(990, 0.15, 0.12); }
+function sfxDie() {
+  playTone(200, 0.4, 0.2, 'sawtooth');
+  playTone(100, 0.5, 0.15, 'square');
+}
+function sfxCombo(n) {
+  const base = 440 + Math.min(n, 20) * 30;
+  playTone(base, 0.12, 0.1); playTone(base * 1.5, 0.1, 0.08);
+}
+
+// ── Colors ─────────────────────────────────────────────────────
+const CYAN = { h: '#00f0ff', m: '#00a0b0', g: 'rgba(0,240,255,' };
+const MAGENTA = { h: '#ff00e6', m: '#b000a0', g: 'rgba(255,0,230,' };
+const phases = [CYAN, MAGENTA];
+
+// ── State ──────────────────────────────────────────────────────
+let state = 'menu'; // menu | play | dead
+let phase = 0; // 0=cyan, 1=magenta
+let score = 0;
+let combo = 0;
+let bestCombo = 0;
+let highScore = parseInt(localStorage.getItem('phaseflip_hi')) || 0;
+let rings = [];
+let particles = [];
+let shakeT = 0;
+let shakeIntensity = 0;
+let flashAlpha = 0;
+let flashColor = '';
+let pulseT = 0;
+let gameSpeed = 1;
+let spawnTimer = 0;
+let alive = true;
+let deathTimer = 0;
+let playerRadius = 22;
+let glowPulse = 0;
+let totalTime = 0;
+let lastRingPhase = -1;
+let patternQueue = [];
+
+// ── Ring ───────────────────────────────────────────────────────
+function spawnRing() {
+  // Intelligent pattern generation for fun gameplay
+  let p;
+  if (patternQueue.length > 0) {
+    p = patternQueue.shift();
+  } else {
+    // Generate patterns: singles, doubles, rapid alternations
+    const r = Math.random();
+    if (r < 0.3 && score > 5) {
+      // Rapid alternation burst (2-4 rings)
+      const count = 2 + Math.floor(Math.random() * 3);
+      const startPhase = Math.random() < 0.5 ? 0 : 1;
+      for (let i = 0; i < count; i++) patternQueue.push((startPhase + i) % 2);
+      p = patternQueue.shift();
+    } else if (r < 0.5) {
+      // Same as last (tests patience)
+      p = lastRingPhase === -1 ? (Math.random() < 0.5 ? 0 : 1) : lastRingPhase;
+    } else {
+      // Opposite of last (tests reaction)
+      p = lastRingPhase === -1 ? (Math.random() < 0.5 ? 0 : 1) : 1 - lastRingPhase;
+    }
+  }
+  lastRingPhase = p;
+
+  // Some rings are split (two halves, different phases) at higher scores
+  const isSplit = score > 15 && Math.random() < 0.2;
+
+  rings.push({
+    r: maxR,
+    phase: p,
+    split: isSplit,
+    splitAngle: Math.random() * Math.PI * 2,
+    thickness: 6 + Math.random() * 4,
+    speed: (180 + score * 3) * gameSpeed,
+    scored: false,
+    alpha: 1,
+    warn: false,
+  });
+}
+
+// ── Particles ──────────────────────────────────────────────────
+function emitParticles(x, y, color, count, speed = 3) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = (0.5 + Math.random() * speed);
+    const life = 0.5 + Math.random() * 0.5;
+    particles.push({
+      x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+      life, maxLife: life,
+      size: 2 + Math.random() * 4,
+      color,
+    });
+  }
+}
+
+function emitRingBurst(r, color) {
+  const count = 24;
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + Math.random() * 0.2;
+    const px = cx + Math.cos(a) * r;
+    const py = cy + Math.sin(a) * r;
+    emitParticles(px, py, color, 2, 2);
+  }
+}
+
+// ── Screen effects ─────────────────────────────────────────────
+function triggerShake(intensity = 8, dur = 0.15) {
+  shakeIntensity = intensity;
+  shakeT = dur;
+}
+
+function triggerFlash(color, alpha = 0.3) {
+  flashColor = color;
+  flashAlpha = alpha;
+}
+
+// ── Game logic ─────────────────────────────────────────────────
+function flipPhase() {
+  ensureAudio();
+  if (state === 'menu') { startGame(); return; }
+  if (state === 'dead') { if (deathTimer > 0.5) startGame(); return; }
+  phase = 1 - phase;
+  sfxFlip();
+  emitParticles(cx, cy, phases[phase].h, 12, 4);
+  triggerFlash(phases[phase].h, 0.15);
+  glowPulse = 1;
+}
+
+function startGame() {
+  ensureAudio();
+  state = 'play';
+  phase = 0;
+  score = 0;
+  combo = 0;
+  bestCombo = 0;
+  rings = [];
+  particles = [];
+  alive = true;
+  gameSpeed = 1;
+  spawnTimer = 0;
+  totalTime = 0;
+  lastRingPhase = -1;
+  patternQueue = [];
+  pulseT = 0;
+}
+
+function die() {
+  if (!alive) return;
+  alive = false;
+  state = 'dead';
+  deathTimer = 0;
+  sfxDie();
+  triggerShake(15, 0.3);
+  triggerFlash('#ff0040', 0.5);
+  emitParticles(cx, cy, '#ff0040', 40, 6);
+  emitParticles(cx, cy, phases[phase].h, 30, 5);
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('phaseflip_hi', highScore);
+  }
+}
+
+function update(dt) {
+  pulseT += dt;
+  glowPulse = Math.max(0, glowPulse - dt * 4);
+
+  // Shake decay
+  if (shakeT > 0) shakeT = Math.max(0, shakeT - dt);
+
+  // Flash decay
+  if (flashAlpha > 0) flashAlpha = Math.max(0, flashAlpha - dt * 3);
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.97; p.vy *= 0.97;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  if (state !== 'play') {
+    if (state === 'dead') deathTimer += dt;
+    return;
+  }
+
+  totalTime += dt;
+
+  // Speed ramp
+  gameSpeed = 1 + totalTime * 0.008;
+
+  // Spawn rings
+  const interval = Math.max(0.45, 1.2 - score * 0.012);
+  spawnTimer += dt;
+  if (spawnTimer >= interval) {
+    spawnTimer -= interval;
+    spawnRing();
+  }
+
+  // Update rings
+  const killR = playerRadius + 5;
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const ring = rings[i];
+    ring.r -= ring.speed * dt;
+
+    // Warning when close
+    if (ring.r < maxR * 0.35 && !ring.warn) {
+      ring.warn = true;
+    }
+
+    // Scoring zone
+    if (!ring.scored && ring.r <= killR + ring.thickness / 2 + 2) {
+      ring.scored = true;
+
+      let hitPhase;
+      if (ring.split) {
+        // For split rings, check which half the player conceptually occupies
+        // Simplified: always use the primary phase for collision
+        hitPhase = ring.phase;
+      } else {
+        hitPhase = ring.phase;
+      }
+
+      if (hitPhase === phase) {
+        // Match! Phase through it
+        score++;
+        combo++;
+        if (combo > bestCombo) bestCombo = combo;
+        sfxScore();
+        if (combo > 2) sfxCombo(combo);
+        emitRingBurst(ring.r, phases[hitPhase].h);
+        triggerFlash(phases[hitPhase].h, 0.08);
+      } else {
+        // Mismatch! Death
+        die();
+      }
+    }
+
+    // Remove when collapsed
+    if (ring.r < killR - 20) {
+      rings.splice(i, 1);
+    }
+  }
+}
+
+// ── Drawing ────────────────────────────────────────────────────
+function draw() {
+  ctx.save();
+
+  // Shake offset
+  let sx = 0, sy = 0;
+  if (shakeT > 0) {
+    const mag = shakeIntensity * (shakeT / 0.15);
+    sx = (Math.random() - 0.5) * mag * 2;
+    sy = (Math.random() - 0.5) * mag * 2;
+    ctx.translate(sx, sy);
+  }
+
+  // Background
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  // Subtle radial gradient bg
+  const bgGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
+  bgGrad.addColorStop(0, phases[phase].g + '0.06)');
+  bgGrad.addColorStop(0.5, 'rgba(10,10,15,0)');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines (subtle)
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.lineWidth = 1;
+  const gridSize = 60;
+  for (let x = cx % gridSize; x < W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = cy % gridSize; y < H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Concentric guide rings
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  for (let r = 100; r < maxR; r += 100) {
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // ── Rings ──
+  for (const ring of rings) {
+    const col = phases[ring.phase];
+    const proximity = 1 - Math.max(0, Math.min(1, (ring.r - playerRadius) / maxR));
+    const baseAlpha = 0.4 + proximity * 0.6;
+
+    if (ring.split) {
+      // Draw two halves
+      const col2 = phases[1 - ring.phase];
+      ctx.lineWidth = ring.thickness;
+
+      // First half
+      ctx.strokeStyle = col.g + (baseAlpha * 0.9) + ')';
+      ctx.beginPath();
+      ctx.arc(cx, cy, ring.r, ring.splitAngle, ring.splitAngle + Math.PI);
+      ctx.stroke();
+
+      // Second half
+      ctx.strokeStyle = col2.g + (baseAlpha * 0.9) + ')';
+      ctx.beginPath();
+      ctx.arc(cx, cy, ring.r, ring.splitAngle + Math.PI, ring.splitAngle + Math.PI * 2);
+      ctx.stroke();
+    } else {
+      // Glow
+      ctx.lineWidth = ring.thickness + 12;
+      ctx.strokeStyle = col.g + (baseAlpha * 0.15) + ')';
+      ctx.beginPath();
+      ctx.arc(cx, cy, ring.r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Main ring
+      ctx.lineWidth = ring.thickness;
+      ctx.strokeStyle = col.g + baseAlpha + ')';
+      ctx.beginPath();
+      ctx.arc(cx, cy, ring.r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Warning pulse for close rings
+      if (ring.warn && ring.r > playerRadius + 20) {
+        const warnPulse = (Math.sin(pulseT * 15) + 1) * 0.5;
+        ctx.lineWidth = ring.thickness + 4;
+        ctx.strokeStyle = col.g + (warnPulse * 0.3) + ')';
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring.r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ── Player ──
+  const col = phases[phase];
+  const breathe = Math.sin(pulseT * 3) * 2;
+  const r = playerRadius + breathe + glowPulse * 8;
+
+  // Outer glow
+  const glowGrad = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 3);
+  glowGrad.addColorStop(0, col.g + '0.25)');
+  glowGrad.addColorStop(1, col.g + '0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath(); ctx.arc(cx, cy, r * 3, 0, Math.PI * 2); ctx.fill();
+
+  // Core
+  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  coreGrad.addColorStop(0, '#fff');
+  coreGrad.addColorStop(0.3, col.h);
+  coreGrad.addColorStop(1, col.m);
+  ctx.fillStyle = coreGrad;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+  // Inner shine
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath(); ctx.arc(cx - r * 0.25, cy - r * 0.25, r * 0.35, 0, Math.PI * 2); ctx.fill();
+
+  // Phase indicator ring
+  ctx.strokeStyle = col.h;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, r + 6, 0, Math.PI * 2); ctx.stroke();
+
+  // ── Particles ──
+  for (const p of particles) {
+    const a = p.life / p.maxLife;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * a, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // ── Flash overlay ──
+  if (flashAlpha > 0) {
+    ctx.fillStyle = flashColor;
+    ctx.globalAlpha = flashAlpha;
+    ctx.fillRect(-20, -20, W + 40, H + 40);
+    ctx.globalAlpha = 1;
+  }
+
+  // ── HUD ──
+  const fontSize = Math.min(W, H) < 400 ? 14 : 16;
+  ctx.textAlign = 'center';
+
+  if (state === 'play' || state === 'dead') {
+    // Score
+    ctx.font = `bold ${fontSize * 3}px monospace`;
+    ctx.fillStyle = '#fff';
+    ctx.fillText(score, cx, fontSize * 4);
+
+    // Combo
+    if (combo > 1) {
+      ctx.font = `bold ${fontSize * 1.2}px monospace`;
+      ctx.fillStyle = phases[phase].h;
+      ctx.fillText(`${combo}x COMBO`, cx, fontSize * 5.5);
+    }
+
+    // High score
+    ctx.font = `${fontSize * 0.8}px monospace`;
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillText(`BEST: ${highScore}`, cx, fontSize * 1.8);
+  }
+
+  if (state === 'menu') {
+    drawMenu(fontSize);
+  }
+
+  if (state === 'dead') {
+    drawDeath(fontSize);
+  }
+
+  ctx.restore();
+}
+
+function drawMenu(fs) {
+  // Title
+  const titleSize = Math.min(fs * 3.5, 56);
+  ctx.font = `bold ${titleSize}px monospace`;
+
+  // Animated gradient text effect via color cycling
+  const t = pulseT * 0.5;
+  const titleColor = phase === 0 ? CYAN.h : MAGENTA.h;
+  ctx.fillStyle = titleColor;
+  ctx.fillText('PHASE FLIP', cx, cy - 60);
+
+  // Subtitle
+  ctx.font = `${fs * 1.1}px monospace`;
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillText('Match your color to survive', cx, cy - 20);
+
+  // Instruction
+  const bounce = Math.sin(pulseT * 3) * 4;
+  ctx.font = `bold ${fs * 1.3}px monospace`;
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillText('TAP TO START', cx, cy + 40 + bounce);
+
+  // Controls hint
+  ctx.font = `${fs * 0.8}px monospace`;
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillText('Tap / Space / Click to flip phase', cx, cy + 80);
+
+  if (highScore > 0) {
+    ctx.font = `${fs}px monospace`;
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(`HIGH SCORE: ${highScore}`, cx, cy + 120);
+  }
+}
+
+function drawDeath(fs) {
+  const a = Math.min(1, deathTimer * 2);
+  ctx.globalAlpha = a * 0.6;
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = a;
+
+  ctx.font = `bold ${fs * 3}px monospace`;
+  ctx.fillStyle = '#ff0040';
+  ctx.fillText('PHASE BREAK', cx, cy - 50);
+
+  ctx.font = `${fs * 1.5}px monospace`;
+  ctx.fillStyle = '#fff';
+  ctx.fillText(`Score: ${score}`, cx, cy + 10);
+
+  if (bestCombo > 1) {
+    ctx.font = `${fs}px monospace`;
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText(`Best combo: ${bestCombo}x`, cx, cy + 45);
+  }
+
+  if (score >= highScore && score > 0) {
+    ctx.font = `bold ${fs * 1.1}px monospace`;
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText('NEW HIGH SCORE!', cx, cy + 80);
+  }
+
+  if (deathTimer > 0.5) {
+    const bounce = Math.sin(pulseT * 3) * 3;
+    ctx.font = `bold ${fs * 1.2}px monospace`;
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText('TAP TO RETRY', cx, cy + 120 + bounce);
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+// ── Input ──────────────────────────────────────────────────────
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); flipPhase(); }, { passive: false });
+canvas.addEventListener('mousedown', (e) => { e.preventDefault(); flipPhase(); });
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' || e.code === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    flipPhase();
+  }
+});
+
+// ── Loop ───────────────────────────────────────────────────────
+let lastTime = 0;
+function loop(t) {
+  const dt = Math.min((t - lastTime) / 1000, 0.05);
+  lastTime = t;
+
+  // Auto-flip phase on menu for visual interest
+  if (state === 'menu' && Math.floor(pulseT) !== Math.floor(pulseT - dt)) {
+    phase = 1 - phase;
+  }
+
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
