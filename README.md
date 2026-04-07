@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 🎨 **[Chroma Shift](https://adrrr.github.io/night-projects/chroma-shift/)**
+Jeu de perception des couleurs — trouve la tuile unique avant la fin du temps imparti. La difficulté augmente, la grille s'agrandit, et la différence de couleur devient de plus en plus subtile. Un test de vision et de vitesse. High score localStorage. Mobile-first (tap) + desktop (clic).
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/chroma-shift/)
+
 ### 🌗 **[Phase Flip](https://adrrr.github.io/night-projects/phase-flip/)**
 Jeu de réflexes chromatique — des anneaux néon foncent vers le centre, et tu dois inverser ta phase (cyan/magenta) au bon moment pour traverser ceux de la même couleur. Une seule action, rounds ultra courts, combo system, screen shake, flash overlays, particules et Web Audio synthétique. High score localStorage. Mobile-first (tap) + desktop (espace/clic).
 
