@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Neon Hook</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0a0a12;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+canvas {
+  display: block;
+  width: 100%; height: 100%;
+}
+#ui {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+#score-display {
+  position: absolute; top: 16px; left: 16px;
+  color: #0ff; font-size: 20px; font-weight: 700;
+  text-shadow: 0 0 10px #0ff8;
+  letter-spacing: 1px;
+}
+#hi-score {
+  color: #f0f; font-size: 14px; margin-top: 4px;
+  text-shadow: 0 0 8px #f0f8;
+}
+#start-screen, #death-screen {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: auto;
+}
+#start-screen { background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a12 100%); }
+#death-screen { background: rgba(10,10,18,0.92); display: none; }
+.title {
+  font-size: clamp(36px, 8vw, 64px); font-weight: 900;
+  background: linear-gradient(135deg, #0ff, #f0f);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 12px;
+  letter-spacing: 2px;
+}
+.subtitle {
+  color: #888; font-size: clamp(14px, 3vw, 18px);
+  margin-bottom: 32px; text-align: center; padding: 0 20px;
+}
+.btn {
+  min-width: 200px; min-height: 54px; padding: 14px 36px;
+  border: 2px solid #0ff; border-radius: 12px;
+  background: transparent; color: #0ff;
+  font-size: 18px; font-weight: 700;
+  cursor: pointer; pointer-events: auto;
+  text-transform: uppercase; letter-spacing: 2px;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { background: #0ff2; transform: scale(0.96); }
+.death-score {
+  font-size: clamp(48px, 10vw, 72px); font-weight: 900;
+  color: #fff; margin: 8px 0;
+  text-shadow: 0 0 20px #0ff8;
+}
+.death-label { color: #888; font-size: 16px; text-transform: uppercase; letter-spacing: 3px; }
+.death-best { color: #f0f; font-size: 18px; margin: 8px 0 28px; text-shadow: 0 0 10px #f0f8; }
+.new-best { color: #ff0; font-size: 14px; font-weight: 700; text-shadow: 0 0 10px #ff08; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="score-display" class="hidden">
+    <div id="score-text">0</div>
+    <div id="hi-score"></div>
+  </div>
+  <div id="start-screen">
+    <div class="title">NEON HOOK</div>
+    <div class="subtitle">Tap to grapple &bull; Swing &bull; Release &bull; Don't fall</div>
+    <button class="btn" id="start-btn">PLAY</button>
+  </div>
+  <div id="death-screen">
+    <div class="death-label">DISTANCE</div>
+    <div class="death-score" id="final-score">0</div>
+    <div class="death-best" id="final-best">BEST: 0</div>
+    <div class="new-best hidden" id="new-best-label">NEW RECORD!</div>
+    <button class="btn" id="retry-btn" style="margin-top: 16px;">RETRY</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// Audio
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function resumeAudio() { if (audioCtx.state === 'suspended') audioCtx.resume(); }
+
+function playSound(freq, type, dur, vol = 0.15, slide = 0) {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(slide, 20), audioCtx.currentTime + dur);
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+function sndHook() { playSound(800, 'sine', 0.12, 0.2, 1200); }
+function sndRelease() { playSound(400, 'sine', 0.15, 0.15, 200); }
+function sndGem() { playSound(1200, 'sine', 0.15, 0.2); setTimeout(() => playSound(1600, 'sine', 0.1, 0.15), 60); }
+function sndDie() { playSound(200, 'sawtooth', 0.5, 0.2, 40); }
+function sndMilestone() { playSound(600, 'sine', 0.1, 0.2); setTimeout(() => playSound(900, 'sine', 0.1, 0.15), 80); setTimeout(() => playSound(1200, 'sine', 0.15, 0.2), 160); }
+
+// Resize
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  ctx.scale(1, 1);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Game state
+const GRAVITY = 1800;
+const HOOK_SPEED = 2400;
+const ROPE_STIFFNESS = 6;
+const DAMPING = 0.997;
+const ANCHOR_SPACING_MIN = 220;
+const ANCHOR_SPACING_MAX = 380;
+const ANCHOR_Y_MIN = 0.08;
+const ANCHOR_Y_MAX = 0.45;
+
+let state = 'menu'; // menu, playing, dead
+let player, camera, anchors, gems, particles, trail;
+let score, bestScore, shakeTimer, shakeIntensity;
+let lastMilestone;
+
+bestScore = parseInt(localStorage.getItem('neonhook_best') || '0');
+updateHiScore();
+
+function initGame() {
+  const startX = W * 0.15;
+  const startY = H * 0.5;
+  player = {
+    x: startX, y: startY,
+    vx: 200, vy: 0,
+    hooked: false,
+    anchor: null,
+    ropeLen: 0,
+    radius: Math.max(12, W * 0.012),
+    alive: true
+  };
+  camera = { x: 0, targetX: 0 };
+  anchors = [];
+  gems = [];
+  particles = [];
+  trail = [];
+  score = 0;
+  shakeTimer = 0;
+  shakeIntensity = 0;
+  lastMilestone = 0;
+
+  // Generate initial anchors
+  let ax = startX + 150;
+  for (let i = 0; i < 30; i++) {
+    ax += ANCHOR_SPACING_MIN + Math.random() * (ANCHOR_SPACING_MAX - ANCHOR_SPACING_MIN);
+    const ay = H * (ANCHOR_Y_MIN + Math.random() * (ANCHOR_Y_MAX - ANCHOR_Y_MIN));
+    anchors.push({ x: ax, y: ay, hit: false, pulse: 0 });
+    // Gem near some anchors
+    if (Math.random() < 0.6) {
+      gems.push({
+        x: ax + (Math.random() - 0.5) * 160,
+        y: ay + 80 + Math.random() * 200,
+        collected: false, pulse: Math.random() * Math.PI * 2,
+        radius: Math.max(10, W * 0.008)
+      });
+    }
+  }
+}
+
+function generateMoreAnchors() {
+  const lastA = anchors[anchors.length - 1];
+  let ax = lastA.x;
+  for (let i = 0; i < 10; i++) {
+    ax += ANCHOR_SPACING_MIN + Math.random() * (ANCHOR_SPACING_MAX - ANCHOR_SPACING_MIN);
+    const ay = H * (ANCHOR_Y_MIN + Math.random() * (ANCHOR_Y_MAX - ANCHOR_Y_MIN));
+    anchors.push({ x: ax, y: ay, hit: false, pulse: 0 });
+    if (Math.random() < 0.6) {
+      gems.push({
+        x: ax + (Math.random() - 0.5) * 160,
+        y: ay + 80 + Math.random() * 200,
+        collected: false, pulse: Math.random() * Math.PI * 2,
+        radius: Math.max(10, W * 0.008)
+      });
+    }
+  }
+}
+
+// Particles
+function spawnParticles(x, y, color, count, speed = 300) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = speed * (0.3 + Math.random() * 0.7);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      life: 1,
+      decay: 1.5 + Math.random() * 1.5,
+      color,
+      size: 2 + Math.random() * 4
+    });
+  }
+}
+
+// Input
+let inputActive = false;
+
+function findNearestAnchor() {
+  let best = null, bestDist = Infinity;
+  for (const a of anchors) {
+    if (a.hit) continue;
+    const dx = a.x - player.x;
+    const dy = a.y - player.y;
+    // Only hook to anchors above and ahead
+    if (dy > 50) continue;
+    if (dx < -100) continue;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < bestDist && dist < H * 0.8) {
+      bestDist = dist;
+      best = a;
+    }
+  }
+  return best;
+}
+
+function doHook() {
+  if (state !== 'playing' || !player.alive) return;
+  resumeAudio();
+
+  if (player.hooked) {
+    // Release
+    player.hooked = false;
+    player.anchor = null;
+    // Boost slightly upward on release if moving up
+    if (player.vy < 0) player.vy *= 1.05;
+    sndRelease();
+    return;
+  }
+
+  const anchor = findNearestAnchor();
+  if (!anchor) return;
+
+  anchor.hit = true;
+  anchor.pulse = 1;
+  player.hooked = true;
+  player.anchor = anchor;
+  player.ropeLen = Math.sqrt((player.x - anchor.x) ** 2 + (player.y - anchor.y) ** 2);
+  sndHook();
+  spawnParticles(anchor.x, anchor.y, '#0ff', 8, 200);
+}
+
+// Touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  resumeAudio();
+  if (state === 'playing') doHook();
+}, { passive: false });
+
+// Mouse
+canvas.addEventListener('mousedown', e => {
+  resumeAudio();
+  if (state === 'playing') doHook();
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  resumeAudio();
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyZ') {
+    e.preventDefault();
+    if (state === 'playing') doHook();
+    else if (state === 'dead') startGame();
+    else if (state === 'menu') startGame();
+  }
+});
+
+// Screens
+const startScreen = document.getElementById('start-screen');
+const deathScreen = document.getElementById('death-screen');
+const scoreDisplay = document.getElementById('score-display');
+const scoreText = document.getElementById('score-text');
+const hiScoreEl = document.getElementById('hi-score');
+const finalScore = document.getElementById('final-score');
+const finalBest = document.getElementById('final-best');
+const newBestLabel = document.getElementById('new-best-label');
+
+document.getElementById('start-btn').addEventListener('click', () => { resumeAudio(); startGame(); });
+document.getElementById('retry-btn').addEventListener('click', () => { resumeAudio(); startGame(); });
+
+function updateHiScore() {
+  hiScoreEl.textContent = bestScore > 0 ? `BEST: ${bestScore}m` : '';
+}
+
+function startGame() {
+  state = 'playing';
+  startScreen.classList.add('hidden');
+  deathScreen.classList.add('hidden');
+  scoreDisplay.classList.remove('hidden');
+  initGame();
+}
+
+function die() {
+  if (!player.alive) return;
+  player.alive = false;
+  state = 'dead';
+  sndDie();
+  spawnParticles(player.x, player.y, '#f44', 30, 500);
+  spawnParticles(player.x, player.y, '#ff0', 15, 350);
+  shakeTimer = 0.4;
+  shakeIntensity = 15;
+
+  const dist = Math.floor(score);
+  let isNewBest = false;
+  if (dist > bestScore) {
+    bestScore = dist;
+    localStorage.setItem('neonhook_best', bestScore);
+    isNewBest = true;
+  }
+  updateHiScore();
+
+  setTimeout(() => {
+    scoreDisplay.classList.add('hidden');
+    deathScreen.style.display = 'flex';
+    finalScore.textContent = dist + 'm';
+    finalBest.textContent = 'BEST: ' + bestScore + 'm';
+    if (isNewBest) {
+      newBestLabel.classList.remove('hidden');
+    } else {
+      newBestLabel.classList.add('hidden');
+    }
+  }, 600);
+}
+
+// Game loop
+let lastTime = 0;
+function loop(time) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((time - lastTime) / 1000, 0.033);
+  lastTime = time;
+
+  if (state === 'playing' && player.alive) {
+    update(dt);
+  }
+  updateParticles(dt);
+  render();
+}
+
+function update(dt) {
+  const p = player;
+
+  // Gravity
+  p.vy += GRAVITY * dt;
+
+  if (p.hooked && p.anchor) {
+    const a = p.anchor;
+    const dx = p.x - a.x;
+    const dy = p.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > p.ropeLen) {
+      // Constrain to rope length
+      const nx = dx / dist;
+      const ny = dy / dist;
+      p.x = a.x + nx * p.ropeLen;
+      p.y = a.y + ny * p.ropeLen;
+
+      // Remove velocity component along rope
+      const dot = p.vx * nx + p.vy * ny;
+      if (dot > 0) {
+        p.vx -= dot * nx;
+        p.vy -= dot * ny;
+      }
+    }
+
+    // Apply slight forward pull
+    p.vx += 120 * dt;
+    // Damping
+    p.vx *= Math.pow(DAMPING, dt * 60);
+    p.vy *= Math.pow(DAMPING, dt * 60);
+
+    // Shorten rope slightly over time for satisfying feel
+    p.ropeLen = Math.max(p.ropeLen - 30 * dt, 60);
+  } else {
+    // Slight air resistance
+    p.vx *= Math.pow(0.999, dt * 60);
+    // Minimum forward speed
+    p.vx = Math.max(p.vx, 100);
+  }
+
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+
+  // Score = distance in meters
+  score = Math.max(score, Math.floor((p.x - W * 0.15) / 8));
+
+  // Milestone sounds
+  const milestone = Math.floor(score / 100) * 100;
+  if (milestone > lastMilestone && milestone > 0) {
+    lastMilestone = milestone;
+    sndMilestone();
+    spawnParticles(p.x, p.y, '#ff0', 20, 400);
+    shakeTimer = 0.15;
+    shakeIntensity = 6;
+  }
+
+  scoreText.textContent = score + 'm';
+
+  // Camera
+  camera.targetX = p.x - W * 0.25;
+  camera.x += (camera.targetX - camera.x) * Math.min(1, 5 * dt);
+
+  // Death: fell below screen
+  if (p.y > H + 50) die();
+  // Death: went too far left (camera catches up)
+  if (p.x < camera.x - 100) die();
+
+  // Collect gems
+  for (const g of gems) {
+    if (g.collected) continue;
+    const dx = p.x - g.x;
+    const dy = p.y - g.y;
+    if (dx * dx + dy * dy < (p.radius + g.radius + 10) ** 2) {
+      g.collected = true;
+      score += 25;
+      sndGem();
+      spawnParticles(g.x, g.y, '#f0f', 12, 250);
+    }
+  }
+
+  // Generate more anchors as needed
+  const rightEdge = camera.x + W + 500;
+  if (anchors[anchors.length - 1].x < rightEdge) {
+    generateMoreAnchors();
+  }
+
+  // Cleanup old anchors/gems
+  anchors = anchors.filter(a => a.x > camera.x - 500);
+  gems = gems.filter(g => g.x > camera.x - 500);
+
+  // Trail
+  trail.push({ x: p.x, y: p.y, life: 1 });
+  if (trail.length > 40) trail.shift();
+  for (const t of trail) t.life -= dt * 3;
+  trail = trail.filter(t => t.life > 0);
+
+  // Shake
+  if (shakeTimer > 0) shakeTimer -= dt;
+
+  // Anchor pulses
+  for (const a of anchors) {
+    if (a.pulse > 0) a.pulse -= dt * 3;
+  }
+}
+
+function updateParticles(dt) {
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 400 * dt;
+    p.life -= p.decay * dt;
+  }
+  particles = particles.filter(p => p.life > 0);
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0a0a1a');
+  bg.addColorStop(1, '#0d0520');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars (parallax)
+  const starSeed = 42;
+  ctx.fillStyle = '#fff3';
+  for (let i = 0; i < 80; i++) {
+    const sx = ((i * 137.5 + starSeed) % 1000) / 1000;
+    const sy = ((i * 251.3 + starSeed) % 1000) / 1000;
+    const px = ((sx * W * 3 - camera.x * 0.1) % W + W) % W;
+    const py = sy * H;
+    const sz = 1 + (i % 3);
+    ctx.fillRect(px, py, sz, sz);
+  }
+
+  ctx.save();
+
+  // Shake
+  let shakeX = 0, shakeY = 0;
+  if (shakeTimer > 0) {
+    shakeX = (Math.random() - 0.5) * shakeIntensity * 2;
+    shakeY = (Math.random() - 0.5) * shakeIntensity * 2;
+  }
+  ctx.translate(-camera.x + shakeX, shakeY);
+
+  // Grid lines (subtle)
+  ctx.strokeStyle = '#ffffff08';
+  ctx.lineWidth = 1;
+  const gridSize = 120;
+  const gridStart = Math.floor(camera.x / gridSize) * gridSize;
+  for (let gx = gridStart; gx < camera.x + W + gridSize; gx += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(gx, 0);
+    ctx.lineTo(gx, H);
+    ctx.stroke();
+  }
+  for (let gy = 0; gy < H; gy += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(camera.x, gy);
+    ctx.lineTo(camera.x + W, gy);
+    ctx.stroke();
+  }
+
+  const p = player;
+  const now = performance.now() / 1000;
+
+  // Rope
+  if (p.hooked && p.anchor && p.alive) {
+    ctx.strokeStyle = '#0ff';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#0ff';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.anchor.x, p.anchor.y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // Anchors
+  for (const a of anchors) {
+    if (a.x < camera.x - 50 || a.x > camera.x + W + 50) continue;
+    const glow = a.hit ? 0.3 : 0.7 + Math.sin(now * 3 + a.x) * 0.3;
+    const rad = a.hit ? 6 : 8 + Math.sin(now * 4 + a.x) * 2;
+
+    if (a.pulse > 0) {
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, 8 + (1 - a.pulse) * 30, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,255,255,${a.pulse * 0.5})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, rad, 0, Math.PI * 2);
+    ctx.fillStyle = a.hit ? `rgba(0,255,255,${glow * 0.4})` : `rgba(0,255,255,${glow})`;
+    ctx.fill();
+
+    if (!a.hit) {
+      ctx.shadowColor = '#0ff';
+      ctx.shadowBlur = 15;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // Gems
+  for (const g of gems) {
+    if (g.collected || g.x < camera.x - 50 || g.x > camera.x + W + 50) continue;
+    g.pulse += 0.03;
+    const s = g.radius + Math.sin(g.pulse) * 3;
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.rotate(now * 2 + g.pulse);
+
+    // Diamond shape
+    ctx.beginPath();
+    ctx.moveTo(0, -s);
+    ctx.lineTo(s * 0.7, 0);
+    ctx.lineTo(0, s);
+    ctx.lineTo(-s * 0.7, 0);
+    ctx.closePath();
+    ctx.fillStyle = '#f0f';
+    ctx.shadowColor = '#f0f';
+    ctx.shadowBlur = 15;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Inner glow
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.5);
+    ctx.lineTo(s * 0.35, 0);
+    ctx.lineTo(0, s * 0.5);
+    ctx.lineTo(-s * 0.35, 0);
+    ctx.closePath();
+    ctx.fillStyle = '#fff8';
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // Trail
+  for (let i = 0; i < trail.length; i++) {
+    const t = trail[i];
+    const alpha = t.life * 0.5;
+    const r = player.radius * t.life * 0.6;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0,255,255,${alpha})`;
+    ctx.fill();
+  }
+
+  // Player
+  if (p.alive || shakeTimer > 0) {
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
+    const grad = ctx.createRadialGradient(p.x, p.y, p.radius * 0.5, p.x, p.y, p.radius * 2);
+    grad.addColorStop(0, 'rgba(0,255,255,0.3)');
+    grad.addColorStop(1, 'rgba(0,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Core
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#0ff';
+    ctx.shadowColor = '#0ff';
+    ctx.shadowBlur = 20;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // White center
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius * 0.45, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+  }
+
+  // Particles
+  for (const pt of particles) {
+    ctx.globalAlpha = Math.max(0, pt.life);
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.size * pt.life, 0, Math.PI * 2);
+    ctx.fillStyle = pt.color;
+    ctx.shadowColor = pt.color;
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+
+  // Danger zone indicator (bottom of screen)
+  if (state === 'playing' && p.alive) {
+    const dangerY = H * 0.75;
+    const playerScreenY = p.y - camera.x + camera.x; // just p.y since no vertical camera
+    if (playerScreenY > dangerY) {
+      const danger = Math.min(1, (playerScreenY - dangerY) / (H - dangerY));
+      ctx.fillStyle = `rgba(255,0,50,${danger * 0.15})`;
+      ctx.fillRect(0, H * 0.8, W, H * 0.2);
+    }
+  }
+
+  // Vignette
+  const vig = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.75);
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// Boot
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
