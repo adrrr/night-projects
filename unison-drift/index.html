@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Unison Drift</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a1e;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;touch-action:none;overscroll-behavior:none}
+#c{display:block;position:fixed;top:0;left:0;width:100%;height:100%;touch-action:none}
+
+/* COMMIT button */
+#commit{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 16px);
+  width:min(440px,calc(100% - 28px));min-height:64px;padding:18px 24px;z-index:14;
+  border:none;border-radius:18px;font-size:1.15rem;font-weight:800;letter-spacing:3px;text-transform:uppercase;
+  color:#04121a;background:linear-gradient(135deg,#22d3ee,#60a5fa);
+  box-shadow:0 0 28px rgba(34,211,238,.45),inset 0 1px 0 rgba(255,255,255,.4);cursor:pointer;
+  transition:transform .1s,box-shadow .15s,opacity .2s}
+#commit:active{transform:translateX(-50%) scale(.97)}
+#commit:disabled{opacity:.35;box-shadow:none;cursor:default}
+
+/* corner toggles */
+#toggles{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;z-index:14;display:flex;gap:6px;flex-direction:column;align-items:flex-end}
+.tg{pointer-events:auto;border:1px solid rgba(96,165,250,.3);border-radius:14px;background:rgba(20,20,40,.7);
+  color:#7c8db5;font-size:.62rem;font-weight:700;letter-spacing:1px;padding:11px 16px;min-height:40px;cursor:pointer;
+  display:inline-flex;align-items:center;backdrop-filter:blur(6px);transition:all .18s;text-transform:uppercase}
+.tg.on{color:#22d3ee;border-color:rgba(34,211,238,.55);box-shadow:0 0 12px rgba(34,211,238,.3)}
+.tg.hard.on{color:#f472b6;border-color:rgba(244,114,182,.55);box-shadow:0 0 12px rgba(244,114,182,.3)}
+
+/* overlay screens */
+.screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:32px 24px calc(env(safe-area-inset-bottom,0px) + 32px);
+  background:radial-gradient(circle at 50% 30%,#1a0a2e 0%,#0a0a1e 70%)}
+.screen.hidden{display:none}
+.title{font-size:clamp(40px,11vw,80px);font-weight:900;letter-spacing:-2px;line-height:.95;
+  background:linear-gradient(120deg,#22d3ee,#c084fc,#f472b6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  animation:pulseT 2.6s ease-in-out infinite}
+@keyframes pulseT{0%,100%{filter:brightness(1)}50%{filter:brightness(1.25)}}
+.tagline{font-size:clamp(13px,3.6vw,17px);color:#8b9bc4;margin:14px 0 6px;letter-spacing:.5px;max-width:380px;line-height:1.5}
+.hint{font-size:clamp(11px,2.8vw,13px);color:#5a6a92;max-width:340px;line-height:1.6;margin-top:18px}
+.hint b{color:#22d3ee}
+.hp{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;color:#c084fc;letter-spacing:1px;margin-top:14px;
+  border:1px solid rgba(192,132,252,.35);border-radius:20px;padding:7px 16px;background:rgba(192,132,252,.08)}
+.bigbtn{margin-top:26px;border:none;border-radius:60px;padding:18px 52px;font-size:clamp(17px,4.4vw,22px);font-weight:800;
+  letter-spacing:2px;text-transform:uppercase;color:#04121a;background:linear-gradient(135deg,#22d3ee,#60a5fa);
+  box-shadow:0 0 34px rgba(34,211,238,.4);cursor:pointer;transition:transform .12s,box-shadow .15s;min-width:220px;min-height:60px}
+.bigbtn:active{transform:scale(.95)}
+
+/* summary card */
+.card{display:flex;flex-direction:column;gap:0;align-items:center;width:min(420px,100%)}
+.scoreBig{font-size:clamp(64px,18vw,120px);font-weight:900;line-height:1;letter-spacing:-3px;
+  background:linear-gradient(135deg,#22d3ee,#c084fc);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin:6px 0}
+.scoreLbl{font-size:.72rem;letter-spacing:3px;text-transform:uppercase;color:#5a6a92}
+.stats{display:flex;gap:10px;margin:24px 0 4px;width:100%;justify-content:center;flex-wrap:wrap}
+.stat{flex:1;min-width:86px;max-width:130px;background:rgba(20,22,46,.75);border:1px solid rgba(96,165,250,.16);
+  border-radius:14px;padding:13px 8px}
+.stat .v{font-size:clamp(20px,5.5vw,28px);font-weight:800;color:#22d3ee}
+.stat .v.gold{color:#fbbf24}
+.stat .v.mag{color:#f472b6}
+.stat .l{font-size:.6rem;letter-spacing:1.5px;text-transform:uppercase;color:#5a6a92;margin-top:4px}
+.newbest{color:#fbbf24;font-weight:800;font-size:.85rem;letter-spacing:2px;text-transform:uppercase;margin-top:14px;
+  animation:glowB .8s ease-in-out infinite alternate}
+@keyframes glowB{from{text-shadow:0 0 8px rgba(251,191,36,.4)}to{text-shadow:0 0 22px rgba(251,191,36,.9)}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="toggles">
+  <button class="tg on" id="tgAssist">Assist On</button>
+  <button class="tg hard" id="tgHard">Hard Off</button>
+</div>
+
+<button id="commit" disabled>Commit</button>
+
+<!-- START -->
+<div class="screen" id="startScreen">
+  <div class="title">UNISON<br>DRIFT</div>
+  <div class="tagline">Two tones, one slider.<br>Kill the beat until silence sings.</div>
+  <div class="hp">🎧 Headphones strongly recommended</div>
+  <button class="bigbtn" id="startBtn">Tap to Start</button>
+  <div class="hint" id="firstHint">
+    Drag the right side of the screen to bend the second tone.<br>
+    Listen for the <b>wah-wah-wah</b> beating — slide until it slows and vanishes into one pure tone, then <b>COMMIT</b>.
+  </div>
+</div>
+
+<!-- SUMMARY -->
+<div class="screen hidden" id="summaryScreen">
+  <div class="card">
+    <div class="scoreLbl">Run Accuracy</div>
+    <div class="scoreBig" id="sumScore">0</div>
+    <div id="sumBest" class="newbest" style="display:none"></div>
+    <div class="stats">
+      <div class="stat"><div class="v" id="sumAvg">0</div><div class="l">Avg Cents</div></div>
+      <div class="stat"><div class="v mag" id="sumBestRound">0</div><div class="l">Best Round</div></div>
+      <div class="stat"><div class="v gold" id="sumStreak">0</div><div class="l">Best Streak</div></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v" id="sumHiRun">—</div><div class="l">Best Run</div></div>
+      <div class="stat"><div class="v mag" id="sumHiCents">—</div><div class="l">Tightest Lock</div></div>
+      <div class="stat"><div class="v gold" id="sumHiStreak">—</div><div class="l">Top Streak</div></div>
+    </div>
+    <button class="bigbtn" id="againBtn">Again</button>
+    <div class="hint">Space / Enter = commit · ↑ ↓ = fine nudge</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+
+// ---------- Canvas / DPR ----------
+const canvas = $('c');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, dpr = 1;
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------- Constants ----------
+const ROUNDS = 8;
+const CENTS_RANGE = 60;        // slider spans +/-60 cents around reference
+const RING_SECONDS = 9;        // soft timer
+const HARD_RING_SECONDS = 7;
+const HOLD_TIME = 0.4;         // lift-and-hold commit duration
+const HOLD_MOVE_THRESH = 6;    // px of movement that resets hold debounce
+const LS = {
+  hiRun: 'unisonDrift.hiRun',
+  hiCents: 'unisonDrift.hiCents',
+  hiStreak: 'unisonDrift.hiStreak',
+  seen: 'unisonDrift.seen'
+};
+
+// ---------- Persistent best stats ----------
+let hiRun = parseFloat(localStorage.getItem(LS.hiRun)) || 0;
+let hiCents = localStorage.getItem(LS.hiCents) != null ? parseFloat(localStorage.getItem(LS.hiCents)) : null;
+let hiStreak = parseInt(localStorage.getItem(LS.hiStreak)) || 0;
+
+// ---------- Game state ----------
+const State = { START:'start', PLAY:'play', RESULT:'result', PAUSE:'pause', SUMMARY:'summary' };
+let state = State.START;
+
+let assistOn = true;
+let hardMode = false;
+
+let round = 0;                 // 1..ROUNDS during play
+let referenceFreq = 440;
+let driftCents = 0;            // current offset of drift tone from reference, in cents
+let initialOffset = 0;        // signed starting offset for the round
+let centsPerPx = 1;           // slider sensitivity (cents per device-independent px)
+let roundResults = [];         // accuracy per round (drives run score)
+let roundCents = [];           // raw cents error per round (drives Avg Cents stat)
+let roundBestCents = Infinity; // smallest cents error this run
+let curStreak = 0, bestStreak = 0;
+let runStartTime = 0;
+
+let roundStartT = 0;           // audio time when ring started
+let ringDuration = RING_SECONDS;
+let toneInTime = 0;            // audio time when reference faded in
+let roundLocked = false;
+
+// result flash
+let resultShow = 0;            // 0..1 visibility of result readout
+let resultCents = 0, resultAcc = 0, resultCountUp = 0, resultLate = 0;
+let resultGood = false, resultPerfect = false;
+
+// juice
+let particles = [];
+let bgStars = [];
+let flashAlpha = 0, flashColor = '#22d3ee';
+let framePulse = 0;            // 0..1 soft full-frame bloom
+let paletteWarm = 0;           // 0..1 streak palette brightening
+let handleGlowBoost = 0;
+
+// haptic throttle
+let lastBeatHaptic = 0;
+
+// continuous beat-visualizer phase, accumulated per frame from real audio-time
+// deltas so it stays honest as the beat rate slows toward unison (never jumps
+// when beatHz changes mid-drag).
+let beatPhase = 0;
+
+// ---------- Audio ----------
+let audio = null;              // AudioContext
+let masterGain = null;         // shared gain for the two tuning oscillators
+let refOsc = null;             // persistent reference oscillator
+let driftOsc = null;           // recreated each round
+let refStarted = false;
+
+function initAudio(){
+  if (audio) return;
+  audio = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audio.createGain();
+  masterGain.gain.value = 0;   // fade in per round
+  masterGain.connect(audio.destination);
+}
+function resumeAudio(){
+  if (audio && audio.state === 'suspended') audio.resume();
+}
+
+function centsToFreq(baseFreq, cents){
+  return baseFreq * Math.pow(2, cents / 1200);
+}
+
+// Start (or retune) the persistent reference oscillator.
+function setReferenceTone(freq){
+  const t = audio.currentTime;
+  if (!refOsc){
+    refOsc = audio.createOscillator();
+    refOsc.type = 'sine';
+    refOsc.frequency.setValueAtTime(freq, t);
+    refOsc.connect(masterGain);
+    refOsc.start();
+    refStarted = true;
+  } else {
+    refOsc.frequency.cancelScheduledValues(t);
+    refOsc.frequency.setValueAtTime(refOsc.frequency.value, t);
+    refOsc.frequency.linearRampToValueAtTime(freq, t + 0.02);
+  }
+}
+
+// Always recreate the drift oscillator each round to avoid node leakage.
+// `when` (audio-clock time) lets the drift tone join slightly after the
+// reference has established alone.
+function startDriftTone(freq, when){
+  stopDriftTone();
+  const t = (when != null) ? when : audio.currentTime;
+  driftOsc = audio.createOscillator();
+  driftOsc.type = 'sine';
+  driftOsc.frequency.setValueAtTime(freq, t);
+  driftOsc.connect(masterGain);
+  driftOsc.start(t);
+}
+function stopDriftTone(){
+  if (driftOsc){
+    try { driftOsc.stop(); } catch(e){}
+    try { driftOsc.disconnect(); } catch(e){}
+    driftOsc = null;
+  }
+}
+
+// Smooth per-move retune of the drift oscillator (anti-zipper).
+function setDriftFreq(freq){
+  if (!driftOsc) return;
+  const t = audio.currentTime;
+  driftOsc.frequency.cancelScheduledValues(t);
+  driftOsc.frequency.setValueAtTime(driftOsc.frequency.value, t);
+  driftOsc.frequency.linearRampToValueAtTime(freq, t + 0.015);
+}
+
+function fadeMaster(to, dur){
+  if (!masterGain) return;
+  const t = audio.currentTime;
+  masterGain.gain.cancelScheduledValues(t);
+  masterGain.gain.setValueAtTime(masterGain.gain.value, t);
+  masterGain.gain.linearRampToValueAtTime(to, t + dur);
+}
+
+// One-shot SFX through a dedicated chain (independent of the tuning tones).
+function blip(freq, dur, vol, type, when){
+  if (!audio) return;
+  const t = (when || audio.currentTime);
+  const o = audio.createOscillator();
+  const g = audio.createGain();
+  o.type = type || 'sine';
+  o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(audio.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+function sfxPerfectChime(){
+  const t = audio.currentTime;
+  blip(523.25, 0.5, 0.16, 'sine', t);
+  blip(659.25, 0.5, 0.13, 'sine', t + 0.005);
+  blip(783.99, 0.6, 0.11, 'sine', t + 0.01);
+}
+function sfxGood(){
+  const t = audio.currentTime;
+  blip(440, 0.35, 0.13, 'sine', t);
+  blip(554.37, 0.4, 0.10, 'sine', t + 0.02);
+}
+function sfxThud(){
+  const t = audio.currentTime;
+  blip(150, 0.28, 0.16, 'sawtooth', t);
+  blip(98, 0.32, 0.11, 'square', t + 0.01);
+}
+function sfxNewBest(){
+  const t = audio.currentTime;
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => blip(f, 0.4, 0.12, 'triangle', t + i * 0.09));
+}
+
+// ---------- Background stars ----------
+function initStars(){
+  bgStars = [];
+  for (let i = 0; i < 46; i++){
+    bgStars.push({
+      x: Math.random(), y: Math.random(),
+      r: Math.random() * 1.6 + 0.4,
+      a: Math.random() * 0.4 + 0.06,
+      vy: (Math.random() * 0.2 + 0.05) * 0.0004,
+      hue: [190, 265, 320][Math.floor(Math.random() * 3)]
+    });
+  }
+}
+initStars();
+
+// ---------- Particles ----------
+function burst(x, y, color, count, speed){
+  for (let i = 0; i < count; i++){
+    const ang = (Math.PI * 2 * i) / count + Math.random() * 0.6;
+    const v = speed * (0.4 + Math.random());
+    particles.push({
+      x, y, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v,
+      r: 2 + Math.random() * 3, life: 1, decay: 1.1 + Math.random() * 0.9, color
+    });
+  }
+}
+
+// ---------- Layout helpers ----------
+// Returns the vertical slider zone rect (right two-thirds) and the visualizer band.
+function layout(){
+  const topPad = 14 + safeTop();
+  const hudH = 58;
+  const vizTop = topPad + hudH;
+  const vizH = Math.max(120, H * 0.24);
+  const vizBottom = vizTop + vizH;
+  const commitH = 64 + 16 + safeBottom();
+  const playTop = vizBottom + 18;
+  const playBottom = H - commitH - 14;
+  const sliderLeft = W * 0.34;            // right two-thirds
+  return { topPad, hudH, vizTop, vizH, vizBottom, playTop, playBottom, sliderLeft, commitH };
+}
+function safeTop(){ return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--st')) || 0; }
+function safeBottom(){ return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sb')) || 0; }
+
+// Effective half-range (cents) the track spans this round. Tightens late so the
+// same thumb travel resolves fewer cents (finer control). Floored so the largest
+// possible initial offset (~40c) always stays reachable on the track.
+const RANGE_FLOOR = 48;
+function effRange(){
+  const r = Math.min(round, ROUNDS);
+  const t = ROUNDS > 1 ? (r - 1) / (ROUNDS - 1) : 0;   // 0..1 across the run
+  return Math.max(RANGE_FLOOR, CENTS_RANGE * (1 - 0.35 * t));
+}
+
+// Map a pointer Y (px) within the play track to signed cents.
+function yToCents(y){
+  const L = layout();
+  const top = L.playTop, bot = L.playBottom;
+  const t = (y - top) / (bot - top);          // 0 at top, 1 at bottom
+  const clamped = Math.max(0, Math.min(1, t));
+  const range = effRange();
+  // top = +range (sharp), bottom = -range (flat)
+  return (0.5 - clamped) * 2 * range;
+}
+function centsToY(cents){
+  const L = layout();
+  const top = L.playTop, bot = L.playBottom;
+  const range = effRange();
+  const t = 0.5 - cents / (2 * range);
+  return top + Math.max(0, Math.min(1, t)) * (bot - top);
+}
+
+// ---------- Pointer / hold-commit ----------
+let activePointer = null;       // id of the first pointer that began this round
+let holdActive = false;
+let holdStartT = 0;
+let holdAnchorY = 0;            // px where the still-finger hold started
+let recentMoveMag = 0;         // decaying recent pointer movement (px) before lift
+let lastMoveT = 0;             // performance.now() of last pointermove
+
+function pointerInSlider(x, y){
+  const L = layout();
+  return x >= L.sliderLeft && y >= L.playTop && y <= L.playBottom;
+}
+
+function onPointerDown(e){
+  if (state !== State.PLAY) return;
+  if (activePointer !== null) return;             // only first pointer
+  const x = e.clientX, y = e.clientY;
+  // claim the pointer only inside the slider track in BOTH axes; taps in the
+  // visualizer/HUD band (full-width, above playTop) must not start a drag.
+  if (!pointerInSlider(x, y)) return;
+  activePointer = e.pointerId;
+  holdActive = false;
+  recentMoveMag = HOLD_MOVE_THRESH;               // assume "moving" until proven still
+  lastMoveT = performance.now();
+  applyPointer(y);
+}
+function onPointerMove(e){
+  if (state !== State.PLAY || e.pointerId !== activePointer) return;
+  // track recent movement magnitude (decays toward 0 when the finger holds still)
+  const now = performance.now();
+  const dy = Math.abs(e.clientY - lastHandleScreenY);
+  const dtMs = now - lastMoveT;
+  lastMoveT = now;
+  const decay = Math.exp(-dtMs / 90);             // ~90ms time constant
+  recentMoveMag = recentMoveMag * decay + dy;
+  applyPointer(e.clientY);
+}
+function onPointerUp(e){
+  if (e.pointerId !== activePointer) return;
+  activePointer = null;
+  // account for the still time between the last move and this lift
+  const sinceMove = performance.now() - lastMoveT;
+  recentMoveMag *= Math.exp(-sinceMove / 90);
+  // begin lift-and-hold-to-commit window — only on an INTENTIONAL finger lift,
+  // and only if the finger was essentially still right before lifting (so a
+  // casual lift to listen/reposition does not auto-commit).
+  if (state === State.PLAY && recentMoveMag < HOLD_MOVE_THRESH){
+    holdActive = true;
+    holdStartT = audio ? audio.currentTime : performance.now() / 1000;
+    holdAnchorY = lastHandleScreenY;
+  }
+}
+// System interruptions (notification banner, control-center, edge gesture, OS
+// pointer steal) fire pointercancel. Cancel the drag WITHOUT arming a commit.
+function onPointerCancel(e){
+  if (e.pointerId !== activePointer) return;
+  activePointer = null;
+  holdActive = false;
+}
+let lastHandleScreenY = 0;
+function applyPointer(y){
+  driftCents = yToCents(y);
+  lastHandleScreenY = y;
+  updateDriftFromCents();
+  // any active drag cancels a pending hold-commit
+  holdActive = false;
+}
+function updateDriftFromCents(){
+  if (!audio) return;
+  const f = centsToFreq(referenceFreq, driftCents);
+  setDriftFreq(f);
+  // haptic synced to current beat rate, decorative; fades to nothing at unison
+  hapticTick();
+}
+
+canvas.addEventListener('pointerdown', onPointerDown);
+window.addEventListener('pointermove', onPointerMove);
+window.addEventListener('pointerup', onPointerUp);
+window.addEventListener('pointercancel', onPointerCancel);
+
+// ---------- Haptics (decorative only) ----------
+function hapticTick(){
+  if (!navigator.vibrate) return;
+  const beat = Math.abs(driftCentsToBeatHz());
+  if (beat < 0.4) return;                          // near unison: silence
+  const nowMs = performance.now();
+  const interval = Math.max(60, 1000 / beat);      // one buzz per beat cycle
+  if (nowMs - lastBeatHaptic >= interval){
+    lastBeatHaptic = nowMs;
+    navigator.vibrate(Math.min(40, 8 + beat * 1.2));
+  }
+}
+function driftCentsToBeatHz(){
+  const fDrift = centsToFreq(referenceFreq, driftCents);
+  return fDrift - referenceFreq;                   // signed; |.| is the beat rate
+}
+
+// ---------- Round flow ----------
+function offsetForRound(r){
+  // Rounds 1-2: ~35-40 cents. Rounds 7-8: ~12-18 cents. Linear-ish between.
+  const lo = 35, hi = 40;                          // round 1 band
+  const lateLo = 12, lateHi = 18;                  // round 8 band
+  const t = (r - 1) / (ROUNDS - 1);                // 0..1
+  const bandLo = lo + (lateLo - lo) * t;
+  const bandHi = hi + (lateHi - hi) * t;
+  const mag = bandLo + Math.random() * (bandHi - bandLo);
+  return (Math.random() < 0.5 ? -1 : 1) * mag;
+}
+function sensitivityForRound(r){
+  // cents per device-independent px for the CURRENT round's drag mapping.
+  // The drag mapping (effRange) is what actually tightens late; this just
+  // reports the resulting sensitivity for any consumer that needs it.
+  const L = layout();
+  const trackPx = L.playBottom - L.playTop;
+  return (2 * effRange()) / trackPx;
+}
+
+function startRun(){
+  initAudio(); resumeAudio();
+  round = 0;
+  roundResults = [];
+  roundCents = [];
+  roundBestCents = Infinity;
+  curStreak = 0; bestStreak = 0;
+  paletteWarm = 0;
+  runStartTime = audio.currentTime;
+  $('startScreen').classList.add('hidden');
+  $('summaryScreen').classList.add('hidden');
+  localStorage.setItem(LS.seen, '1');
+  nextRound();
+}
+
+function nextRound(){
+  round++;
+  if (round > ROUNDS){ endRun(); return; }
+  roundLocked = false;
+  resultShow = 0;
+  beatPhase = 0;
+  ringDuration = hardMode ? HARD_RING_SECONDS : RING_SECONDS;
+
+  // (1) reference frequency randomized A3-A5
+  referenceFreq = 220 + Math.random() * (880 - 220);
+
+  // (2) initial signed offset
+  initialOffset = offsetForRound(round);
+  driftCents = initialOffset;
+  centsPerPx = sensitivityForRound(round);
+
+  // place the visual handle at the matching slider position
+  lastHandleScreenY = centsToY(driftCents);
+
+  state = State.PLAY;
+  $('commit').disabled = false;
+
+  // Audio: reference fades in over ~0.4s
+  setReferenceTone(referenceFreq);
+  fadeMaster(0.0001, 0.001);
+  fadeMaster(0.22, 0.4);
+  toneInTime = audio.currentTime;
+
+  // ~0.3s later the drift tone joins, so the reference establishes alone first
+  const driftEntry = audio.currentTime + 0.3;
+  startDriftTone(centsToFreq(referenceFreq, driftCents), driftEntry);
+  // ring begins draining once both tones are present (beating audible)
+  roundStartT = driftEntry;
+
+  blip(referenceFreq, 0.18, 0.05, 'sine');   // soft "round in" cue
+}
+
+function commitGuess(late){
+  if (state !== State.PLAY || roundLocked) return;
+  roundLocked = true;
+  activePointer = null;
+  holdActive = false;
+  $('commit').disabled = true;
+
+  const committedFreq = centsToFreq(referenceFreq, driftCents);
+  const centsError = Math.abs(1200 * Math.log2(committedFreq / referenceFreq));
+
+  // soft-timer penalty: -2 accuracy per extra second past the ring, capped at -20
+  const elapsed = audio.currentTime - roundStartT;
+  const over = Math.max(0, elapsed - ringDuration);
+  const penalty = Math.min(20, over * 2);
+
+  let acc = Math.max(0, 100 - centsError * 2) - penalty;
+  acc = Math.max(0, acc);
+
+  roundResults.push(acc);
+  roundCents.push(centsError);   // raw tuning error, NOT corrupted by the late penalty
+  if (centsError < roundBestCents) roundBestCents = centsError;
+
+  if (centsError < 10){ curStreak++; if (curStreak > bestStreak) bestStreak = curStreak; }
+  else curStreak = 0;
+
+  // brighten palette on streak milestones
+  paletteWarm = Math.min(1, curStreak / 5);
+
+  // result presentation
+  resultCents = centsError;
+  resultAcc = acc;
+  resultLate = over;
+  resultCountUp = 0;
+  resultGood = centsError < 10;
+  resultPerfect = centsError < 3;
+  resultShow = 1;
+
+  // juice + audio
+  const cx = layout().sliderLeft + (W - layout().sliderLeft) / 2;
+  const cy = centsToY(driftCents);
+  if (resultPerfect){
+    flashColor = '#22d3ee'; flashAlpha = 0.32; framePulse = 1;
+    burst(cx, cy, '#22d3ee', 30, 6);
+    burst(cx, cy, '#a5f3fc', 18, 3);
+    sfxPerfectChime();
+    handleGlowBoost = 1;
+  } else if (resultGood){
+    flashColor = '#60a5fa'; flashAlpha = 0.18;
+    burst(cx, cy, '#60a5fa', 16, 4);
+    sfxGood();
+  } else {
+    flashColor = '#7c8db5'; flashAlpha = 0.1;
+    burst(cx, cy, '#f472b6', 8, 2.4);
+    sfxThud();
+  }
+
+  // fade tones out then advance after the 0.8s pause
+  state = State.RESULT;
+  fadeMaster(0.0001, 0.45);
+  setTimeout(() => {
+    stopDriftTone();
+    if (state === State.RESULT){ nextRound(); }
+  }, 800);
+}
+
+function endRun(){
+  stopDriftTone();
+  fadeMaster(0.0001, 0.5);
+  state = State.SUMMARY;
+  $('commit').disabled = true;
+
+  const avgAcc = roundResults.reduce((a, b) => a + b, 0) / roundResults.length;
+  // True average tuning error from the raw per-round cents (timer penalty excluded).
+  const avgCents = roundCents.reduce((a, c) => a + c, 0) / roundCents.length;
+
+  // new bests
+  let newBest = false;
+  if (avgAcc > hiRun){ hiRun = avgAcc; localStorage.setItem(LS.hiRun, hiRun.toFixed(2)); newBest = true; }
+  if (hiCents == null || roundBestCents < hiCents){ hiCents = roundBestCents; localStorage.setItem(LS.hiCents, hiCents.toFixed(2)); }
+  if (bestStreak > hiStreak){ hiStreak = bestStreak; localStorage.setItem(LS.hiStreak, hiStreak); }
+
+  if (newBest) sfxNewBest();
+
+  // fill summary
+  $('sumScore').textContent = Math.round(avgAcc);
+  $('sumAvg').textContent = avgCents.toFixed(1) + '¢';
+  $('sumBestRound').textContent = (roundBestCents === Infinity ? '—' : roundBestCents.toFixed(1) + '¢');
+  $('sumStreak').textContent = bestStreak;
+  $('sumHiRun').textContent = hiRun > 0 ? Math.round(hiRun) : '—';
+  $('sumHiCents').textContent = hiCents != null ? hiCents.toFixed(1) + '¢' : '—';
+  $('sumHiStreak').textContent = hiStreak > 0 ? hiStreak : '—';
+  const bestEl = $('sumBest');
+  if (newBest){ bestEl.style.display = 'block'; bestEl.textContent = '★ New Best Run ★'; }
+  else bestEl.style.display = 'none';
+
+  $('summaryScreen').classList.remove('hidden');
+}
+
+// ---------- Hold-to-commit watcher (called in loop) ----------
+function checkHoldCommit(){
+  if (!holdActive || state !== State.PLAY) return;
+  // The movement-threshold debounce is enforced at arm time (onPointerUp only
+  // arms when recentMoveMag < HOLD_MOVE_THRESH); a re-touch cancels via
+  // applyPointer. Here we just wait out the hold duration.
+  const now = audio ? audio.currentTime : performance.now() / 1000;
+  if (now - holdStartT >= HOLD_TIME){
+    holdActive = false;
+    commitGuess();
+  }
+}
+
+// ---------- UI bindings ----------
+$('startBtn').addEventListener('click', () => { initAudio(); resumeAudio(); startRun(); });
+$('againBtn').addEventListener('click', () => { resumeAudio(); startRun(); });
+$('commit').addEventListener('click', (e) => { e.preventDefault(); resumeAudio(); commitGuess(); });
+
+$('tgAssist').addEventListener('click', () => {
+  setAssistUI(!assistOn);
+});
+let assistBeforeHard = true;   // assist state to restore when Hard Mode turns off
+function setAssistUI(on){
+  assistOn = on;
+  $('tgAssist').classList.toggle('on', on);
+  $('tgAssist').textContent = on ? 'Assist On' : 'Assist Off';
+}
+$('tgHard').addEventListener('click', () => {
+  hardMode = !hardMode;
+  $('tgHard').classList.toggle('on', hardMode);
+  $('tgHard').textContent = hardMode ? 'Hard On' : 'Hard Off';
+  if (hardMode){
+    assistBeforeHard = assistOn;   // remember so we can restore it later
+    setAssistUI(false);            // Hard Mode hides the assist meter
+  } else {
+    setAssistUI(assistBeforeHard); // restore the pre-Hard assist state
+  }
+});
+
+// keyboard
+window.addEventListener('keydown', (e) => {
+  if (e.repeat && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { fineNudge(e.key === 'ArrowUp' ? 1 : -1); e.preventDefault(); return; }
+  switch(e.key){
+    case ' ': case 'Enter':
+      e.preventDefault();
+      if (state === State.START){ initAudio(); resumeAudio(); startRun(); }
+      else if (state === State.SUMMARY){ resumeAudio(); startRun(); }
+      else if (state === State.PLAY){ commitGuess(); }
+      break;
+    case 'ArrowUp': e.preventDefault(); fineNudge(1); break;
+    case 'ArrowDown': e.preventDefault(); fineNudge(-1); break;
+  }
+});
+function fineNudge(dir){
+  if (state !== State.PLAY) return;
+  // a true one-cent fine nudge per press, clamped to this round's drag range
+  const range = effRange();
+  driftCents = Math.max(-range, Math.min(range, driftCents + dir * 1));
+  lastHandleScreenY = centsToY(driftCents);
+  updateDriftFromCents();
+  holdActive = false;
+}
+
+// ---------- Visibility (backgrounding) ----------
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden){
+    if (audio && audio.state === 'running') audio.suspend();
+    // freeze the ring by recording how much time was consumed
+    if (state === State.PLAY){ pausedRingElapsed = (audio.currentTime - roundStartT); state = State.PAUSE; }
+  } else {
+    if (audio && audio.state === 'suspended' && state !== State.START) audio.resume();
+    if (state === State.PAUSE){
+      // resume the ring from where it was
+      roundStartT = audio.currentTime - pausedRingElapsed;
+      state = State.PLAY;
+    }
+  }
+});
+let pausedRingElapsed = 0;
+
+// safe-area CSS vars for layout math
+(function setSafeVars(){
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;top:0;left:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);visibility:hidden';
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  document.documentElement.style.setProperty('--st', (parseFloat(cs.paddingTop) || 0) + 'px');
+  document.documentElement.style.setProperty('--sb', (parseFloat(cs.paddingBottom) || 0) + 'px');
+  document.body.removeChild(probe);
+})();
+
+// ---------- Color helpers ----------
+function lerp(a, b, t){ return a + (b - a) * t; }
+// closeness 0..1 (1 = at unison)
+function closeness(){
+  return Math.max(0, 1 - Math.abs(driftCents) / CENTS_RANGE);
+}
+
+// ---------- Render ----------
+let lastT = performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt = Math.min((now - lastT) / 1000, 0.05);
+  lastT = now;
+
+  checkHoldCommit();
+
+  // advance the continuous beat phase from real audio-time deltas while playing.
+  // Using accumulated phase (rather than absolute_time * varying_freq) keeps the
+  // pulse continuous as the beat rate slows — no strobe/jitter mid-drag.
+  if (state === State.PLAY){
+    const bh = Math.abs(driftCentsToBeatHz());
+    beatPhase += 2 * Math.PI * bh * dt;
+  }
+
+  // decay juice
+  if (flashAlpha > 0.004) flashAlpha *= 0.9; else flashAlpha = 0;
+  if (framePulse > 0.004) framePulse *= 0.93; else framePulse = 0;
+  if (handleGlowBoost > 0.004) handleGlowBoost *= 0.92; else handleGlowBoost = 0;
+  if (resultShow > 0 && state === State.RESULT){ /* hold visible during result */ }
+  if (resultCountUp < 1) resultCountUp = Math.min(1, resultCountUp + dt * 2.2);
+
+  ctx.clearRect(0, 0, W, H);
+  drawBackground(dt);
+
+  if (state === State.PLAY || state === State.RESULT || state === State.PAUSE){
+    drawHUD();
+    drawVisualizer(dt);
+    drawSlider();
+    drawCloseGlow();
+    if (resultShow > 0) drawResult();
+  }
+
+  drawParticles(dt);
+
+  // full-frame bloom
+  if (framePulse > 0.01){
+    ctx.save();
+    ctx.globalAlpha = framePulse * 0.5;
+    const g = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.7);
+    g.addColorStop(0, 'rgba(34,211,238,0.0)');
+    g.addColorStop(0.7, 'rgba(34,211,238,0.0)');
+    g.addColorStop(1, 'rgba(34,211,238,0.5)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+  // flash overlay
+  if (flashAlpha > 0.01){
+    ctx.save(); ctx.globalAlpha = flashAlpha; ctx.fillStyle = flashColor; ctx.fillRect(0, 0, W, H); ctx.restore();
+  }
+}
+
+function drawBackground(dt){
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0a0a1e');
+  // bottom warms subtly with streak palette
+  const bw = Math.round(lerp(0x0a, 0x2e, 0.4 + 0.6 * paletteWarm));
+  g.addColorStop(1, `rgb(${Math.round(lerp(26,42,paletteWarm))},10,${bw})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // stars
+  for (const s of bgStars){
+    s.y -= s.vy; if (s.y < 0) s.y = 1;
+    const x = s.x * W, y = s.y * H;
+    ctx.globalAlpha = s.a * (0.6 + 0.4 * paletteWarm);
+    ctx.fillStyle = `hsl(${s.hue},80%,70%)`;
+    ctx.beginPath(); ctx.arc(x, y, s.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHUD(){
+  const L = layout();
+  const y = L.topPad + 4;
+  ctx.save();
+  ctx.textBaseline = 'top';
+  // round indicator (left)
+  ctx.font = '800 13px system-ui';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#22d3ee';
+  ctx.fillText(`ROUND ${Math.min(round, ROUNDS)}/${ROUNDS}`, 16, y);
+
+  // avg cents + streak (center-ish) — true average of raw per-round cents error
+  const avgCents = roundCents.length ?
+    (roundCents.reduce((a, c) => a + c, 0) / roundCents.length) : 0;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8b9bc4';
+  ctx.font = '700 12px system-ui';
+  ctx.fillText(`AVG ${roundCents.length ? avgCents.toFixed(1) + '¢' : '—'}`, W / 2 - 36, y);
+  ctx.fillStyle = curStreak > 0 ? '#fbbf24' : '#5a6a92';
+  ctx.fillText(`🔥 ${curStreak}`, W / 2 + 44, y);
+
+  // best run (right) — leave room for the ring drawn at far right
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#5a6a92';
+  ctx.font = '700 11px system-ui';
+  ctx.fillText(hiRun > 0 ? `BEST ${Math.round(hiRun)}` : '', W - 54, y + 1);
+
+  // soft-timer ring (small, near HUD right)
+  drawRing(W - 30, y + 9);
+  ctx.restore();
+}
+
+function drawRing(cx, cy){
+  const r = 12;
+  let frac = 1;
+  if (state === State.PLAY){
+    const elapsed = audio.currentTime - roundStartT;
+    frac = Math.max(0, 1 - elapsed / ringDuration);
+  } else if (state === State.PAUSE){
+    frac = Math.max(0, 1 - pausedRingElapsed / ringDuration);
+  }
+  ctx.save();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(96,165,250,0.18)';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  const col = frac > 0.35 ? '#22d3ee' : (frac > 0.12 ? '#fbbf24' : '#f472b6');
+  ctx.strokeStyle = col;
+  ctx.shadowColor = col; ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawVisualizer(dt){
+  const L = layout();
+  const cy = L.vizTop + L.vizH / 2;
+  const x0 = 18, x1 = W - 18, span = x1 - x0;
+
+  // The amplitude pulses at the ACTUAL beat rate |f_drift - f_ref|, driven by the
+  // continuously accumulated beatPhase (honest as the rate slows, no phase jumps).
+  const beatHz = Math.abs(driftCentsToBeatHz());
+  const at = (audio && state === State.PLAY) ? audio.currentTime : performance.now() / 1000;
+  // "beats have stopped" perceptual threshold; frequency-independent so the
+  // unison confirmation behaves the same across the A3-A5 reference range.
+  const unison = beatHz < 0.5;
+  // beat envelope: cos at beat rate, raised; flatlines to steady calm at unison
+  const beatEnv = unison ? 1 : (0.5 + 0.5 * Math.cos(beatPhase));
+  const close = closeness();
+
+  // amplitude of the wave: strong wah when far, calm steady glow at unison
+  const baseAmp = L.vizH * 0.34;
+  const amp = baseAmp * (0.25 + 0.75 * beatEnv) + baseAmp * 0.12;
+
+  // color warms toward unison (cyan -> warm violet/gold) and with streak palette
+  const hue = lerp(190, 280, close) - paletteWarm * 20;
+  const stroke = `hsl(${hue},90%,${55 + close * 12}%)`;
+
+  ctx.save();
+  // panel
+  ctx.fillStyle = 'rgba(16,16,34,0.55)';
+  roundRect(x0 - 4, L.vizTop, span + 8, L.vizH, 14); ctx.fill();
+
+  // baseline
+  ctx.strokeStyle = 'rgba(96,165,250,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x0, cy); ctx.lineTo(x1, cy); ctx.stroke();
+
+  // glowing sine waveform. Carrier freq fixed for shape; amplitude follows beat env.
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = stroke;
+  ctx.shadowColor = stroke;
+  ctx.shadowBlur = 14 + close * 14 + framePulse * 16;
+  const carrierCycles = 6;
+  const phase = at * 2.2;       // gentle scroll
+  ctx.beginPath();
+  for (let i = 0; i <= span; i += 2){
+    const fx = i / span;
+    // when near unison, snap to a flat calm line with a tiny shimmer
+    let yWave;
+    if (unison){
+      yWave = Math.sin(fx * Math.PI * carrierCycles + phase) * (baseAmp * 0.12);
+    } else {
+      yWave = Math.sin(fx * Math.PI * 2 * carrierCycles + phase) * amp;
+    }
+    const x = x0 + i;
+    if (i === 0) ctx.moveTo(x, cy + yWave); else ctx.lineTo(x, cy + yWave);
+  }
+  ctx.stroke();
+
+  // amplitude-envelope ghost (shows the wah-wah swell)
+  if (!unison){
+    ctx.globalAlpha = 0.18;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x0, cy - amp); ctx.lineTo(x1, cy - amp);
+    ctx.moveTo(x0, cy + amp); ctx.lineTo(x1, cy + amp);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  // label
+  ctx.save();
+  ctx.fillStyle = unison ? '#22d3ee' : 'rgba(139,155,196,0.55)';
+  ctx.font = '700 10px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText(unison ? 'PURE TONE' : 'LISTEN FOR THE BEAT', W / 2, L.vizTop + 12);
+  ctx.restore();
+}
+
+function drawSlider(){
+  const L = layout();
+  const trackX = L.sliderLeft + (W - L.sliderLeft) * 0.5;   // center of right zone
+  const top = L.playTop, bot = L.playBottom;
+  const close = closeness();
+
+  ctx.save();
+  // touch-zone hint shading (right two-thirds)
+  const zg = ctx.createLinearGradient(L.sliderLeft, 0, W, 0);
+  zg.addColorStop(0, 'rgba(96,165,250,0.02)');
+  zg.addColorStop(1, `rgba(${Math.round(lerp(96,244,close))},${Math.round(lerp(165,114,close))},${Math.round(lerp(250,182,close))},${0.04 + 0.06 * close})`);
+  ctx.fillStyle = zg;
+  ctx.fillRect(L.sliderLeft, top - 8, W - L.sliderLeft, (bot - top) + 16);
+
+  // rail
+  const railW = 8;
+  ctx.fillStyle = 'rgba(20,22,46,0.9)';
+  roundRect(trackX - railW / 2, top, railW, bot - top, railW / 2); ctx.fill();
+
+  // warm fill near unison: a glow swelling out from the center of the rail
+  const railHue = lerp(200, 300, close);
+  ctx.fillStyle = `hsla(${railHue},90%,60%,${0.12 + close * 0.4})`;
+  roundRect(trackX - railW / 2, top, railW, bot - top, railW / 2); ctx.fill();
+
+  // center (unison) tick — subtle, NOT a target indicator (it's just the rail middle)
+  // intentionally omitted to avoid revealing the target; tuning is purely by ear.
+
+  // handle
+  const hy = Math.max(top, Math.min(bot, centsToY(driftCents)));
+  const glow = 6 + close * 26 + handleGlowBoost * 30;
+  const hr = 18 + close * 4;
+  const hue = lerp(195, 290, close);
+  ctx.shadowColor = `hsl(${hue},95%,60%)`;
+  ctx.shadowBlur = glow;
+  const hg = ctx.createRadialGradient(trackX, hy, 0, trackX, hy, hr);
+  hg.addColorStop(0, `hsl(${hue},100%,${70 + close * 20}%)`);
+  hg.addColorStop(1, `hsl(${hue},90%,52%)`);
+  ctx.fillStyle = hg;
+  ctx.beginPath(); ctx.arc(trackX, hy, hr, 0, Math.PI * 2); ctx.fill();
+  // inner ring
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = `hsla(${hue},100%,90%,0.7)`;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(trackX, hy, hr - 5, 0, Math.PI * 2); ctx.stroke();
+
+  // up/down hint chevrons
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = '#8b9bc4';
+  ctx.font = '700 14px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('▲ sharper', trackX, top - 4);
+  ctx.fillText('▼ flatter', trackX, bot + 14);
+  ctx.restore();
+}
+
+// Left-third live closeness glow indicator (no numeric target).
+function drawCloseGlow(){
+  const L = layout();
+  const cx = L.sliderLeft * 0.5;
+  const cy = (L.playTop + L.playBottom) / 2;
+  const close = closeness();
+
+  ctx.save();
+  // breathing orb that calms and brightens as you near unison
+  const beatHz = Math.abs(driftCentsToBeatHz());
+  const pulse = beatHz < 0.5 ? 1 : (0.55 + 0.45 * (0.5 + 0.5 * Math.cos(beatPhase)));
+  const r = 26 + close * 26;
+  const hue = lerp(195, 300, close);
+  ctx.globalAlpha = 0.85;
+  ctx.shadowColor = `hsl(${hue},95%,60%)`;
+  ctx.shadowBlur = 18 + close * 30;
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * pulse);
+  g.addColorStop(0, `hsla(${hue},100%,75%,${0.5 + close * 0.45})`);
+  g.addColorStop(1, `hsla(${hue},90%,55%,0)`);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(cx, cy, r * pulse, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+
+  // beat-amplitude ASSIST meter (training wheels) — hidden in Hard Mode / when off.
+  // Geometry derived from layout() (NOT the breathing orb radius), bottom clamped
+  // above the commit zone so it can never collide with the COMMIT button, and the
+  // label is drawn ABOVE the meter where the button cannot occlude it.
+  if (assistOn && !hardMode){
+    const close2 = closeness();
+    const mw = 18;
+    const mx = cx;
+    // top: below the orb's max extent; bottom: safely above playBottom
+    const meterBottom = L.playBottom - 8;
+    const meterTop = Math.min(cy + 64, meterBottom - 90);   // ensure a usable height
+    const meterH = meterBottom - meterTop;
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    // label ABOVE the meter
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = '#7c8db5';
+    ctx.font = '700 9px system-ui';
+    ctx.fillText('ASSIST', mx, meterTop - 8);
+
+    // track
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(20,22,46,0.9)';
+    roundRect(mx - mw / 2, meterTop, mw, meterH, mw / 2); ctx.fill();
+
+    // tick marks (coarse closeness bands) so it reads at a glance
+    ctx.strokeStyle = 'rgba(124,141,181,0.35)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++){
+      const ty = meterBottom - (meterH * i / 4);
+      ctx.beginPath();
+      ctx.moveTo(mx - mw / 2 + 2, ty);
+      ctx.lineTo(mx + mw / 2 - 2, ty);
+      ctx.stroke();
+    }
+
+    // fill = closeness (full at unison), bottom-anchored
+    const fillH = meterH * close2;
+    const mhue = lerp(200, 300, close2);
+    ctx.fillStyle = `hsl(${mhue},90%,60%)`;
+    ctx.shadowColor = `hsl(${mhue},90%,60%)`; ctx.shadowBlur = 12;
+    roundRect(mx - mw / 2, meterBottom - fillH, mw, fillH, mw / 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+}
+
+function drawResult(){
+  const L = layout();
+  const cy = L.vizTop + L.vizH / 2;
+  ctx.save();
+  ctx.textAlign = 'center';
+  const shown = (resultCents * resultCountUp);
+  const col = resultPerfect ? '#22d3ee' : (resultGood ? '#60a5fa' : '#f472b6');
+  ctx.fillStyle = col;
+  ctx.shadowColor = col; ctx.shadowBlur = 16;
+  ctx.font = '900 ' + (34 + (1 - Math.abs(0.5 - resultCountUp) * 2) * 6) + 'px system-ui';
+  ctx.fillText(shown.toFixed(1) + '¢', W / 2, cy - 6);
+  ctx.shadowBlur = 0;
+  ctx.font = '700 13px system-ui';
+  ctx.fillStyle = '#8b9bc4';
+  let label = resultPerfect ? 'PERFECT LOCK' : (resultGood ? 'NICE' : 'SLOPPY');
+  ctx.fillText(`${label} · ${Math.round(resultAcc * resultCountUp)} acc`, W / 2, cy + 24);
+  if (resultLate > 0.3){
+    ctx.fillStyle = '#f472b6';
+    ctx.font = '700 10px system-ui';
+    ctx.fillText('(late penalty)', W / 2, cy + 40);
+  }
+  ctx.restore();
+}
+
+function drawParticles(dt){
+  for (let i = particles.length - 1; i >= 0; i--){
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.vx *= 0.985;
+    p.life -= p.decay * dt;
+    if (p.life <= 0){ particles.splice(i, 1); continue; }
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life) * 0.85;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * Math.max(0.2, p.life), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function roundRect(x, y, w, h, r){
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+requestAnimationFrame(loop);
+
+// First-launch behaviour: keep the explanatory hint on the start screen always
+// (it's the one-time "slide until the wah-wah stops" guidance).
+if (localStorage.getItem(LS.seen)){
+  $('firstHint').innerHTML = 'Slide the right side until the <b>wah-wah</b> beating slows and vanishes into one pure tone, then <b>COMMIT</b>.';
+}
+</script>
+</body>
+</html>
