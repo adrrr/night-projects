@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>True Level</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0a1e;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    position: fixed;
+    top: 0; left: 0;
+    touch-action: none;
+  }
+  /* ── HUD ── */
+  #hud {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 10;
+    pointer-events: none;
+    padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .hud-col { display: flex; flex-direction: column; gap: 6px; }
+  .hud-col.right { align-items: flex-end; }
+  .stat-label {
+    font-size: clamp(9px, 2vw, 11px);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+    font-weight: 600;
+  }
+  .stat-val {
+    font-size: clamp(18px, 4.5vw, 26px);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.5px;
+  }
+  #avgVal { color: #60a5fa; text-shadow: 0 0 16px rgba(96,165,250,0.5); }
+  #bestVal { color: #c084fc; text-shadow: 0 0 16px rgba(192,132,252,0.5); }
+  #streakVal { color: #f472b6; text-shadow: 0 0 16px rgba(244,114,182,0.5); }
+  #roundVal { color: #22d3ee; text-shadow: 0 0 16px rgba(34,211,238,0.5); }
+  .hud-center { align-items: center; text-align: center; }
+
+  /* ── Overlays ── */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(ellipse at 50% 35%, #1a0a2e 0%, #0a0a1e 70%);
+  }
+  .overlay.hidden { display: none; }
+  .title {
+    font-size: clamp(44px, 13vw, 92px);
+    font-weight: 900;
+    letter-spacing: -3px;
+    line-height: 0.95;
+    background: linear-gradient(135deg, #22d3ee, #60a5fa, #c084fc, #f472b6);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: titlePulse 2.6s ease-in-out infinite;
+  }
+  @keyframes titlePulse {
+    0%,100% { filter: brightness(1); transform: scale(1); }
+    50% { filter: brightness(1.25); transform: scale(1.02); }
+  }
+  .tagline {
+    font-size: clamp(13px, 3.2vw, 18px);
+    color: rgba(255,255,255,0.55);
+    margin-top: 14px;
+    max-width: 340px;
+    line-height: 1.5;
+    font-style: italic;
+  }
+  .how {
+    margin-top: 26px;
+    color: rgba(255,255,255,0.45);
+    font-size: clamp(12px, 2.8vw, 15px);
+    line-height: 1.7;
+    max-width: 360px;
+  }
+  .how b { color: #22d3ee; font-weight: 700; }
+  .btn {
+    pointer-events: auto;
+    margin-top: 34px;
+    background: linear-gradient(135deg, #22d3ee, #60a5fa);
+    color: #07071a;
+    border: none;
+    padding: 17px 52px;
+    font-size: clamp(17px, 4vw, 22px);
+    font-weight: 800;
+    letter-spacing: 1px;
+    border-radius: 60px;
+    cursor: pointer;
+    box-shadow: 0 0 34px rgba(34,211,238,0.4);
+    transition: transform .12s, box-shadow .12s;
+    min-height: 56px;
+    min-width: 210px;
+  }
+  .btn:active { transform: scale(0.95); box-shadow: 0 0 18px rgba(34,211,238,0.6); }
+  .kbd-hint {
+    margin-top: 16px;
+    font-size: clamp(10px, 2.4vw, 13px);
+    color: rgba(255,255,255,0.3);
+  }
+  .kbd-hint span {
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 5px;
+    padding: 2px 7px;
+    margin: 0 2px;
+    color: rgba(255,255,255,0.5);
+    font-family: ui-monospace, monospace;
+  }
+
+  /* ── Summary card ── */
+  .summary-grade {
+    font-size: clamp(20px, 5vw, 30px);
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .summary-score {
+    font-size: clamp(56px, 16vw, 110px);
+    font-weight: 900;
+    line-height: 1;
+    color: #22d3ee;
+    text-shadow: 0 0 30px rgba(34,211,238,0.5);
+    margin: 4px 0;
+  }
+  .summary-sub {
+    font-size: clamp(13px, 3vw, 17px);
+    color: rgba(255,255,255,0.55);
+    line-height: 1.8;
+    margin-top: 10px;
+  }
+  .summary-sub b { color: #fff; font-weight: 700; }
+  .new-best {
+    color: #fbbf24;
+    font-weight: 800;
+    font-size: clamp(15px, 3.6vw, 20px);
+    letter-spacing: 1px;
+    margin-top: 14px;
+    text-shadow: 0 0 18px rgba(251,191,36,0.6);
+    animation: blink .8s ease-in-out infinite;
+    display: none;
+  }
+  @keyframes blink { 0%,100%{opacity:.5} 50%{opacity:1} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" style="visibility:hidden">
+  <div class="hud-col">
+    <div>
+      <div class="stat-label">Avg Error</div>
+      <div class="stat-val" id="avgVal">—</div>
+    </div>
+    <div>
+      <div class="stat-label">Best Avg</div>
+      <div class="stat-val" id="bestVal">—</div>
+    </div>
+  </div>
+  <div class="hud-col hud-center">
+    <div class="stat-label">Round</div>
+    <div class="stat-val" id="roundVal">1/10</div>
+  </div>
+  <div class="hud-col right">
+    <div>
+      <div class="stat-label">Streak</div>
+      <div class="stat-val" id="streakVal">0</div>
+    </div>
+    <div>
+      <div class="stat-label">Best Score</div>
+      <div class="stat-val" id="bestScoreVal" style="color:#a3e635;text-shadow:0 0 16px rgba(163,230,53,0.5)">0</div>
+    </div>
+  </div>
+</div>
+
+<div id="startScreen" class="overlay">
+  <div class="title">TRUE<br>LEVEL</div>
+  <div class="tagline">Trust your inner ear: level the horizon by eye.</div>
+  <div class="how">
+    Drag in an <b>arc</b> to rotate the whole scene.<br>
+    Lift to lock when it looks <b>dead level</b>.<br>
+    10 rounds. Smaller error wins.
+  </div>
+  <button class="btn" id="startBtn">PLAY</button>
+  <div class="kbd-hint">desktop: drag &middot; <span>&larr;</span><span>&rarr;</span> fine nudge &middot; <span>space</span> lock</div>
+</div>
+
+<div id="summaryScreen" class="overlay hidden">
+  <div class="summary-grade" id="grade"></div>
+  <div class="summary-score" id="finalScore">0</div>
+  <div class="summary-sub" id="summarySub"></div>
+  <div class="new-best" id="newBest">NEW BEST</div>
+  <button class="btn" id="againBtn">AGAIN</button>
+  <div class="kbd-hint">press <span>space</span> or <span>enter</span> to replay</div>
+</div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+
+// ── Canvas / DPR ──
+const canvas = $('c');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, CX = 0, CY = 0, dpr = 1;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  CX = W / 2;
+  CY = H / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Audio ──
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function tone(freq, dur, vol = 0.15, type = 'sine', whenOff = 0) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime + whenOff;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t0);
+  o.stop(t0 + dur + 0.02);
+}
+// Continuous rotational whoosh tracking drag speed
+let whooshOsc = null, whooshGain = null, whooshFilter = null;
+function startWhoosh() {
+  if (!audioCtx || whooshOsc) return;
+  whooshOsc = audioCtx.createOscillator();
+  whooshGain = audioCtx.createGain();
+  whooshFilter = audioCtx.createBiquadFilter();
+  whooshOsc.type = 'sawtooth';
+  whooshOsc.frequency.value = 90;
+  whooshFilter.type = 'bandpass';
+  whooshFilter.frequency.value = 300;
+  whooshFilter.Q.value = 1.2;
+  whooshGain.gain.value = 0.0001;
+  whooshOsc.connect(whooshFilter).connect(whooshGain).connect(audioCtx.destination);
+  whooshOsc.start();
+}
+function setWhoosh(speed) { // speed in deg/sec (absolute)
+  if (!whooshGain) return;
+  const t = audioCtx.currentTime;
+  const target = Math.min(0.09, speed * 0.0012);
+  whooshGain.gain.setTargetAtTime(Math.max(0.0001, target), t, 0.05);
+  whooshFilter.frequency.setTargetAtTime(220 + Math.min(speed, 600) * 1.1, t, 0.05);
+}
+function stopWhoosh() {
+  if (!whooshOsc) return;
+  const t = audioCtx.currentTime;
+  whooshGain.gain.setTargetAtTime(0.0001, t, 0.04);
+  const osc = whooshOsc;
+  setTimeout(() => { try { osc.stop(); } catch(e){} }, 200);
+  whooshOsc = null; whooshGain = null; whooshFilter = null;
+}
+function sfxTick() { tone(880, 0.05, 0.06, 'square'); }
+function sfxChime(quality) {
+  // quality 0..1 -> brighter & purer when high
+  const base = 440 + quality * 220;
+  const vol = 0.08 + quality * 0.1;
+  const type = quality > 0.6 ? 'sine' : 'triangle';
+  tone(base, 0.25 + quality * 0.2, vol, type);
+  tone(base * 1.5, 0.2 + quality * 0.2, vol * 0.6, type, 0.02);
+  if (quality > 0.55) tone(base * 2, 0.22, vol * 0.4, 'sine', 0.05);
+}
+function sfxTrue() {
+  tone(660, 0.35, 0.12, 'sine');
+  tone(990, 0.3, 0.09, 'sine', 0.04);
+  tone(1320, 0.28, 0.07, 'sine', 0.08);
+  tone(1980, 0.22, 0.05, 'sine', 0.12);
+}
+function sfxNewBest() {
+  [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, 0.1, 'triangle', i * 0.09));
+}
+function sfxStart() {
+  tone(330, 0.12, 0.08, 'sine');
+  tone(495, 0.14, 0.07, 'sine', 0.08);
+}
+
+// ── State ──
+const TOTAL_ROUNDS = 10;
+const STORE_KEY = 'trueLevel.v1';
+// post-reveal hold before auto-advancing: 0.4s ghost-line ease + brief read (~brief's 0.6s)
+const REVEAL_HOLD_MS = 700;
+let state = 'menu'; // menu | play | reveal | summary
+let round = 0;            // 0-indexed current round
+let roundResults = [];    // {err, score, isTrue}
+let runScore = 0;
+let streak = 0;
+
+let sceneAngle = 0;       // current visual rotation (degrees), what player adjusts
+let lockedAngle = 0;      // angle when locked
+let roundErr = 0;         // |lockedAngle| normalized to nearest level
+let revealT = 0;          // reveal animation timer
+let autoAdvanceAt = 0;    // timestamp for auto-advance
+
+let scene = null;         // current scene config
+let stars = [];
+let particles = [];
+let shockwaves = [];
+let shakeAmt = 0, shakeT = 0;
+let flash = 0, flashColor = '34,211,238';
+let pulse = 0;            // scene-pulse scale bump
+
+let best = loadBest();
+function loadBest() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) { const o = JSON.parse(raw); return { score: o.score|0, avg: (typeof o.avg === 'number') ? o.avg : null }; }
+  } catch(e){}
+  return { score: 0, avg: null };
+}
+function saveBest() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(best)); } catch(e){}
+}
+
+// ── Scene types per round ──
+// type: 'solid' | 'dashed' | 'skyline' | 'tower' | 'constellation'
+// frame: boolean (tilted rod-and-frame surrounding box)
+// sens: rotational sensitivity gain
+function buildScene(r) {
+  // r is 0..9
+  let type, frame = false, sens = 1.0;
+  if (r <= 1)      type = 'solid';
+  else if (r <= 3) type = 'dashed';
+  else if (r === 4) type = 'skyline';
+  else if (r === 5) type = 'tower';
+  else if (r === 6) type = 'constellation';
+  else if (r === 7) { type = 'solid'; frame = true; }
+  else if (r === 8) { type = 'skyline'; frame = true; }
+  else             { type = 'tower'; frame = true; }
+
+  // sensitivity tightens slightly late; streak slightly raises ceiling (eases sens)
+  sens = 1.0 - Math.min(0.28, r * 0.03) + Math.min(0.12, streak * 0.02);
+  sens = Math.max(0.6, sens);
+
+  // initial tilt: random, avoid trivially-near-zero, sign random
+  let mag = 14 + Math.random() * 21;       // 14..35 deg
+  if (r >= 6) mag = 18 + Math.random() * 22; // harder rounds start more tilted
+  const startTilt = (Math.random() < 0.5 ? -1 : 1) * mag;
+
+  // frame tilt opposes / biases perception (rod-and-frame)
+  const frameTilt = frame ? (Math.random() < 0.5 ? -1 : 1) * (16 + Math.random() * 14) : 0;
+
+  // palette per round
+  const palettes = [
+    '34,211,238', '96,165,250', '192,132,252', '244,114,182', '163,230,53'
+  ];
+  const color = palettes[r % palettes.length];
+
+  // precompute decorative geometry in scene-local coords
+  let skyline = null, tower = null, constellation = null;
+  const span = Math.min(W, H) * 0.78;
+  if (type === 'skyline') skyline = makeSkyline(span);
+  if (type === 'tower') tower = makeTower(span);
+  if (type === 'constellation') constellation = makeConstellation(span);
+
+  return { type, frame, frameTilt, sens, startTilt, color, skyline, tower, constellation, span };
+}
+
+function makeSkyline(span) {
+  // directional silhouette: building heights increasing one way -> implies a baseline
+  const buildings = [];
+  const n = 9;
+  const w = span / n;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const h = (0.18 + t * 0.5 + Math.random() * 0.08) * span * 0.5;
+    buildings.push({ x: -span / 2 + i * w, w: w * 0.9, h });
+  }
+  return { buildings, w };
+}
+function makeTower(span) {
+  // a leaning structure with clear top/base direction (no drawn horizon)
+  const baseY = span * 0.22;
+  const topY = -span * 0.30;
+  return { baseY, topY, halfW: span * 0.10, taper: 0.45 };
+}
+function makeConstellation(span) {
+  // line of stars implying a horizontal baseline: zero-mean symmetric jitter so the
+  // implied level is actually level when the scene is (no fixed un-correctable slope).
+  const pts = [];
+  const n = 6;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    pts.push({
+      x: -span / 2 + t * span,
+      y: (Math.random() - 0.5) * span * 0.06,
+      r: 2 + Math.random() * 3
+    });
+  }
+  return { pts };
+}
+
+// ── Starfield (background, screen-space, not rotated) ──
+function initStars() {
+  stars = [];
+  const n = Math.round((W * H) / 9000);
+  for (let i = 0; i < n; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: Math.random() * 1.6 + 0.3,
+      a: Math.random() * 0.5 + 0.1,
+      depth: Math.random() * 0.6 + 0.4,
+      tw: Math.random() * Math.PI * 2
+    });
+  }
+}
+initStars();
+
+// ── Particles & FX ──
+function burst(x, y, color, count, speed) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = speed * (0.35 + Math.random() * 0.9);
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * v,
+      vy: Math.sin(a) * v,
+      r: 2 + Math.random() * 3.5,
+      life: 1, decay: 1.2 + Math.random() * 1.1,
+      color
+    });
+  }
+}
+function shockwave(x, y, color) { shockwaves.push({ x, y, r: 8, life: 1, color }); }
+function doFlash(color, a) { flashColor = color; flash = a; }
+function doShake(amt) { shakeAmt = amt; shakeT = 0.32; }
+
+// ── Angle helpers ──
+// Horizon is a LINE: 180-degree symmetric. We normalize the visual angle to (-90, 90]
+// so "level" is 0 and a 170deg rotation reads as -10deg of tilt.
+function normLine(deg) {
+  let d = deg % 180;
+  if (d > 90) d -= 180;
+  if (d <= -90) d += 180;
+  return d;
+}
+
+// ── Scoring ──
+function scoreFor(err) {
+  const base = Math.max(0, 1 - err / 15);
+  return Math.round(1000 * Math.pow(base, 1.6));
+}
+
+// ── HUD ──
+function updateHUD() {
+  const played = roundResults.length;
+  const avg = played ? roundResults.reduce((s, r) => s + r.err, 0) / played : null;
+  $('avgVal').textContent = avg === null ? '—' : avg.toFixed(1) + '°';
+  $('bestVal').textContent = best.avg === null ? '—' : best.avg.toFixed(1) + '°';
+  $('streakVal').textContent = streak;
+  $('roundVal').textContent = Math.min(round + 1, TOTAL_ROUNDS) + '/' + TOTAL_ROUNDS;
+  $('bestScoreVal').textContent = best.score;
+}
+
+// ── Round flow ──
+function startGame() {
+  ensureAudio();
+  sfxStart();
+  state = 'play';
+  round = 0;
+  roundResults = [];
+  runScore = 0;
+  streak = 0;
+  $('startScreen').classList.add('hidden');
+  $('summaryScreen').classList.add('hidden');
+  $('hud').style.visibility = 'visible';
+  spawnRound();
+  updateHUD();
+}
+
+function spawnRound() {
+  scene = buildScene(round);
+  sceneAngle = scene.startTilt;
+  state = 'play';
+  dragging = false;
+  pulse = 0;
+  updateHUD();
+}
+
+function lockRound() {
+  if (state !== 'play') return;
+  if (dragging) endDrag();
+  lockedAngle = normLine(sceneAngle);
+  roundErr = Math.abs(lockedAngle);
+  const sc = scoreFor(roundErr);
+  const isTrue = roundErr < 1;
+  let gained = sc;
+  if (isTrue) { gained += 250; streak++; }
+  else { streak = 0; }
+  runScore += gained;
+  roundResults.push({ err: roundErr, score: gained, isTrue });
+
+  // FX scaled to accuracy
+  const quality = Math.max(0, 1 - roundErr / 15);
+  sfxTick();
+  const lx = CX, ly = CY;
+  if (isTrue) {
+    sfxTrue();
+    shockwave(lx, ly, scene.color);
+    burst(lx, ly, scene.color, 46, 7.5);
+    burst(lx, ly, '255,255,255', 18, 5);
+    doFlash(scene.color, 0.35);
+    doShake(7);
+  } else {
+    setTimeout(() => sfxChime(quality), 90);
+    burst(lx, ly, scene.color, Math.round(8 + quality * 30), 3 + quality * 4);
+    doFlash(scene.color, 0.08 + quality * 0.18);
+    doShake(2 + quality * 4);
+  }
+  pulse = 0.12 + quality * 0.14;
+
+  state = 'reveal';
+  revealT = 0;
+  autoAdvanceAt = performance.now() + REVEAL_HOLD_MS;
+  updateHUD();
+}
+
+function advance() {
+  round++;
+  if (round >= TOTAL_ROUNDS) {
+    endRun();
+  } else {
+    spawnRound();
+  }
+}
+
+function endRun() {
+  state = 'summary';
+  $('hud').style.visibility = 'hidden';
+  const avg = roundResults.reduce((s, r) => s + r.err, 0) / roundResults.length;
+  const trues = roundResults.filter(r => r.isTrue).length;
+
+  const newBestScore = runScore > best.score;
+  const newBestAvg = best.avg === null || avg < best.avg;
+  if (newBestScore) best.score = runScore;
+  if (newBestAvg) best.avg = avg;
+  if (newBestScore || newBestAvg) { saveBest(); sfxNewBest(); }
+
+  // grade
+  let grade, gColor;
+  if (avg < 1)      { grade = 'SURVEYOR'; gColor = '#fbbf24'; }
+  else if (avg < 2) { grade = 'SPIRIT LEVEL'; gColor = '#a3e635'; }
+  else if (avg < 4) { grade = 'STEADY EYE'; gColor = '#22d3ee'; }
+  else if (avg < 7) { grade = 'WONKY'; gColor = '#60a5fa'; }
+  else              { grade = 'SEASICK'; gColor = '#f472b6'; }
+
+  $('grade').textContent = grade;
+  $('grade').style.color = gColor;
+  $('grade').style.textShadow = '0 0 22px ' + gColor + '88';
+  $('finalScore').textContent = runScore;
+  $('summarySub').innerHTML =
+    'Avg error <b>' + avg.toFixed(2) + '°</b> &middot; <b>' + trues + '</b> true locks<br>' +
+    'Best score <b>' + best.score + '</b> &middot; Best avg <b>' + (best.avg === null ? '—' : best.avg.toFixed(2) + '°') + '</b>';
+  const nb = $('newBest');
+  if (newBestScore || newBestAvg) {
+    nb.style.display = 'block';
+    nb.textContent = newBestScore && newBestAvg ? 'NEW BEST SCORE & AVG' : newBestScore ? 'NEW BEST SCORE' : 'NEW BEST AVG';
+  } else {
+    nb.style.display = 'none';
+  }
+
+  $('summaryScreen').classList.remove('hidden');
+
+  // count-up readout
+  countUpFrom = 0;
+  countUpTo = runScore;
+  countUpStart = performance.now();
+}
+let countUpFrom = 0, countUpTo = 0, countUpStart = 0;
+
+// ── Input: drag to rotate via atan2 around screen center ──
+let dragging = false;
+let lastPointerAngle = 0;   // radians, finger relative to center
+let activePointerId = null;
+let dragSpeed = 0;          // deg/sec, smoothed
+let lastDragTime = 0;
+
+function pointerAngle(clientX, clientY) {
+  return Math.atan2(clientY - CY, clientX - CX);
+}
+function beginDrag(e) {
+  if (state !== 'play') return;
+  if (activePointerId !== null) return; // ignore multi-touch
+  activePointerId = e.pointerId;
+  dragging = true;
+  lastPointerAngle = pointerAngle(e.clientX, e.clientY);
+  lastDragTime = performance.now();
+  dragSpeed = 0;
+  // capture so a release outside the canvas (desktop) still fires pointerup -> lock
+  try { canvas.setPointerCapture(e.pointerId); } catch(err){}
+  ensureAudio();
+  startWhoosh();
+}
+// Slow-drag fine mode: deliberate slow movement scales rotation down so touch
+// players can ease into the last fraction of a degree without a keyboard.
+const FINE_MIN = 0.25;        // floor gain for very slow drags
+const SLOW_THRESHOLD = 40;    // deg/sec above which we apply full 1:1 gain
+function moveDrag(e) {
+  if (!dragging || e.pointerId !== activePointerId) return;
+  const a = pointerAngle(e.clientX, e.clientY);
+  let d = a - lastPointerAngle;           // radians delta
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  lastPointerAngle = a;
+  const rawDeg = d * 180 / Math.PI;       // raw angular delta this move
+
+  const now = performance.now();
+  const dt = Math.max(0.001, (now - lastDragTime) / 1000);
+  lastDragTime = now;
+  const inst = Math.abs(rawDeg) / dt;     // instantaneous angular speed deg/s
+  dragSpeed = dragSpeed * 0.7 + inst * 0.3;
+
+  // fine-mode gain: slow, deliberate movement -> reduced rotation
+  const g = Math.max(FINE_MIN, Math.min(1, dragSpeed / SLOW_THRESHOLD));
+  sceneAngle += rawDeg * scene.sens * g;
+
+  setWhoosh(dragSpeed);
+}
+function endDrag() {
+  dragging = false;
+  if (activePointerId !== null) {
+    try { canvas.releasePointerCapture(activePointerId); } catch(err){}
+  }
+  activePointerId = null;
+  dragSpeed = 0;
+  stopWhoosh();
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  beginDrag(e);
+}, { passive: false });
+canvas.addEventListener('pointermove', e => {
+  e.preventDefault();
+  moveDrag(e);
+}, { passive: false });
+canvas.addEventListener('pointerup', e => {
+  e.preventDefault();
+  if (e.pointerId === activePointerId) { endDrag(); lockRound(); }
+}, { passive: false });
+canvas.addEventListener('pointercancel', e => {
+  e.preventDefault();
+  if (e.pointerId === activePointerId) endDrag();
+}, { passive: false });
+
+// prevent page scroll / pinch
+document.addEventListener('touchmove', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+
+// ── Keyboard ──
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    if (state === 'menu') { startGame(); return; }
+    if (state === 'summary') { startGame(); return; }
+    if (state === 'play') { lockRound(); return; }
+  }
+  if (state === 'play') {
+    if (e.key === 'ArrowLeft')  { sceneAngle -= 0.1 * scene.sens; e.preventDefault(); nudgeTick(); }
+    if (e.key === 'ArrowRight') { sceneAngle += 0.1 * scene.sens; e.preventDefault(); nudgeTick(); }
+  }
+  keys[e.key] = true;
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+let lastNudgeSound = 0;
+function nudgeTick() {
+  const now = performance.now();
+  if (now - lastNudgeSound > 60) { ensureAudio(); tone(1200, 0.02, 0.03, 'square'); lastNudgeSound = now; }
+}
+
+$('startBtn').addEventListener('click', e => { e.stopPropagation(); startGame(); });
+$('againBtn').addEventListener('click', e => { e.stopPropagation(); startGame(); });
+
+// ── Drawing the rotating scene ──
+function drawScene() {
+  const col = scene.color;
+  const half = scene.span / 2;
+
+  ctx.save();
+  ctx.translate(CX, CY);
+  const sc = 1 + pulse;
+  ctx.scale(sc, sc);
+
+  // surrounding tilted frame (rod-and-frame illusion) — drawn UNDER scene, in its own tilt
+  if (scene.frame) {
+    ctx.save();
+    ctx.rotate(scene.frameTilt * Math.PI / 180);
+    const fs = Math.min(W, H) * 0.62;
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = 'rgba(192,132,252,0.4)';
+    ctx.shadowBlur = 14;
+    ctx.strokeRect(-fs, -fs, fs * 2, fs * 2);
+    // inner frame line for extra visual bias
+    ctx.strokeStyle = 'rgba(192,132,252,0.18)';
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 6;
+    ctx.strokeRect(-fs * 0.7, -fs * 0.7, fs * 1.4, fs * 1.4);
+    ctx.restore();
+  }
+
+  // the scene itself, rotated by sceneAngle
+  ctx.save();
+  ctx.rotate(sceneAngle * Math.PI / 180);
+
+  ctx.shadowColor = 'rgba(' + col + ',0.9)';
+  ctx.strokeStyle = 'rgba(' + col + ',0.95)';
+  ctx.fillStyle = 'rgba(' + col + ',0.95)';
+  ctx.lineWidth = 4;
+  ctx.shadowBlur = 18;
+  ctx.lineCap = 'round';
+
+  if (scene.type === 'solid') {
+    line(-half, 0, half, 0);
+  } else if (scene.type === 'dashed') {
+    ctx.setLineDash([26, 20]);
+    line(-half, 0, half, 0);
+    ctx.setLineDash([]);
+  } else if (scene.type === 'skyline') {
+    drawSkyline(scene.skyline, col);
+  } else if (scene.type === 'tower') {
+    drawTower(scene.tower, col);
+  } else if (scene.type === 'constellation') {
+    drawConstellation(scene.constellation, col);
+  }
+
+  ctx.restore(); // scene rotation
+  ctx.restore(); // translate/scale
+}
+
+function line(x1, y1, x2, y2) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
+function drawSkyline(sk, col) {
+  // buildings sit on an implied baseline at y=0 (the level we infer). No drawn horizon line.
+  ctx.shadowBlur = 14;
+  for (const b of sk.buildings) {
+    ctx.fillStyle = 'rgba(' + col + ',0.85)';
+    ctx.fillRect(b.x, -b.h, b.w, b.h);
+    // window glints
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    for (let wy = -b.h + 8; wy < -6; wy += 14) {
+      ctx.fillRect(b.x + 4, wy, b.w - 8, 3);
+    }
+  }
+}
+
+function drawTower(t, col) {
+  // a leaning tower silhouette: base wide at bottom, taper to top. Directional, no horizon.
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = 'rgba(' + col + ',0.85)';
+  const bw = t.halfW;
+  const tw = t.halfW * t.taper;
+  ctx.beginPath();
+  ctx.moveTo(-bw, t.baseY);
+  ctx.lineTo(bw, t.baseY);
+  ctx.lineTo(tw, t.topY);
+  ctx.lineTo(-tw, t.topY);
+  ctx.closePath();
+  ctx.fill();
+  // tiers
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = 2;
+  ctx.shadowBlur = 0;
+  const tiers = 5;
+  for (let i = 1; i < tiers; i++) {
+    const f = i / tiers;
+    const y = t.baseY + (t.topY - t.baseY) * f;
+    const wx = bw + (tw - bw) * f;
+    ctx.beginPath();
+    ctx.moveTo(-wx, y);
+    ctx.lineTo(wx, y);
+    ctx.stroke();
+  }
+  // cap dot at top to signal "up"
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.beginPath();
+  ctx.arc(0, t.topY - 8, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawConstellation(c, col) {
+  ctx.shadowBlur = 12;
+  // connecting line implying baseline direction
+  ctx.strokeStyle = 'rgba(' + col + ',0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  c.pts.forEach((p, i) => { i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); });
+  ctx.stroke();
+  // stars
+  for (const p of c.pts) {
+    ctx.fillStyle = 'rgba(' + col + ',0.95)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ── Reveal: ghost true-horizontal + error readout ──
+function drawReveal() {
+  const half = scene.span / 2;
+  const ease = Math.min(1, revealT / 0.4);
+
+  ctx.save();
+  ctx.translate(CX, CY);
+
+  // your locked line (faint, at lockedAngle) — show where you thought level was
+  ctx.save();
+  ctx.rotate(lockedAngle * Math.PI / 180);
+  ctx.strokeStyle = 'rgba(' + scene.color + ',' + (0.5 * (1 - ease * 0.3)) + ')';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([10, 10]);
+  ctx.beginPath(); ctx.moveTo(-half, 0); ctx.lineTo(half, 0); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // true horizontal ghost line snapping in
+  const ghostA = 0.85 * ease;
+  ctx.strokeStyle = 'rgba(255,255,255,' + ghostA + ')';
+  ctx.shadowColor = 'rgba(255,255,255,' + (0.8 * ease) + ')';
+  ctx.shadowBlur = 16 * ease;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(-half * ease, 0);
+  ctx.lineTo(half * ease, 0);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // the gap wedge between your line and truth, flashing
+  if (ease >= 1 && roundErr > 0.05) {
+    const a = Math.abs(Math.sin(revealT * 9)) * 0.35 + 0.1;
+    ctx.fillStyle = 'rgba(244,114,182,' + a + ')';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, half * 0.5, 0, lockedAngle * Math.PI / 180, lockedAngle < 0);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // error readout
+  const last = roundResults[roundResults.length - 1];
+  const big = (16 + ease * 10);
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = ease;
+  if (last.isTrue) {
+    ctx.fillStyle = '#fbbf24';
+    ctx.shadowColor = 'rgba(251,191,36,0.8)';
+    ctx.shadowBlur = 20;
+    ctx.font = '900 ' + (34) + 'px system-ui, sans-serif';
+    ctx.fillText('TRUE LEVEL', CX, CY - 70);
+    ctx.font = '800 18px system-ui, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.shadowBlur = 8;
+    ctx.fillText(roundErr.toFixed(2) + '°  off  ·  +' + last.score, CX, CY - 42);
+  } else {
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(' + scene.color + ',0.7)';
+    ctx.shadowBlur = 14;
+    ctx.font = '900 40px system-ui, sans-serif';
+    ctx.fillText(roundErr.toFixed(1) + '°', CX, CY - 56);
+    ctx.font = '700 16px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.shadowBlur = 6;
+    ctx.fillText('off level  ·  +' + last.score + ' pts', CX, CY - 30);
+  }
+  ctx.restore();
+}
+
+// ── Hint pivot dot (where rotation pivots) ──
+function drawPivot() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.beginPath();
+  ctx.arc(CX, CY, 3, 0, Math.PI * 2);
+  ctx.fill();
+  if (state === 'play' && !dragging) {
+    // gentle arc hint
+    const t = performance.now() / 600;
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.06 + 0.04 * Math.sin(t)) + ')';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 10]);
+    ctx.beginPath();
+    ctx.arc(CX, CY, Math.min(W, H) * 0.30, -0.5, 0.5);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+// ── Main loop ──
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min((now - lastT) / 1000, 0.05);
+  lastT = now;
+
+  // reveal timing
+  if (state === 'reveal') {
+    revealT += dt;
+    if (now >= autoAdvanceAt) advance();
+  }
+
+  // count-up on summary
+  if (state === 'summary') {
+    const el = $('finalScore');
+    const p = Math.min(1, (now - countUpStart) / 700);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(countUpFrom + (countUpTo - countUpFrom) * eased);
+  }
+
+  render(dt, now);
+  requestAnimationFrame(frame);
+}
+
+function render(dt, now) {
+  // clear with gradient bg
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0a0a1e');
+  g.addColorStop(1, '#1a0a2e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // starfield with subtle parallax tied to the scene rotation: the far layer
+  // counter-rotates a touch so the background visibly responds to the same arc.
+  const sceneRot = (state === 'play' || state === 'reveal') ? sceneAngle : 0;
+  const par = sceneRot * 0.4;
+  ctx.save();
+  // small counter-rotation about center (depth-scaled): reads as parallax against the spinning scene
+  ctx.translate(CX, CY);
+  ctx.rotate(sceneRot * 0.15 * Math.PI / 180);
+  ctx.translate(-CX, -CY);
+  for (const s of stars) {
+    s.tw += dt * 2;
+    const tw = 0.6 + 0.4 * Math.sin(s.tw);
+    let sy = s.y + par * s.depth;
+    if (sy > H) sy -= H; if (sy < 0) sy += H;
+    ctx.fillStyle = 'rgba(180,200,255,' + (s.a * tw) + ')';
+    ctx.beginPath();
+    ctx.arc(s.x, sy, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // shake
+  ctx.save();
+  if (shakeT > 0) {
+    shakeT -= dt;
+    const k = shakeAmt * (shakeT > 0 ? shakeT / 0.32 : 0);
+    ctx.translate((Math.random() - 0.5) * k * 2, (Math.random() - 0.5) * k * 2);
+    if (shakeT <= 0) shakeAmt = 0;
+  }
+
+  // pulse decay
+  pulse *= Math.pow(0.0001, dt); // fast decay toward 0
+  if (pulse < 0.002) pulse = 0;
+
+  if (state === 'play' || state === 'reveal') {
+    drawScene();
+    drawPivot();
+    if (state === 'reveal') drawReveal();
+  }
+
+  // shockwaves
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    const s = shockwaves[i];
+    s.r += dt * 900;
+    s.life -= dt * 1.4;
+    if (s.life <= 0) { shockwaves.splice(i, 1); continue; }
+    ctx.strokeStyle = 'rgba(' + s.color + ',' + s.life + ')';
+    ctx.lineWidth = 4 * s.life + 1;
+    ctx.shadowColor = 'rgba(' + s.color + ',' + s.life + ')';
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.96; p.vy *= 0.96;
+    p.vy += 0.05;
+    p.life -= p.decay * dt;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = 'rgba(' + p.color + ',1)';
+    ctx.shadowColor = 'rgba(' + p.color + ',1)';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * Math.max(0, p.life), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+
+  // flash overlay (screen-space, above shake)
+  if (flash > 0.004) {
+    ctx.fillStyle = 'rgba(' + flashColor + ',' + flash + ')';
+    ctx.fillRect(0, 0, W, H);
+    flash *= Math.pow(0.0005, dt);
+  }
+}
+
+// keep starfield density on resize
+window.addEventListener('resize', () => { initStars(); });
+
+updateHUD();
+$('hud').style.visibility = 'hidden';
+lastT = performance.now();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
