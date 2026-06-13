@@ -374,3 +374,13 @@ Puzzle-action avec des miroirs et un laser — un émetteur tire un rayon et tu 
 Puzzle de réaction en chaîne — des bombes sont placées sur une grille. Tape une bombe pour l'exploser : des étincelles filent dans 4 directions et déclenchent les bombes touchées, créant des réactions en chaîne. Objectif : clearer TOUTES les bombes en un seul tap initial ! Niveaux procéduraux solvables avec difficulté progressive (grille + nombre de bombes croissants). Chain combo scoring, particules explosives, screen shake, spark trails colorés, Web Audio (explosions, chain tones montants, jingles win/fail). High score localStorage. Mobile-first (touch) + desktop (clic). Esthétique dark/neon.
 
 ▶️ [Essayer](https://adrrr.github.io/night-projects/fuse-chain/)
+
+### 🎚️ **[Unison Drift](https://adrrr.github.io/night-projects/unison-drift/)**
+Jeu de précision auditive — deux sons jouent à des fréquences proches et produisent un battement acoustique (wah-wah) dont la vitesse égale l'écart de hauteur. Glisse un grand slider plein écran pour bender le second son et annuler le battement jusqu'à le faire disparaître en un seul son pur. Aucune cible affichée : tu accordes uniquement à l'oreille, exactement comme un accordeur de piano (beat-frequency nulling). Score en cents musicaux, 8 rounds avec offsets de plus en plus subtils, soft-timer, mode Hard (sans aide visuelle), streak, high scores localStorage. Visualiseur de battement honnête (piloté par la vraie fréquence de battement), Web Audio synthétique, haptique. Mobile-first (slider plein écran au pouce — l'inverse exact de eyeball qui refuse le tactile) + desktop (drag/flèches/espace). Casque recommandé. Dark/neon.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/unison-drift/)
+
+### 📐 **[True Level](https://adrrr.github.io/night-projects/true-level/)**
+Jeu d'estimation visuelle — une ligne d'horizon néon apparaît inclinée à un angle aléatoire. Pose un doigt n'importe où et glisse en arc pour faire pivoter TOUTE la scène jusqu'à ce qu'elle te paraisse parfaitement horizontale, puis relâche pour verrouiller. Aucun repère de gravité, aucun chiffre pendant l'ajustement : tu juges à l'œil. Le twist : ça exploite délibérément l'illusion rod-and-frame (un cadre incliné biaise ta perception du niveau). 10 rounds à difficulté croissante (ligne pleine → pointillés → skyline/tour/constellation sans bord dessiné → cadre trompeur), bonus TRUE sous 1°, fine-control au drag lent, streak, score de précision (meilleur total ET plus faible erreur moyenne). Particules, ghost line de vérité, shockwave, Web Audio synthétique. Mobile-first (rotation au doigt) + desktop (drag/flèches/espace). Dark/neon.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/true-level/)
