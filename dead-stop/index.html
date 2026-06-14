@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Dead Stop</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;background:linear-gradient(135deg,#0a0a1e,#1a0a2e);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
+canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;width:100%;pointer-events:none;z-index:10;padding:calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 12px calc(16px + env(safe-area-inset-left))}
+.hud{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.hud-left,.hud-right{display:flex;flex-direction:column;gap:4px}
+.hud-right{align-items:flex-end}
+.score-display{font-size:clamp(28px,7vw,52px);font-weight:900;letter-spacing:-1px;background:linear-gradient(135deg,#0ff,#60a5fa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:0 0 20px rgba(0,255,255,0.35)}
+.record-display{font-size:clamp(11px,2.6vw,15px);color:#7a7a9a;font-weight:600;letter-spacing:1px}
+.lives{display:flex;gap:6px;margin-bottom:4px}
+.life{width:clamp(18px,4.5vw,28px);height:clamp(18px,4.5vw,28px);transition:transform 0.3s,opacity 0.3s}
+.life svg{width:100%;height:100%;display:block;filter:drop-shadow(0 0 6px rgba(244,114,182,0.6))}
+.life.lost{opacity:0.28;transform:scale(0.75);filter:grayscale(1)}
+.life.lost svg{filter:none}
+.combo-chip{display:flex;align-items:center;gap:6px;font-weight:900;justify-content:flex-end;min-height:1.4em}
+.combo-label{font-size:clamp(9px,2vw,11px);color:#7a7a9a;font-weight:600;letter-spacing:1px;text-transform:uppercase}
+.combo-num{font-size:clamp(15px,3.6vw,22px);color:#f472b6;text-shadow:0 0 10px rgba(244,114,182,0.6)}
+.mult{font-size:clamp(15px,3.8vw,24px);padding:2px 10px;border-radius:30px;background:rgba(192,132,252,0.16);color:#c084fc;border:1px solid rgba(192,132,252,0.4);text-shadow:0 0 8px rgba(192,132,252,0.5);transition:transform 0.15s}
+.mult.glow{box-shadow:0 0 18px rgba(251,191,36,0.6);color:#fbbf24;border-color:rgba(251,191,36,0.6)}
+#overlay{position:fixed;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;text-align:center;padding:24px}
+#overlay.hidden{display:none}
+#overlay.transparent{background:rgba(10,10,30,0.55)}
+.title{font-size:clamp(44px,13vw,104px);font-weight:900;letter-spacing:-3px;background:linear-gradient(135deg,#0ff,#c084fc,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px;animation:titlePulse 2.4s ease-in-out infinite}
+@keyframes titlePulse{0%,100%{transform:scale(1);filter:brightness(1)}50%{transform:scale(1.03);filter:brightness(1.25)}}
+.emoji{font-size:clamp(40px,11vw,80px);margin-bottom:8px;filter:drop-shadow(0 0 16px rgba(0,255,255,0.5))}
+.prompt{font-size:clamp(15px,4vw,24px);color:#cfcfe6;letter-spacing:2px;text-transform:uppercase;margin-top:14px;animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
+.sub{font-size:clamp(12px,3vw,16px);color:#7a7a9a;margin-top:18px}
+.go-title{font-size:clamp(40px,11vw,84px);font-weight:900;letter-spacing:-2px;color:#f87171;text-shadow:0 0 24px rgba(248,113,113,0.5);margin-bottom:8px}
+.go-score{font-size:clamp(54px,15vw,96px);font-weight:900;background:linear-gradient(135deg,#0ff,#60a5fa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.05}
+.go-label{font-size:clamp(12px,3vw,16px);color:#7a7a9a;letter-spacing:2px;text-transform:uppercase;margin-bottom:2px}
+.go-row{font-size:clamp(14px,3.4vw,19px);color:#9a9ab8;margin-top:6px}
+.go-row b{color:#c084fc}
+.record-burst{font-size:clamp(26px,8vw,56px);font-weight:900;color:#fbbf24;letter-spacing:2px;text-shadow:0 0 24px rgba(251,191,36,0.7);margin:10px 0;animation:recPop 0.7s ease-in-out infinite alternate}
+@keyframes recPop{from{transform:scale(1);filter:brightness(1)}to{transform:scale(1.08);filter:brightness(1.3)}}
+.hidden-el{display:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ui" class="hidden-el">
+  <div class="hud">
+    <div class="hud-left">
+      <div class="score-display" id="scoreEl">0</div>
+      <div class="record-display" id="recordEl">Record 0</div>
+    </div>
+    <div class="hud-right">
+      <div class="lives" id="livesEl"></div>
+      <div class="combo-chip">
+        <span class="combo-label">Combo</span>
+        <span class="combo-num" id="comboEl">0</span>
+        <span class="mult" id="multEl">x1</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div id="titleScreen">
+    <div class="emoji">⏱️</div>
+    <div class="title">Dead Stop</div>
+    <div class="prompt">Tape pour arreter</div>
+    <div class="sub" id="titleRecord">Record 0</div>
+  </div>
+  <div id="gameOverScreen" class="hidden-el">
+    <div class="go-title">Game Over</div>
+    <div id="recordBurst" class="record-burst hidden-el">RECORD !</div>
+    <div class="go-label">Score</div>
+    <div class="go-score" id="finalScoreEl">0</div>
+    <div class="go-row" id="finalRecordEl">Record 0</div>
+    <div class="go-row" id="finalComboEl">Combo max 0</div>
+    <div class="prompt">Rejouer</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const canvas = $('c');
+const ctx = canvas.getContext('2d');
+const ui = $('ui');
+const overlay = $('overlay');
+const titleScreen = $('titleScreen');
+const gameOverScreen = $('gameOverScreen');
+const scoreEl = $('scoreEl');
+const recordEl = $('recordEl');
+const livesEl = $('livesEl');
+const comboEl = $('comboEl');
+const multEl = $('multEl');
+const titleRecordEl = $('titleRecord');
+const finalScoreEl = $('finalScoreEl');
+const finalRecordEl = $('finalRecordEl');
+const finalComboEl = $('finalComboEl');
+const recordBurst = $('recordBurst');
+
+// ---------- Tunables (locked spec numbers) ----------
+const START_SPEED = 120;       // deg/sec
+const MAX_SPEED = 330;         // deg/sec cap
+const SPEED_RAMP = 4;          // +per hit
+const START_TOL = 18;          // half-width deg
+const TOL_FLOOR = 6;           // half-width floor
+const TOL_SHRINK = 0.97;       // per hit multiplicative
+const PERFECT_WINDOW = 5;      // fixed half-width deg
+const RELOCATE_MIN = 45;       // deg ahead
+const RELOCATE_MAX = 300;      // deg ahead
+const FREEZE_MS = 180;
+const REVERSAL_FREEZE_EXTRA = 40;
+const START_LIVES = 3;
+const DT_CLAMP = 0.05;         // 50ms
+const INPUT_LOCKOUT = 80;      // ms after resume
+const MULT_CAP = 5;
+const BASE_POINTS = 100;
+const PERFECT_BONUS = 50;
+const REVERSAL_UNLOCK = 12;
+const REVERSAL_CHANCE = 0.18;
+const REVERSAL_TELEGRAPH_MS = 250;
+const TRAIL_MAX = 6;
+const PARTICLE_CAP = 160;
+
+// ---------- Helpers ----------
+const TAU = Math.PI * 2;
+const D2R = Math.PI / 180;
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, lo, hi) => v < lo ? lo : (v > hi ? hi : v);
+function norm360(a) { a = a % 360; if (a < 0) a += 360; return a; }
+// shortest signed-arc absolute distance in degrees
+function angDist(a, b) { return Math.abs(((a - b + 540) % 360) - 180); }
+// signed shortest-arc direction from `from` to `to`: +1 = clockwise, -1 = ccw
+function shortestArcDir(from, to) { return (((to - from + 540) % 360) - 180) >= 0 ? 1 : -1; }
+
+// ---------- Canvas / geometry ----------
+let W = 0, H = 0, dpr = 1;
+let cx = 0, cy = 0, radius = 0;
+let particleCap = PARTICLE_CAP;     // lowered on small screens for perf
+
+// Offscreen cache for the static tick ring (60 marks never change shape) so we
+// blit it once per frame instead of stroking 60 lines live each frame.
+const tickCanvas = document.createElement('canvas');
+const tickCtx = tickCanvas.getContext('2d');
+
+function buildTicks() {
+  tickCanvas.width = Math.max(1, Math.round(W * dpr));
+  tickCanvas.height = Math.max(1, Math.round(H * dpr));
+  tickCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  tickCtx.clearRect(0, 0, W, H);
+  tickCtx.strokeStyle = 'rgba(0,255,255,0.18)';
+  for (let i = 0; i < 60; i++) {
+    const a = (i / 60) * TAU;
+    const big = (i % 5 === 0);
+    const r1 = radius - (big ? 16 : 8);
+    const r2 = radius - 2;
+    tickCtx.lineWidth = big ? 2 : 1;
+    tickCtx.beginPath();
+    tickCtx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+    tickCtx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+    tickCtx.stroke();
+  }
+}
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // Prefer the stable visualViewport / documentElement size over innerHeight,
+  // which is unreliable during iOS URL-bar show/hide and orientation flips.
+  const vv = window.visualViewport;
+  W = (vv && vv.width) || document.documentElement.clientWidth || window.innerWidth;
+  H = (vv && vv.height) || document.documentElement.clientHeight || window.innerHeight;
+  canvas.width = Math.max(1, Math.round(W * dpr));
+  canvas.height = Math.max(1, Math.round(H * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cx = W / 2;
+  cy = H / 2;
+  radius = Math.min(W, H) * 0.38;
+  particleCap = Math.min(W, H) < 480 ? 96 : PARTICLE_CAP;
+  buildTicks();
+}
+
+// Coalesce resize / orientation / viewport events into one rAF-scheduled call
+// so we don't reallocate the backing store synchronously on every event.
+let resizeScheduled = false;
+function scheduleResize() {
+  if (resizeScheduled) return;
+  resizeScheduled = true;
+  requestAnimationFrame(() => { resizeScheduled = false; resize(); });
+}
+window.addEventListener('resize', scheduleResize);
+window.addEventListener('orientationchange', scheduleResize);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', scheduleResize);
+  window.visualViewport.addEventListener('scroll', scheduleResize);
+}
+resize();
+
+// ---------- Game state ----------
+const STATE = { TITLE: 0, PLAYING: 1, FROZEN: 2, GAMEOVER: 3 };
+let state = STATE.TITLE;
+
+let needleAngle = 0;
+let targetAngle = 90;
+let sweepDir = 1;
+let omega = START_SPEED;
+let tolerance = START_TOL;
+let hits = 0;
+let combo = 0;
+let maxCombo = 0;
+let score = 0;
+let lives = START_LIVES;
+let best = parseInt(localStorage.getItem('ds-best'), 10) || 0;
+
+let snapshotAngle = 0;
+let freezeUntil = 0;
+let inputLockedUntil = 0;
+let pendingVerdict = null;   // 'PERFECT' | 'HIT' | 'MISS'
+let pendingPerfect = false;
+let pendingDist = 0;
+
+// reversal telegraph
+let reversalPending = false;
+let reversalTelegraphUntil = 0;
+let reversalNewDir = 1;
+
+let trail = [];
+
+// fx
+let shake = 0;
+let shakeMax = 0;
+let redFlash = 0;
+let rimGlowPulse = 0;
+let particles = [];
+let rings = [];
+let labels = [];
+let comboPop = 1;          // scale pop for combo chip
+let multGlowUntil = 0;
+let targetSpawnT = 1;      // relocate snap-pop progress 0..1 (1 = settled)
+let travelArc = null;      // {from,to,t}
+let heartShatter = [];     // particles for shattered heart
+
+// title bg drifting particles
+let bgParticles = [];
+function initBg() {
+  bgParticles = [];
+  const n = 46;
+  for (let i = 0; i < n; i++) {
+    bgParticles.push({
+      x: Math.random() * W, y: Math.random() * H,
+      r: Math.random() * 1.8 + 0.4,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6,
+      a: Math.random() * 0.25 + 0.05,
+      hue: Math.random() < 0.5 ? '0,255,255' : '192,132,252'
+    });
+  }
+}
+initBg();
+
+// ---------- Audio ----------
+let audioCtx = null;
+let pendingAudioCb = null;   // one-shot, fired once the ctx actually resumes
+// ensureAudio(cb): create/resume the context. resume() is async, so on the very
+// first gesture audioReady() is still false synchronously — pass a callback to
+// run it after resume resolves (otherwise the title start jingle is dropped).
+function ensureAudio(cb) {
+  if (!audioCtx) {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    } catch (e) { audioCtx = null; }
+  }
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') {
+    if (cb) pendingAudioCb = cb;
+    audioCtx.resume().then(() => {
+      const fn = pendingAudioCb; pendingAudioCb = null;
+      if (fn) fn();
+    }).catch(() => { pendingAudioCb = null; });
+  } else if (cb) {
+    cb();
+  }
+}
+function audioReady() { return audioCtx && audioCtx.state === 'running'; }
+
+function playTone(freq, dur, vol, type, startOffset) {
+  if (!audioReady()) return;
+  const now = audioCtx.currentTime + (startOffset || 0);
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(Math.max(20, freq), now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, vol), now + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + dur + 0.02);
+}
+function playSweep(f0, f1, dur, vol, type) {
+  if (!audioReady()) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(f0, now);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(20, f1), now + dur);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, vol), now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + dur + 0.02);
+}
+function sfxHit(cb) {
+  const f = Math.min(1500, 660 + cb * 45);
+  playTone(f, 0.12, 0.14, 'triangle');
+  playTone(f * 2, 0.06, 0.05, 'sine');
+}
+function sfxPerfect(cb) {
+  playTone(880 + cb * 40, 0.18, 0.15, 'sine');
+  playTone(1320 + cb * 40, 0.22, 0.10, 'triangle', 0.04);
+}
+function sfxCombo(tier) { playTone(500 + tier * 120, 0.20, 0.12, 'triangle'); }
+function sfxMiss(lostHeart) {
+  playSweep(260, 70, 0.32, 0.22, 'sawtooth');
+  playSweep(120, 90, 0.16, 0.10, 'square');
+  if (lostHeart) playTone(110, 0.40, 0.20, 'sawtooth');
+}
+function sfxReversal() { playSweep(700, 180, 0.30, 0.08, 'sine'); }
+function sfxStart() {
+  playTone(400, 0.12, 0.10, 'sine', 0);
+  playTone(600, 0.12, 0.10, 'sine', 0.08);
+  playTone(900, 0.14, 0.10, 'sine', 0.16);
+}
+function sfxGameOver() {
+  playSweep(300, 50, 0.5, 0.16, 'sawtooth');
+  playTone(60, 0.4, 0.12, 'square', 0.05);
+}
+function sfxRecord() {
+  playTone(660, 0.2, 0.12, 'sine', 0);
+  playTone(880, 0.2, 0.12, 'sine', 0.1);
+  playTone(1100, 0.28, 0.12, 'sine', 0.2);
+}
+
+// ---------- HUD ----------
+function heartSVG() {
+  return '<svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.9-10-9.6C.4 8 1.9 4.3 5.2 4.3c2 0 3.3 1.2 4.1 2.4C10.1 5.5 11.4 4.3 13.4 4.3c3.3 0 4.8 3.7 3.2 7.1C18.2 16.1 12 21 12 21z" fill="#f472b6"/></svg>';
+}
+function buildHearts() {
+  livesEl.innerHTML = '';
+  for (let i = 0; i < START_LIVES; i++) {
+    const d = document.createElement('div');
+    d.className = 'life' + (i >= lives ? ' lost' : '');
+    d.innerHTML = heartSVG();
+    livesEl.appendChild(d);
+  }
+}
+function multiplier() { return clamp(Math.floor(combo / 5) + 1, 1, MULT_CAP); }
+function syncHUD() {
+  scoreEl.textContent = score;
+  recordEl.textContent = 'Record ' + best;
+  comboEl.textContent = combo;
+  const m = multiplier();
+  multEl.textContent = 'x' + m;
+  multEl.classList.toggle('glow', performance.now() < multGlowUntil);
+  buildHearts();
+}
+
+// ---------- Game control ----------
+function startGame() {
+  needleAngle = 0;
+  sweepDir = 1;
+  omega = START_SPEED;
+  tolerance = START_TOL;
+  hits = 0;
+  combo = 0;
+  maxCombo = 0;
+  score = 0;
+  lives = START_LIVES;
+  state = STATE.PLAYING;
+  freezeUntil = 0;
+  // arm a lockout so the very tap that started the game can't double as a
+  // gameplay stop (covers any synthetic-click slipping past the pointer path)
+  inputLockedUntil = performance.now() + INPUT_LOCKOUT;
+  pendingVerdict = null;
+  reversalPending = false;
+  reversalTelegraphUntil = 0;
+  trail = [];
+  particles = [];
+  rings = [];
+  labels = [];
+  heartShatter = [];
+  shake = 0; redFlash = 0; rimGlowPulse = 0;
+  comboPop = 1; targetSpawnT = 1; travelArc = null;
+  // first target: always ahead of needle (dir +1)
+  targetAngle = norm360(needleAngle + rand(RELOCATE_MIN, RELOCATE_MAX));
+  overlay.classList.add('hidden');
+  ui.classList.remove('hidden-el');
+  syncHUD();
+}
+
+function gameOver() {
+  state = STATE.GAMEOVER;
+  const beat = score > best;
+  if (beat) {
+    best = score;
+    localStorage.setItem('ds-best', String(best));
+  }
+  finalScoreEl.textContent = score;
+  finalRecordEl.textContent = 'Record ' + best;
+  finalComboEl.innerHTML = 'Combo max <b>' + maxCombo + '</b>';
+  recordBurst.classList.toggle('hidden-el', !beat);
+  titleScreen.classList.add('hidden-el');
+  gameOverScreen.classList.remove('hidden-el');
+  overlay.classList.remove('hidden');
+  overlay.classList.add('transparent');
+  ui.classList.add('hidden-el');
+  if (beat) { setTimeout(sfxRecord, 250); recordBurstFx(); }
+  sfxGameOver();
+}
+
+function showTitle() {
+  state = STATE.TITLE;
+  titleRecordEl.textContent = 'Record ' + best;
+  titleScreen.classList.remove('hidden-el');
+  gameOverScreen.classList.add('hidden-el');
+  overlay.classList.remove('hidden');
+  overlay.classList.remove('transparent');
+  ui.classList.add('hidden-el');
+}
+showTitle();
+
+// ---------- Input (unified) ----------
+function onStop() {
+  const now = performance.now();
+  // On the title tap, defer the start jingle until the audio ctx actually
+  // resumes (async) so it isn't silently dropped on the first interaction.
+  if (state === STATE.TITLE) { ensureAudio(sfxStart); startGame(); return; }
+  ensureAudio();
+  if (state === STATE.GAMEOVER) { showTitle(); return; }
+  if (state === STATE.FROZEN) return;           // ignore taps during freeze
+  if (state !== STATE.PLAYING) return;
+  if (now < inputLockedUntil) return;            // post-resume lockout
+
+  // snapshot the needle exactly where it is
+  snapshotAngle = norm360(needleAngle);
+  const d = angDist(snapshotAngle, targetAngle);
+  pendingDist = d;
+  if (d <= PERFECT_WINDOW) { pendingVerdict = 'PERFECT'; pendingPerfect = true; }
+  else if (d <= tolerance) { pendingVerdict = 'HIT'; pendingPerfect = false; }
+  else { pendingVerdict = 'MISS'; pendingPerfect = false; }
+
+  // enter freeze
+  state = STATE.FROZEN;
+  let freeze = FREEZE_MS;
+
+  // decide reversal NOW for telegraph timing (only on a successful hit)
+  reversalPending = false;
+  if (pendingVerdict !== 'MISS' && combo + 1 >= REVERSAL_UNLOCK && Math.random() < REVERSAL_CHANCE) {
+    reversalPending = true;
+    reversalNewDir = -sweepDir;
+    freeze += REVERSAL_FREEZE_EXTRA;
+    reversalTelegraphUntil = now + REVERSAL_TELEGRAPH_MS;
+  }
+  freezeUntil = now + freeze;
+
+  // resolve gameplay numbers + HUD THIS frame (player reads consequence during freeze)
+  resolveVerdict();
+  // fire juice immediately so it plays during the freeze
+  fireJuice();
+  syncHUD();
+}
+
+function resolveVerdict() {
+  if (pendingVerdict === 'MISS') {
+    lives -= 1;
+    combo = 0;
+    // target stays put
+    return;
+  }
+  // HIT or PERFECT
+  combo += 1;
+  if (combo > maxCombo) maxCombo = combo;
+  const m = multiplier();
+  const pts = Math.round((BASE_POINTS + (pendingPerfect ? PERFECT_BONUS : 0)) * m);
+  score += pts;
+  // difficulty ramp keyed off successful hits only
+  hits += 1;
+  omega = Math.min(MAX_SPEED, omega + SPEED_RAMP);
+  tolerance = Math.max(TOL_FLOOR, tolerance * TOL_SHRINK);
+  // combo milestone every 5
+  if (combo % 5 === 0) {
+    sfxCombo(Math.floor(combo / 5));
+    multGlowUntil = performance.now() + 600;
+    addRing({ x: cx, y: cy, r0: radius * 0.2, r: radius * 0.2, max: radius * 1.15, life: 1, color: '251,191,36', lw: 5, hud: true });
+  }
+}
+
+// called when freeze ends: apply post-resolution movement (relocate / reversal)
+function endFreeze() {
+  // ALWAYS resume from snapshot angle
+  needleAngle = snapshotAngle;
+  trail = [];
+  if (pendingVerdict === 'MISS') {
+    if (lives <= 0) { gameOver(); pendingVerdict = null; return; }
+    // resume on same target
+  } else {
+    // apply reversal if telegraphed
+    if (reversalPending) {
+      sweepDir = reversalNewDir;
+      sfxReversal();
+      reversalPending = false;
+    }
+    // relocate AHEAD in the (possibly new) sweep direction
+    const ahead = rand(RELOCATE_MIN, RELOCATE_MAX);
+    const old = targetAngle;
+    targetAngle = norm360(needleAngle + sweepDir * ahead);
+    // travel-arc telegraph for the eye
+    travelArc = { from: old, to: targetAngle, t: 1 };
+    targetSpawnT = 0;   // trigger snap-pop
+  }
+  state = STATE.PLAYING;
+  inputLockedUntil = performance.now() + INPUT_LOCKOUT;
+  pendingVerdict = null;
+}
+
+// ---------- Juice ----------
+function rimPoint(angDeg, r) {
+  const a = angDeg * D2R;
+  return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+}
+function addParticle(p) { if (particles.length < particleCap) particles.push(p); }
+function addRing(rg) { if (rings.length < 64) rings.push(rg); }  // cap the only otherwise-unbounded fx array
+
+function fireJuice() {
+  const p = rimPoint(snapshotAngle, radius);
+  const tangent = (snapshotAngle + 90) * D2R; // along rim
+  if (pendingVerdict === 'MISS') {
+    redFlash = 1;
+    shake = shakeMax = 8;
+    sfxMiss(true);
+    // heart shatter dribble from the lost heart slot
+    spawnHeartShatter();
+    // ghost error-arc rendered in draw()
+  } else if (pendingVerdict === 'PERFECT') {
+    shake = shakeMax = 5;
+    rimGlowPulse = 1;
+    comboPop = 1.3;
+    sfxPerfect(combo);
+    // 14-18 magenta/gold cone particles
+    const n = 16;
+    for (let i = 0; i < n; i++) {
+      const spread = rand(-70, 70) * D2R;
+      const dir = (snapshotAngle) * D2R + spread;  // outward from rim
+      const sp = rand(120, 320);
+      addParticle({
+        x: p.x, y: p.y,
+        vx: Math.cos(dir) * sp, vy: Math.sin(dir) * sp,
+        life: 1, decay: rand(1.2, 2.0), size: rand(2, 4),
+        color: Math.random() < 0.5 ? '244,114,182' : '251,191,36'
+      });
+    }
+    addRing({ x: p.x, y: p.y, r0: 0, r: 0, max: 78, life: 1, color: '244,114,182', lw: 4 });
+    addRing({ x: p.x, y: p.y, r0: 0, r: 0, max: 78, life: 1, delay: 0.06, color: '251,191,36', lw: 4 });
+    labels.push({ text: 'PARFAIT !', life: 1, y: 0, scale: 1.4 });
+  } else { // HIT
+    shake = shakeMax = 3;
+    comboPop = 1.3;
+    sfxHit(combo);
+    const n = Math.round(rand(6, 10));
+    for (let i = 0; i < n; i++) {
+      const along = tangent + (Math.random() < 0.5 ? 0 : Math.PI);
+      const sp = rand(80, 220);
+      addParticle({
+        x: p.x, y: p.y,
+        vx: Math.cos(along) * sp, vy: Math.sin(along) * sp,
+        life: 1, decay: rand(1.5, 2.4), size: rand(1.5, 3),
+        color: '0,255,255'
+      });
+    }
+    addRing({ x: p.x, y: p.y, r0: 0, r: 0, max: 70, life: 1, color: '0,255,255', lw: 4 });
+  }
+}
+
+function spawnHeartShatter() {
+  // Spawn from the ACTUAL rendered heart slot so the burst stays aligned across
+  // all breakpoints (heart size is clamp(18px,4.5vw,28px)) and safe-area insets.
+  // resolveVerdict() already decremented `lives`, so it is the 0-based index of
+  // the just-lost slot. syncHUD() rebuilds the hearts AFTER fireJuice(), so the
+  // DOM here still holds the pre-loss hearts and the slot element exists.
+  let hx, hy;
+  const slotEl = livesEl.children[lives];
+  if (slotEl) {
+    const r = slotEl.getBoundingClientRect();
+    hx = r.left + r.width / 2;
+    hy = r.top + r.height / 2;
+  } else {
+    // fallback: mirror the CSS clamp + right padding if the node is missing
+    const heartW = Math.min(28, Math.max(18, 0.045 * W)), gap = 6, padR = 16;
+    const fromRight = (START_LIVES - 1 - lives);
+    hx = W - padR - heartW / 2 - fromRight * (heartW + gap);
+    hy = 12 + heartW / 2;
+  }
+  for (let i = 0; i < 8; i++) {
+    addParticle({
+      x: hx, y: hy,
+      vx: rand(-40, 40), vy: rand(20, 90),
+      life: 1, decay: rand(1.0, 1.8), size: rand(1.5, 3),
+      color: '244,114,182', gravity: 220
+    });
+  }
+}
+
+function recordBurstFx() {
+  for (let i = 0; i < 24; i++) {
+    const a = rand(0, TAU);
+    const sp = rand(80, 260);
+    addParticle({
+      x: cx, y: cy - 40,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 1, decay: rand(0.8, 1.6), size: rand(2, 4),
+      color: '251,191,36', gravity: 60
+    });
+  }
+}
+
+// ---------- Update ----------
+function update(dt) {
+  const now = performance.now();
+
+  if (state === STATE.PLAYING) {
+    needleAngle = norm360(needleAngle + sweepDir * omega * dt);
+    trail.push(needleAngle);
+    while (trail.length > TRAIL_MAX) trail.shift();
+  } else if (state === STATE.FROZEN) {
+    if (now >= freezeUntil) endFreeze();
+  }
+
+  // fx decay
+  if (shake > 0) { shake -= dt * (shakeMax / 0.18); if (shake < 0) shake = 0; }
+  if (redFlash > 0) { redFlash -= dt / 0.30; if (redFlash < 0) redFlash = 0; }
+  if (rimGlowPulse > 0) { rimGlowPulse -= dt / 0.4; if (rimGlowPulse < 0) rimGlowPulse = 0; }
+  if (comboPop > 1) { comboPop -= dt * 2.4; if (comboPop < 1) comboPop = 1; }
+  if (targetSpawnT < 1) { targetSpawnT += dt / 0.25; if (targetSpawnT > 1) targetSpawnT = 1; }
+  if (travelArc) { travelArc.t -= dt / 0.5; if (travelArc.t <= 0) travelArc = null; }
+
+  // particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const pt = particles[i];
+    pt.x += pt.vx * dt;
+    pt.y += pt.vy * dt;
+    if (pt.gravity) pt.vy += pt.gravity * dt;
+    pt.vx *= (1 - 1.6 * dt);
+    pt.vy *= (1 - 1.6 * dt);
+    pt.life -= pt.decay * dt;
+    if (pt.life <= 0) particles.splice(i, 1);
+  }
+  // rings
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const rg = rings[i];
+    if (rg.delay && rg.delay > 0) { rg.delay -= dt; continue; }
+    rg.life -= dt / 0.35;
+    rg.r = rg.r0 + (rg.max - rg.r0) * (1 - rg.life);
+    if (rg.life <= 0) rings.splice(i, 1);
+  }
+  // labels
+  for (let i = labels.length - 1; i >= 0; i--) {
+    const lb = labels[i];
+    lb.life -= dt / 0.7;
+    lb.y -= 30 * dt / 0.7;
+    if (lb.scale > 1) { lb.scale -= dt * 2.0; if (lb.scale < 1) lb.scale = 1; }
+    if (lb.life <= 0) labels.splice(i, 1);
+  }
+
+  // title bg drift
+  if (state === STATE.TITLE || state === STATE.GAMEOVER) {
+    for (const b of bgParticles) {
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      if (b.x < 0) b.x += W; if (b.x > W) b.x -= W;
+      if (b.y < 0) b.y += H; if (b.y > H) b.y -= H;
+    }
+  }
+}
+
+// ---------- Combo heat color ----------
+function lerp(a, b, t) { return a + (b - a) * t; }
+function comboColor() {
+  // cyan(0) -> luminous violet(5) -> #f472b6(12+)
+  // midpoint nudged brighter (was 192,132,252, which read muddy on the dark-purple
+  // bg around combo 3-5) so the needle never goes dim mid-ramp.
+  const c0 = [0, 255, 255], c1 = [196, 152, 255], c2 = [244, 114, 182];
+  if (combo <= 5) {
+    const t = clamp(combo / 5, 0, 1);
+    return [lerp(c0[0], c1[0], t), lerp(c0[1], c1[1], t), lerp(c0[2], c1[2], t)];
+  }
+  const t = clamp((combo - 5) / 7, 0, 1);
+  return [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)];
+}
+function rgb(c) { return 'rgb(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ')'; }
+
+// ---------- Draw ----------
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  let sx = 0, sy = 0;
+  if (shake > 0) { sx = (Math.random() - 0.5) * 2 * shake; sy = (Math.random() - 0.5) * 2 * shake; }
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  if (state === STATE.TITLE || state === STATE.GAMEOVER) drawBg();
+
+  // Draw the dial only during play/freeze. On TITLE and GAMEOVER the overlay
+  // sits on a clean drifting-particle backdrop (no frozen needle poking through
+  // behind the score panel).
+  if (state === STATE.PLAYING || state === STATE.FROZEN) drawDial();
+
+  // particles (above dial, but cone keeps center clear)
+  drawParticles();
+  drawRings();
+  drawLabels();
+
+  ctx.restore();
+
+  // red vignette flash (no shake offset)
+  if (redFlash > 0) {
+    ctx.save();
+    const g = ctx.createRadialGradient(cx, cy, radius * 0.4, cx, cy, Math.max(W, H) * 0.75);
+    g.addColorStop(0, 'rgba(248,113,113,0)');
+    g.addColorStop(1, 'rgba(248,113,113,' + (0.25 * redFlash).toFixed(3) + ')');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+}
+
+function drawBg() {
+  for (const b of bgParticles) {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, TAU);
+    ctx.fillStyle = 'rgba(' + b.hue + ',' + b.a.toFixed(3) + ')';
+    ctx.fill();
+  }
+}
+
+function drawDial() {
+  const heat = comboColor();
+  const heatStr = rgb(heat);
+
+  // rotating glow halo for combo>=8
+  if (combo >= 8) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((performance.now() / 1000) * 0.6);
+    const grd = ctx.createRadialGradient(0, 0, radius * 0.7, 0, 0, radius * 1.35);
+    grd.addColorStop(0, 'rgba(' + (heat[0] | 0) + ',' + (heat[1] | 0) + ',' + (heat[2] | 0) + ',0.16)');
+    grd.addColorStop(1, 'rgba(' + (heat[0] | 0) + ',' + (heat[1] | 0) + ',' + (heat[2] | 0) + ',0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(0, 0, radius * 1.35, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  // rim ring
+  ctx.save();
+  const rimGlow = 14 + rimGlowPulse * 22;
+  ctx.shadowColor = 'rgba(0,255,255,0.8)';
+  ctx.shadowBlur = rimGlow;
+  ctx.strokeStyle = 'rgba(0,255,255,' + (0.55 + 0.3 * rimGlowPulse).toFixed(3) + ')';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(cx, cy, radius, 0, TAU); ctx.stroke();
+  ctx.restore();
+
+  // tick marks (pre-rendered once in resize(), blitted here — the 60 marks are
+  // static so re-stroking them every frame was pure waste). Source is at device
+  // resolution; drawing it into the W×H CSS rect under the dpr transform maps 1:1.
+  ctx.drawImage(tickCanvas, 0, 0, W, H);
+
+  // travel-arc telegraph (dotted, fading) from old to new target
+  if (travelArc) {
+    ctx.save();
+    ctx.setLineDash([4, 8]);
+    // matches the target's reserved magenta so the eye follows it to the new spot
+    ctx.strokeStyle = 'rgba(240,0,255,' + (0.5 * travelArc.t).toFixed(3) + ')';
+    ctx.lineWidth = 2;
+    const a0 = travelArc.from * D2R, a1 = travelArc.to * D2R;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius - 4, a0, a1, sweepDir < 0);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // target arc (breathing) on rim
+  drawTarget();
+
+  // reversal telegraph arrow
+  if (state === STATE.FROZEN && reversalPending && performance.now() < reversalTelegraphUntil) {
+    drawReversalArrow();
+  }
+
+  // needle trail (skip during freeze)
+  if (state === STATE.PLAYING && trail.length > 1) {
+    for (let i = 0; i < trail.length - 1; i++) {
+      const t = i / trail.length;
+      const a = trail[i] * D2R;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(' + (heat[0] | 0) + ',' + (heat[1] | 0) + ',' + (heat[2] | 0) + ',' + (0.4 * t).toFixed(3) + ')';
+      ctx.lineWidth = 2 + 4 * t;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * radius * 0.96, cy + Math.sin(a) * radius * 0.96);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // needle
+  const drawAngle = (state === STATE.FROZEN) ? snapshotAngle : needleAngle;
+  const a = drawAngle * D2R;
+  ctx.save();
+  let needleColor = heatStr;
+  let glow = (state === STATE.FROZEN) ? 25 : 15;
+  if (state === STATE.FROZEN && pendingVerdict === 'MISS') needleColor = 'rgb(248,113,113)';
+  ctx.shadowColor = needleColor;
+  ctx.shadowBlur = glow;
+  ctx.strokeStyle = needleColor;
+  ctx.lineWidth = (state === STATE.FROZEN) ? 5 : 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(a) * radius * 0.98, cy + Math.sin(a) * radius * 0.98);
+  ctx.stroke();
+  // hub
+  ctx.beginPath();
+  ctx.arc(cx, cy, 7, 0, TAU);
+  ctx.fillStyle = needleColor;
+  ctx.fill();
+  ctx.restore();
+
+  // landing-tick precision color + ghost gap line during freeze
+  if (state === STATE.FROZEN) drawLanding();
+}
+
+function drawTarget() {
+  // breathing 0.9Hz
+  const breathe = 0.85 + 0.15 * Math.sin(performance.now() / 1000 * 0.9 * TAU);
+  // snap-pop scale on relocate
+  let popScale = 1;
+  if (targetSpawnT < 1) {
+    const t = targetSpawnT;
+    popScale = t < 0.6 ? lerp(0, 1.3, t / 0.6) : lerp(1.3, 1, (t - 0.6) / 0.4);
+  }
+  // Drawn catch arc IS the real hit window: derive it straight from `tolerance`
+  // (the same value onStop() uses for the verdict) so the visual can never drift
+  // from the actual window. The tunables keep tolerance in [TOL_FLOOR, START_TOL]
+  // = [6,18], a sane visual range, so no separate clamp is needed.
+  const halfArc = tolerance * D2R;
+  const center = targetAngle * D2R;
+  const r = radius;
+  ctx.save();
+  ctx.lineCap = 'round';
+  // Outer glow band = full catch window. Reserved bright magenta (240,0,255) the
+  // needle's combo-heat ramp never reaches, so target and needle stay visually
+  // distinct even at high combo (the needle tops out near pink 244,114,182).
+  // Boosted alpha + thickness so the target reads as the primary focal point.
+  ctx.shadowColor = 'rgba(240,0,255,0.9)';
+  ctx.shadowBlur = 20 * breathe * popScale;
+  ctx.strokeStyle = 'rgba(240,0,255,' + (0.8 * breathe * popScale).toFixed(3) + ')';
+  ctx.lineWidth = 14 * popScale;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, center - halfArc, center + halfArc);
+  ctx.stroke();
+  // bright core tick = perfect window
+  const perfArc = PERFECT_WINDOW * D2R;
+  ctx.shadowColor = 'rgba(251,191,36,0.9)';
+  ctx.shadowBlur = 14 * popScale;
+  ctx.strokeStyle = 'rgba(251,191,36,' + (0.85 * breathe * popScale).toFixed(3) + ')';
+  ctx.lineWidth = 5 * popScale;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, center - perfArc, center + perfArc);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawReversalArrow() {
+  const pulse = (performance.now() % 250) / 250;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(251,191,36,' + (0.9 * (1 - pulse)).toFixed(3) + ')';
+  ctx.shadowColor = 'rgba(251,191,36,0.9)';
+  ctx.shadowBlur = 16;
+  ctx.lineWidth = 4;
+  const r = radius + 14;
+  const a0 = snapshotAngle * D2R;
+  const a1 = a0 + reversalNewDir * 0.7;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, a0, a1, reversalNewDir < 0);
+  ctx.stroke();
+  // arrow head
+  const head = rimPoint(snapshotAngle + reversalNewDir * 40, r);
+  const ha = (snapshotAngle + reversalNewDir * 40 + reversalNewDir * 90) * D2R;
+  ctx.beginPath();
+  ctx.moveTo(head.x, head.y);
+  ctx.lineTo(head.x + Math.cos(ha) * 12 - reversalNewDir * 4, head.y + Math.sin(ha) * 12);
+  ctx.moveTo(head.x, head.y);
+  ctx.lineTo(head.x - Math.cos(ha) * 6, head.y - Math.sin(ha) * 6);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLanding() {
+  const land = rimPoint(snapshotAngle, radius);
+  let col;
+  if (pendingVerdict === 'PERFECT') col = '16,185,129';        // deep green
+  else if (pendingVerdict === 'HIT') {
+    const edge = tolerance - pendingDist;
+    col = (edge <= 2) ? '251,191,36' : '52,211,153';           // amber close-call else green
+  } else col = '248,113,113';                                   // red miss
+
+  ctx.save();
+  ctx.shadowColor = 'rgb(' + col + ')';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = 'rgb(' + col + ')';
+  ctx.beginPath();
+  ctx.arc(land.x, land.y, 7, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+
+  // ghost gap line: from landing tip toward nearest target edge
+  ctx.save();
+  ctx.setLineDash([3, 5]);
+  if (pendingVerdict === 'MISS') {
+    // error-arc to nearest target edge with side readable
+    const edgeA = nearestTargetEdge(snapshotAngle);
+    ctx.strokeStyle = 'rgba(248,113,113,0.8)';
+    ctx.lineWidth = 3;
+    const dir = shortestArcDir(snapshotAngle, edgeA);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, snapshotAngle * D2R, edgeA * D2R, dir < 0);
+    ctx.stroke();
+  } else {
+    // thin ghost line landing tip -> target center
+    const tp = rimPoint(targetAngle, radius);
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(land.x, land.y);
+    ctx.lineTo(tp.x, tp.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function nearestTargetEdge(fromAng) {
+  const e1 = norm360(targetAngle - tolerance);
+  const e2 = norm360(targetAngle + tolerance);
+  return angDist(fromAng, e1) <= angDist(fromAng, e2) ? e1 : e2;
+}
+
+function drawParticles() {
+  // No per-particle shadowBlur: it's the priciest canvas op on low-end mobile
+  // GPUs and the glow is barely visible at size 1.5-4. Particles are tiny and
+  // short-lived; skipping the blur keeps a full burst at 60fps on budget phones.
+  for (const pt of particles) {
+    ctx.save();
+    ctx.globalAlpha = clamp(pt.life, 0, 1);
+    ctx.fillStyle = 'rgb(' + pt.color + ')';
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.size * clamp(pt.life, 0.2, 1), 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawRings() {
+  for (const rg of rings) {
+    if (rg.delay && rg.delay > 0) continue;
+    ctx.save();
+    ctx.globalAlpha = clamp(rg.life, 0, 1);
+    ctx.strokeStyle = 'rgb(' + rg.color + ')';
+    ctx.shadowColor = 'rgb(' + rg.color + ')';
+    ctx.shadowBlur = 12;
+    ctx.lineWidth = rg.lw * clamp(rg.life, 0, 1);
+    ctx.beginPath();
+    ctx.arc(rg.x, rg.y, Math.max(0.1, rg.r), 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawLabels() {
+  for (const lb of labels) {
+    ctx.save();
+    const baseY = cy - radius * 0.5 + lb.y;
+    ctx.globalAlpha = clamp(lb.life, 0, 1);
+    ctx.translate(cx, baseY);
+    ctx.scale(lb.scale, lb.scale);
+    ctx.font = '900 ' + Math.round(radius * 0.18) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const grad = ctx.createLinearGradient(-100, 0, 100, 0);
+    grad.addColorStop(0, '#fbbf24');
+    grad.addColorStop(1, '#f0f');
+    ctx.fillStyle = grad;
+    ctx.shadowColor = 'rgba(251,191,36,0.8)';
+    ctx.shadowBlur = 20;
+    ctx.fillText(lb.text, 0, 0);
+    ctx.restore();
+  }
+}
+
+// ---------- Main loop ----------
+let lastT = performance.now();
+let running = true;
+
+function frame(now) {
+  if (!running) return;
+  let dt = (now - lastT) / 1000;
+  lastT = now;
+  if (dt > DT_CLAMP) dt = DT_CLAMP;
+  if (dt < 0) dt = 0;
+  update(dt);
+  draw();
+  // keep combo chip pop / mult glow synced (cheap)
+  if (state === STATE.PLAYING || state === STATE.FROZEN) {
+    multEl.style.transform = 'scale(' + comboPop.toFixed(3) + ')';
+    multEl.classList.toggle('glow', now < multGlowUntil);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// pause on tab hidden, resume cleanly (avoid dt spike)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    running = false;
+  } else {
+    if (!running) {
+      running = true;
+      lastT = performance.now();
+      requestAnimationFrame(frame);
+    }
+  }
+});
+
+// ---------- Input wiring (single pointer path, no double-fire) ----------
+// Pointer Events fire once per interaction (mouse OR touch), so there is no
+// synthetic-click duplication to guard against. Let links through.
+document.addEventListener('pointerdown', (e) => {
+  if (e.target && e.target.closest && e.target.closest('a')) return;
+  e.preventDefault();
+  onStop();
+}, { passive: false });
+document.addEventListener('keydown', (e) => {
+  if (e.repeat) return;   // ignore OS key auto-repeat (would re-fire onStop)
+  if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); onStop(); }
+});
+
+// initial HUD scaffold
+buildHearts();
+syncHUD();
+</script>
+</body>
+</html>

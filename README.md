@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### ⏱️ **[Dead Stop](https://adrrr.github.io/night-projects/dead-stop/)**
+Jeu de précision et de timing — une aiguille néon balaie un cadran en continu et tu dois la figer PILE sur le repère cible (toujours visible) d'une seule tape. Réussite = la cible saute à un nouvel angle (toujours devant l'aiguille), le balayage accélère et la fenêtre de tir rétrécit. Hit parfait au cœur de cible pour le bonus, combos avec multiplicateur, et inversions de sens surprises à haut combo. 3 vies, ramp progressif façon Flappy Bird : facile à comprendre, dur à maîtriser. Freeze-frame sur chaque tape pour voir où l'aiguille a atterri, particules, shockwave, screen shake, Web Audio synthétique, record localStorage. Mobile-first (tap) + desktop (clic/espace). Dark/neon.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/dead-stop/)
+
 ### 🎚️ **[Unison Drift](https://adrrr.github.io/night-projects/unison-drift/)**
 Jeu de précision auditive — deux sons jouent à des fréquences proches et produisent un battement acoustique (wah-wah) dont la vitesse égale l'écart de hauteur. Glisse un grand slider plein écran pour bender le second son et annuler le battement jusqu'à le faire disparaître en un seul son pur. Aucune cible affichée : tu accordes uniquement à l'oreille, exactement comme un accordeur de piano (beat-frequency nulling). Score en cents musicaux, 8 rounds avec offsets de plus en plus subtils, soft-timer, mode Hard (sans aide visuelle), streak, high scores localStorage. Visualiseur de battement honnête (piloté par la vraie fréquence de battement), Web Audio synthétique, haptique. Mobile-first (slider plein écran au pouce — l'inverse exact de eyeball qui refuse le tactile) + desktop (drag/flèches/espace). Casque recommandé. Dark/neon.
 
