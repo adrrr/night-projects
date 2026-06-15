@@ -1,0 +1,12 @@
+name = "hairline-leaderboard"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+
+# KV namespace for the leaderboard. The binding name MUST stay "SCORES".
+#
+# DEPLOYER: create the namespace first, then paste its id below:
+#   wrangler kv namespace create SCORES
+# Copy the printed id and replace REPLACE_WITH_KV_ID with it.
+[[kv_namespaces]]
+binding = "SCORES"
+id = "76a56b60a05f49dfa398af4e0deb08db"

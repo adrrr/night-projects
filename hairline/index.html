@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
@@ -7,65 +7,106 @@
 <title>Hairline</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
-html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;background:#f7f6f3;color:#111;user-select:none;-webkit-user-select:none;font-family:ui-monospace,'SF Mono','SFMono-Regular',Menlo,Consolas,monospace}
+html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;
+  background:#f7f6f3;color:#14130f;user-select:none;-webkit-user-select:none;
+  font-family:ui-monospace,'SF Mono','SFMono-Regular',Menlo,Consolas,monospace}
 canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 
-/* top-left persistent best */
-#best{position:fixed;z-index:10;pointer-events:none;
-  top:calc(16px + env(safe-area-inset-top));left:calc(18px + env(safe-area-inset-left));
-  font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:rgba(17,17,17,.42)}
+/* ink tones */
+:root{
+  --ink:#14130f;
+  --ink-2:rgba(20,19,15,.62);
+  --ink-3:rgba(20,19,15,.40);
+  --ink-4:rgba(20,19,15,.22);
+  --paper:#f7f6f3;
+}
 
-/* live streak (large, centered above the line during play) */
-#streak{position:fixed;z-index:10;pointer-events:none;top:0;left:0;width:100%;
-  text-align:center;padding-top:calc(38px + env(safe-area-inset-top));
-  font-size:clamp(40px,12vw,84px);font-weight:600;letter-spacing:-.02em;
-  color:#111;line-height:1;opacity:0;transition:opacity .25s}
-#streak.show{opacity:1}
-
-/* fading hint */
-#hint{position:fixed;z-index:10;pointer-events:none;left:0;width:100%;
-  bottom:calc(34px + env(safe-area-inset-bottom));text-align:center;
-  font-size:13px;letter-spacing:.06em;color:rgba(17,17,17,.5);transition:opacity .6s}
-#hint.gone{opacity:0}
-
-/* mute toggle */
-#mute{position:fixed;z-index:11;
+/* mute toggle — a whisper, top-right */
+#mute{position:fixed;z-index:30;
   top:calc(12px + env(safe-area-inset-top));right:calc(14px + env(safe-area-inset-right));
   width:34px;height:34px;display:flex;align-items:center;justify-content:center;
-  border:none;background:transparent;color:rgba(17,17,17,.42);cursor:pointer;
-  font-size:15px;line-height:1;border-radius:8px}
-#mute:hover{color:rgba(17,17,17,.7)}
+  border:none;background:transparent;color:var(--ink-3);cursor:pointer;
+  font-size:15px;line-height:1;border-radius:8px;transition:color .15s}
+#mute:hover{color:var(--ink)}
 
-/* overlays (title + game over) */
+/* personal best — top-left whisper, only once set */
+#pb{position:fixed;z-index:20;pointer-events:none;
+  top:calc(16px + env(safe-area-inset-top));left:calc(18px + env(safe-area-inset-left));
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);
+  opacity:0;transition:opacity .5s}
+#pb.show{opacity:1}
+
+/* overlays */
 .overlay{position:fixed;z-index:20;top:0;left:0;width:100%;height:100%;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   text-align:center;padding:24px;pointer-events:none}
 .overlay.hidden{display:none}
 
-#title-name{font-size:clamp(38px,11vw,76px);font-weight:600;letter-spacing:-.03em;margin-bottom:18px}
-#title-rule{width:min(58vw,260px);height:1px;background:rgba(17,17,17,.85);margin-bottom:18px}
-.tap-cue{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:rgba(17,17,17,.5);
-  animation:fade 2.2s ease-in-out infinite}
-@keyframes fade{0%,100%{opacity:.55}50%{opacity:.18}}
+/* fade-in helper */
+.fade-in{animation:fadeIn .55s ease both}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-#go-streak{font-size:clamp(52px,15vw,104px);font-weight:600;letter-spacing:-.03em;line-height:1}
-#go-streak-label{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:rgba(17,17,17,.42);margin-bottom:4px}
-.go-row{font-size:14px;color:rgba(17,17,17,.6);margin-top:14px;letter-spacing:.02em}
-.go-row b{font-weight:600;color:#111}
-#go-best.new b{color:#111}
-#go-best.new::after{content:' · record';color:rgba(17,17,17,.42)}
-#go-actions{display:flex;gap:10px;margin-top:30px;pointer-events:auto}
-.btn{font-family:inherit;font-size:13px;letter-spacing:.08em;text-transform:uppercase;
-  padding:11px 20px;border:1px solid rgba(17,17,17,.85);background:transparent;color:#111;
-  border-radius:999px;cursor:pointer;transition:background .15s,color .15s}
-.btn:hover{background:#111;color:#f7f6f3}
-.btn.primary{background:#111;color:#f7f6f3}
-.btn.primary:hover{background:transparent;color:#111}
-#copied{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:rgba(17,17,17,.45);
-  margin-top:14px;height:14px;opacity:0;transition:opacity .2s}
-#copied.show{opacity:1}
+/* ---- title ---- */
+#title-name{font-size:clamp(40px,11vw,80px);font-weight:600;letter-spacing:-.04em;
+  margin-bottom:22px;line-height:1}
+.tap-cue{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);
+  animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.55}50%{opacity:.16}}
 
-/* subtle entrance fade for the whole stage */
+/* ---- result reveal ---- */
+#result{gap:0}
+#res-label{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);
+  margin-bottom:14px}
+#res-value{font-size:clamp(44px,13vw,92px);font-weight:600;letter-spacing:-.03em;line-height:1;
+  font-variant-numeric:tabular-nums}
+#res-deg{font-size:.42em;font-weight:400;color:var(--ink-3);margin-left:.06em;letter-spacing:-.02em}
+#res-sub{font-size:12.5px;letter-spacing:.04em;color:var(--ink-2);margin-top:18px;height:16px}
+#res-sub b{font-weight:600;color:var(--ink)}
+.row-actions{display:flex;gap:10px;margin-top:34px;pointer-events:auto}
+.btn{font-family:inherit;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  padding:12px 22px;border:1px solid var(--ink);background:transparent;color:var(--ink);
+  border-radius:999px;cursor:pointer;transition:background .15s,color .15s,opacity .15s}
+.btn:hover{background:var(--ink);color:var(--paper)}
+.btn.primary{background:var(--ink);color:var(--paper)}
+.btn.primary:hover{background:transparent;color:var(--ink)}
+.btn.ghost{border-color:var(--ink-4);color:var(--ink-2)}
+.btn.ghost:hover{background:transparent;border-color:var(--ink);color:var(--ink)}
+
+/* ---- name entry (AAA arcade) ---- */
+#name{gap:0}
+#name-label{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);
+  margin-bottom:6px}
+#name-rank{font-size:13px;letter-spacing:.04em;color:var(--ink-2);margin-bottom:26px}
+#name-rank b{font-weight:600;color:var(--ink)}
+.wheels{display:flex;gap:14px;pointer-events:auto}
+.wheel{display:flex;flex-direction:column;align-items:center;gap:8px}
+.wheel button{font-family:inherit;border:none;background:transparent;cursor:pointer;
+  color:var(--ink-3);font-size:20px;line-height:1;width:46px;height:30px;border-radius:8px;
+  transition:color .12s}
+.wheel button:hover{color:var(--ink)}
+.wheel .glyph{font-size:clamp(40px,11vw,58px);font-weight:600;line-height:1;color:var(--ink);
+  width:clamp(48px,13vw,68px);text-align:center;padding:6px 0;border-bottom:2px solid var(--ink);
+  font-variant-numeric:tabular-nums;cursor:pointer}
+.wheel.active .glyph{border-bottom-color:var(--ink)}
+.wheel:not(.active) .glyph{border-bottom-color:var(--ink-4)}
+
+/* ---- leaderboard ---- */
+#board{gap:0}
+#board-title{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);
+  margin-bottom:20px}
+#board-list{width:min(86vw,330px);font-size:14px;line-height:1;pointer-events:none}
+.brow{display:flex;align-items:baseline;justify-content:space-between;
+  padding:9px 4px;border-bottom:1px solid var(--ink-4);color:var(--ink-2)}
+.brow:last-child{border-bottom:none}
+.brow .rk{width:2.4em;text-align:left;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.brow .nm{flex:1;text-align:left;letter-spacing:.14em;color:var(--ink)}
+.brow .er{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.brow.me{color:var(--ink)}
+.brow.me .nm,.brow.me .er,.brow.me .rk{color:var(--ink);font-weight:600}
+.brow.me{background:rgba(20,19,15,.05);border-radius:8px;border-bottom-color:transparent;
+  margin:0 -6px;padding-left:10px;padding-right:10px}
+#board-empty{font-size:12.5px;color:var(--ink-3);letter-spacing:.04em;padding:8px 0 4px}
+
 body{animation:enter .6s ease both}
 @keyframes enter{from{opacity:0}to{opacity:1}}
 </style>
@@ -73,76 +114,110 @@ body{animation:enter .6s ease both}
 <body>
 <canvas id="c"></canvas>
 
-<div id="best">best —</div>
-<div id="streak">0</div>
-<button id="mute" aria-label="Couper le son">♪</button>
-<div id="hint">touche pour figer la ligne</div>
+<button id="mute" aria-label="Mute">&#9834;</button>
+<div id="pb">pb &mdash;</div>
 
+<!-- title -->
 <div id="title" class="overlay">
   <div id="title-name">Hairline</div>
-  <div id="title-rule"></div>
-  <div class="tap-cue">touche pour commencer</div>
+  <div class="tap-cue">tap to begin</div>
 </div>
 
-<div id="gameover" class="overlay hidden">
-  <div id="go-streak-label">série</div>
-  <div id="go-streak">0</div>
-  <div class="go-row" id="go-prec">précision <b>—</b></div>
-  <div class="go-row" id="go-best">best <b>—</b></div>
-  <div id="go-actions">
-    <button class="btn" id="share-btn">Partager</button>
-    <button class="btn primary" id="retry-btn">Rejouer</button>
+<!-- result reveal -->
+<div id="result" class="overlay hidden">
+  <div id="res-label">error</div>
+  <div id="res-value"><span id="res-num">0</span><span id="res-deg">&deg;</span></div>
+  <div id="res-sub">&nbsp;</div>
+  <div class="row-actions">
+    <button class="btn ghost" id="res-board-btn">Board</button>
+    <button class="btn primary" id="res-again-btn">Again</button>
   </div>
-  <div id="copied">copié</div>
+</div>
+
+<!-- name entry -->
+<div id="name" class="overlay hidden">
+  <div id="name-label">top ten</div>
+  <div id="name-rank">rank <b>&mdash;</b> &middot; enter your initials</div>
+  <div class="wheels" id="wheels"></div>
+  <div class="row-actions">
+    <button class="btn primary" id="name-submit">Submit</button>
+  </div>
+</div>
+
+<!-- leaderboard -->
+<div id="board" class="overlay hidden">
+  <div id="board-title">leaderboard</div>
+  <div id="board-list"></div>
+  <div class="row-actions">
+    <button class="btn primary" id="board-again-btn">Play</button>
+  </div>
 </div>
 
 <script>
 "use strict";
+
+/* ============================================================
+   LEADERBOARD API
+   The orchestrator fills the deployed Worker URL here.
+   ============================================================ */
+const LB_URL = "https://hairline-leaderboard.adrien-projects.workers.dev";
+
 const $ = id => document.getElementById(id);
 const canvas = $('c');
 const ctx = canvas.getContext('2d');
 
-const bestEl = $('best');
-const streakEl = $('streak');
-const muteEl = $('mute');
-const hintEl = $('hint');
-const titleEl = $('title');
-const goEl = $('gameover');
-const goStreakEl = $('go-streak');
-const goPrecEl = $('go-prec');
-const goBestEl = $('go-best');
-const shareBtn = $('share-btn');
-const retryBtn = $('retry-btn');
-const copiedEl = $('copied');
+const muteEl   = $('mute');
+const pbEl     = $('pb');
+const titleEl  = $('title');
+const resultEl = $('result');
+const resNumEl = $('res-num');
+const resSubEl = $('res-sub');
+const nameEl   = $('name');
+const nameRankEl = $('name-rank');
+const wheelsEl = $('wheels');
+const boardEl  = $('board');
+const boardTitleEl = $('board-title');
+const boardListEl = $('board-list');
 
-// ---------- Tunables (the whole difficulty curve lives here) ----------
-const START_SWEEP_SEC = 2.6;   // time for the first full 360° revolution
-const SPEED_RAMP      = 1.07;  // angular speed *= this on every hit
-const START_TOL_DEG   = 6;     // starting half-window (±deg) for a hit
-const TOL_SHRINK      = 0.96;  // tolerance *= this on every hit
-const TOL_FLOOR_DEG   = 0.8;   // tolerance never goes below this
-const FREEZE_MS       = 100;   // freeze-frame after a successful hit
-const DT_CLAMP        = 0.05;  // clamp delta-time (tab refocus / long frames)
-// single life — a single miss ends the run.
+const resBoardBtn = $('res-board-btn');
+const resAgainBtn = $('res-again-btn');
+const nameSubmitBtn = $('name-submit');
+const boardAgainBtn = $('board-again-btn');
 
-// ---------- Helpers ----------
+/* ---------- Tunables ---------- */
+const SWEEP_SEC = 1.9;     // one full revolution — identical for everyone (fair board)
+const REVEAL_MS = 620;     // count-up duration on the result reveal
+const DT_CLAMP  = 0.05;    // clamp delta-time across long frames / tab refocus
+const PREC_DEC  = 4;       // decimals shown on the error
+const PREC_MIN  = 0.0001;  // finest nonzero error we will ever display (never exactly 0)
+
+/* ---------- Helpers ---------- */
 const TAU = Math.PI * 2;
 const D2R = Math.PI / 180;
 const R2D = 180 / Math.PI;
 const clamp = (v, lo, hi) => v < lo ? lo : (v > hi ? hi : v);
-// Smallest angular distance (deg) of `angle` to the horizontal axis (0° or 180°).
+
+// Smallest angular distance (deg) of `rad` to the horizontal axis (0 or 180).
 function errToHorizontal(rad) {
-  // fold into [0,180), then distance to nearest of {0,180}
-  let d = ((rad % Math.PI) + Math.PI) % Math.PI; // [0,π)
+  let d = ((rad % Math.PI) + Math.PI) % Math.PI; // fold into [0,π)
   d = Math.min(d, Math.PI - d);                  // [0,π/2]
   return d * R2D;
 }
+// Format an error so it is never exactly 0.0000.
+function fmtErr(deg) {
+  let v = deg;
+  if (!(v > 0)) v = PREC_MIN;
+  if (v < PREC_MIN) v = PREC_MIN;
+  return v.toFixed(PREC_DEC);
+}
 
-// ---------- Canvas / geometry ----------
+/* ---------- Canvas / geometry ----------
+   Full-bleed: the horizon and the needle both reach the page edges, so at
+   horizontal they cover the same pixels and merge into one full-width line. */
 let W = 0, H = 0, dpr = 1;
-let cx = 0, cy = 0;     // pivot, snapped to a crisp half-pixel for 1px lines
-let half = 0;           // half-length of the needle / horizon
-let lineW = 1;          // CSS px line width (true 1px hairline)
+let cx = 0, cy = 0;   // pivot, snapped so a 1px stroke straddles one device pixel
+let reach = 0;        // half-length long enough to always hit the page corners
+let lineW = 1;        // CSS px line width (true 1 device-pixel hairline)
 
 function resize() {
   dpr = window.devicePixelRatio || 1;
@@ -153,18 +228,16 @@ function resize() {
   canvas.height = Math.max(1, Math.round(H * dpr));
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // Pivot at the visual center. Snap to the half-pixel grid (in device space)
-  // so a 1px stroke straddles a single device-pixel row/column => crisp, never
-  // smeared across two pixels. We round to the nearest device pixel then add 0.5
-  // device px, expressed back in CSS units for the (dpr-scaled) context.
+  // Pivot at visual center, snapped to the device half-pixel grid so a 1px
+  // stroke lands on a single device-pixel row/column => crisp, never smeared.
   const pxX = Math.round(W / 2 * dpr) + 0.5;
   const pxY = Math.round(H / 2 * dpr) + 0.5;
   cx = pxX / dpr;
   cy = pxY / dpr;
 
-  half = Math.min(W, H) * 0.42;
-  // True hairline: 1 device pixel. In the dpr-scaled context that is 1/dpr CSS px.
-  lineW = 1 / dpr;
+  // Reach beyond the farthest corner so the needle is full-bleed at any angle.
+  reach = Math.ceil(Math.hypot(W, H)) + 4;
+  lineW = 1 / dpr; // 1 device pixel
 }
 
 let resizeScheduled = false;
@@ -181,32 +254,27 @@ if (window.visualViewport) {
 }
 resize();
 
-// ---------- State ----------
-const STATE = { TITLE: 0, PLAYING: 1, FROZEN: 2, GAMEOVER: 3 };
+/* ---------- State ---------- */
+const STATE = { TITLE: 0, PLAYING: 1, RESULT: 2, NAME: 3, BOARD: 4 };
 let state = STATE.TITLE;
 
-let angle = 0;          // current needle angle (rad)
-let omega = 0;          // angular speed (rad/sec)
-let dir = 1;            // rotation direction
-let tolerance = START_TOL_DEG;
-let streak = 0;
-let bestPrec = Infinity;     // smallest error this run (deg)
-let landedAngle = 0;         // needle angle frozen at game over
-let freezeUntil = 0;
-let frozenMiss = false;      // does the current freeze-frame end the run?
+let angle = 0;           // current needle angle (rad)
+const omega = TAU / SWEEP_SEC; // constant angular speed — same for all players
+let landedAngle = 0;     // needle angle frozen at the shot
+let lastError = 0;       // most recent shot's error (deg)
+let revealStart = 0;     // performance.now() when the reveal count-up began
 
-let best = parseInt(localStorage.getItem('hairline-best'), 10);
-if (!Number.isFinite(best)) best = 0;
-let hintShown = false;
+let pb = parseFloat(localStorage.getItem('hairline-pb'));
+if (!Number.isFinite(pb)) pb = Infinity;
 let muted = localStorage.getItem('hairline-muted') === '1';
+let initials = (localStorage.getItem('hairline-initials') || 'AAA')
+  .toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(3, 'A').slice(0, 3);
 
-function startOmega() { return TAU / START_SWEEP_SEC; }
+let topScores = [];      // cached leaderboard (ascending by error)
+let cutoff = Infinity;   // #10 error; below it (or <10 entries) qualifies
+let lbReady = false;     // did the initial GET succeed?
 
-function syncBest() {
-  bestEl.textContent = best > 0 ? ('best ' + best) : 'best —';
-}
-
-// ---------- Audio (quiet, synthesised) ----------
+/* ---------- Audio (quiet, synthesised) ---------- */
 let audioCtx = null;
 function ensureAudio() {
   if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
@@ -215,9 +283,9 @@ function ensureAudio() {
     if (AC) audioCtx = new AC();
   } catch (e) { audioCtx = null; }
 }
-function tone(freq, dur, vol, type) {
+function tone(freq, dur, vol, type, when) {
   if (muted || !audioCtx || audioCtx.state !== 'running') return;
-  const now = audioCtx.currentTime;
+  const now = audioCtx.currentTime + (when || 0);
   const osc = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   osc.type = type || 'sine';
@@ -229,105 +297,287 @@ function tone(freq, dur, vol, type) {
   osc.start(now);
   osc.stop(now + dur + 0.02);
 }
-const sfxTick    = () => tone(220, 0.04, 0.05, 'square');           // soft click on freeze
-const sfxSuccess = () => { tone(660, 0.14, 0.09, 'sine'); tone(990, 0.10, 0.04, 'sine'); };
-const sfxFail    = () => tone(110, 0.45, 0.10, 'sine');             // muted low tone
+const sfxFreeze = () => tone(240, 0.05, 0.06, 'square');                 // soft click on the shot
+const sfxReveal = (err) => {                                            // pitch rises as error shrinks
+  const q = clamp(1 - err / 12, 0, 1);                                 // 0 (poor) .. 1 (near-perfect)
+  tone(440 + q * 360, 0.16, 0.07, 'sine');
+  tone(660 + q * 540, 0.12, 0.035, 'sine', 0.04);
+};
+const sfxTick = () => tone(520, 0.02, 0.03, 'square');                   // wheel tick
 
 function syncMute() {
-  muteEl.textContent = muted ? '♪̸' : '♪';
-  muteEl.setAttribute('aria-label', muted ? 'Activer le son' : 'Couper le son');
+  muteEl.innerHTML = muted ? '&#9834;&#824;' : '&#9834;';
+  muteEl.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
 }
 syncMute();
 
-// ---------- Flow ----------
+function syncPb() {
+  if (pb === Infinity) { pbEl.classList.remove('show'); return; }
+  pbEl.textContent = 'pb ' + fmtErr(pb) + '°';
+  pbEl.classList.add('show');
+}
+syncPb();
+
+/* ---------- Leaderboard client ---------- */
+function recomputeCutoff() {
+  cutoff = topScores.length < 10 ? Infinity
+         : topScores[topScores.length - 1].error;
+}
+function qualifies(err) {
+  // An offline/undeployed board (LB_URL placeholder or a failed GET) leaves
+  // lbReady false. Never claim a placement we can't back with the server —
+  // an offline shot just shows precision + "Again", never "top ten".
+  if (!lbReady) return false;
+  if (topScores.length < 10) return true;
+  return err < cutoff;
+}
+async function fetchScores() {
+  if (!LB_URL || LB_URL.indexOf('__LB_URL__') !== -1) return; // not deployed yet
+  try {
+    const r = await fetch(LB_URL.replace(/\/$/, '') + '/scores', { method: 'GET' });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data && Array.isArray(data.scores)) {
+      topScores = data.scores.slice(0, 10);
+      lbReady = true;
+      recomputeCutoff();
+    }
+  } catch (e) { /* offline — degrade gracefully */ }
+}
+async function submitScore(name, err) {
+  if (!LB_URL || LB_URL.indexOf('__LB_URL__') !== -1) return null;
+  try {
+    const r = await fetch(LB_URL.replace(/\/$/, '') + '/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, error: err })
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (data && Array.isArray(data.scores)) {
+      topScores = data.scores.slice(0, 10);
+      lbReady = true;
+      recomputeCutoff();
+    }
+    return data && (typeof data.rank === 'number') ? data.rank : null;
+  } catch (e) { return null; }
+}
+fetchScores(); // learn the current cutoff at boot
+
+/* ---------- Flow ---------- */
+function showOverlay(el) {
+  [titleEl, resultEl, nameEl, boardEl].forEach(o => o.classList.add('hidden'));
+  if (el) { el.classList.remove('hidden'); el.classList.remove('fade-in'); void el.offsetWidth; el.classList.add('fade-in'); }
+}
+
 function startGame() {
-  angle = (Math.random() < 0.5 ? 1 : -1) * (35 + Math.random() * 50) * D2R; // start clearly off-line
-  dir = Math.random() < 0.5 ? 1 : -1;
-  omega = startOmega();
-  tolerance = START_TOL_DEG;
-  streak = 0;
-  bestPrec = Infinity;
-  state = STATE.PLAYING;
-  freezeUntil = 0;
-  titleEl.classList.add('hidden');
-  goEl.classList.add('hidden');
-  streakEl.textContent = '0';
-  streakEl.classList.add('show');
-}
-
-function endRun() {
-  state = STATE.GAMEOVER;
-  streakEl.classList.remove('show');
-  landedAngle = angle;
-  const newRecord = streak > best;
-  if (newRecord) { best = streak; localStorage.setItem('hairline-best', String(best)); syncBest(); }
-  goStreakEl.textContent = streak;
-  const prec = bestPrec === Infinity ? '—' : bestPrec.toFixed(2) + '°';
-  goPrecEl.innerHTML = 'précision <b>' + prec + '</b>';
-  goBestEl.innerHTML = 'best <b>' + best + '</b>';
-  goBestEl.classList.toggle('new', newRecord);
-  copiedEl.classList.remove('show');
-  goEl.classList.remove('hidden');
-  sfxFail();
-}
-
-// On a successful freeze: bank the hit, ramp, and resume from the same angle.
-function freeze() {
   ensureAudio();
-  sfxTick();
-  const err = errToHorizontal(angle);
-
-  if (err > tolerance) {           // miss — single life, run ends
-    frozenMiss = true;
-    state = STATE.FROZEN;          // hold the landed frame visible for an instant
-    freezeUntil = performance.now() + 220;
-    return;
-  }
-
-  // hit
-  streak += 1;
-  if (err < bestPrec) bestPrec = err;
-  streakEl.textContent = streak;
-  omega *= SPEED_RAMP;
-  tolerance = Math.max(TOL_FLOOR_DEG, tolerance * TOL_SHRINK);
-  sfxSuccess();
-  frozenMiss = false;
-  state = STATE.FROZEN;
-  freezeUntil = performance.now() + FREEZE_MS;
+  angle = Math.random() * TAU;   // random start — timing can't be memorised
+  state = STATE.PLAYING;
+  showOverlay(null);
 }
 
+let qualifiedThisShot = false; // did this result make the top 10?
+let qualifyDecided = false;    // has finishReveal resolved the (async) qualification?
+let scoresInFlight = null;     // GET promise fired concurrently with the reveal
+let revealDone = false;        // count-up finished + finishReveal fired (once)
+
+function shoot() {
+  ensureAudio();
+  sfxFreeze();
+  landedAngle = angle;
+  lastError = errToHorizontal(angle);
+  state = STATE.RESULT;
+
+  // Qualification is decided in finishReveal against FRESH data: fire the GET
+  // concurrently with the count-up so it adds no perceptible latency. Default
+  // to "not qualified" until that resolves.
+  qualifiedThisShot = false;
+  qualifyDecided = false;
+  revealDone = false;
+  scoresInFlight = fetchScores();
+
+  // personal best
+  if (lastError < pb) { pb = lastError; localStorage.setItem('hairline-pb', String(pb)); syncPb(); }
+
+  // reveal
+  resNumEl.textContent = fmtErr(0); // start the count-up from a tiny value
+  resSubEl.innerHTML = '&nbsp;';
+  resAgainBtn.textContent = 'Again'; // upgraded to "Submit" once qualification resolves
+  showOverlay(resultEl);
+  revealStart = performance.now();
+  sfxReveal(lastError);
+}
+
+async function finishReveal() {
+  resNumEl.textContent = fmtErr(lastError);
+  // Await the concurrent GET so qualification uses current data, not a stale
+  // boot-time cutoff. The await resolves ~instantly if the GET already landed.
+  if (scoresInFlight) { try { await scoresInFlight; } catch (e) { /* offline */ } }
+  // A late shoot()/reset could have moved on; only commit if still on this result.
+  if (state !== STATE.RESULT) return;
+
+  qualifiedThisShot = qualifies(lastError);
+  qualifyDecided = true;
+  resAgainBtn.textContent = qualifiedThisShot ? 'Submit' : 'Again';
+
+  const isPb = Math.abs(lastError - pb) < 1e-12;
+  let sub;
+  if (qualifiedThisShot) {
+    sub = 'top ten &middot; rank <b>#' + provisionalRank(lastError) + '</b>';
+  } else if (isPb) {
+    sub = 'new personal best';
+  } else {
+    sub = 'pb <b>' + fmtErr(pb) + '°</b>';
+  }
+  resSubEl.innerHTML = sub;
+}
+
+/* ---------- Name entry (AAA arcade wheels) ---------- */
+const GLYPHS = (() => {
+  let s = '';
+  for (let i = 65; i <= 90; i++) s += String.fromCharCode(i); // A-Z
+  for (let i = 48; i <= 57; i++) s += String.fromCharCode(i); // 0-9
+  return s;
+})();
+let wheelIdx = [0, 0, 0]; // index into GLYPHS for each of 3 slots
+let activeWheel = 0;
+
+function buildWheels() {
+  wheelsEl.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const w = document.createElement('div');
+    w.className = 'wheel';
+    const up = document.createElement('button');
+    up.setAttribute('aria-label', 'previous letter');
+    up.textContent = '▲';
+    const glyph = document.createElement('div');
+    glyph.className = 'glyph';
+    const down = document.createElement('button');
+    down.setAttribute('aria-label', 'next letter');
+    down.textContent = '▼';
+    up.addEventListener('click', (e) => { e.stopPropagation(); ensureAudio(); activeWheel = i; cycle(i, -1); });
+    down.addEventListener('click', (e) => { e.stopPropagation(); ensureAudio(); activeWheel = i; cycle(i, +1); });
+    glyph.addEventListener('click', (e) => { e.stopPropagation(); activeWheel = i; renderWheels(); });
+    w.appendChild(up); w.appendChild(glyph); w.appendChild(down);
+    wheelsEl.appendChild(w);
+  }
+}
+function cycle(i, d) {
+  wheelIdx[i] = (wheelIdx[i] + d + GLYPHS.length) % GLYPHS.length;
+  sfxTick();
+  renderWheels();
+}
+function renderWheels() {
+  const ws = wheelsEl.children;
+  for (let i = 0; i < 3; i++) {
+    ws[i].classList.toggle('active', i === activeWheel);
+    ws[i].querySelector('.glyph').textContent = GLYPHS[wheelIdx[i]];
+  }
+}
+function currentInitials() {
+  return GLYPHS[wheelIdx[0]] + GLYPHS[wheelIdx[1]] + GLYPHS[wheelIdx[2]];
+}
+function openNameEntry(rank) {
+  // seed wheels from remembered initials
+  for (let i = 0; i < 3; i++) {
+    const ch = initials[i] || 'A';
+    const idx = GLYPHS.indexOf(ch);
+    wheelIdx[i] = idx < 0 ? 0 : idx;
+  }
+  activeWheel = 0;
+  nameRankEl.innerHTML = 'rank <b>#' + rank + '</b> &middot; enter your initials';
+  state = STATE.NAME;
+  showOverlay(nameEl);
+  renderWheels();
+}
+
+/* ---------- Leaderboard render ---------- */
+// missed: the player submitted but the server said they did NOT place
+// (rank === null). Show the board honestly, no fake highlighted row.
+function showBoard(myName, myRank, missed) {
+  state = STATE.BOARD;
+  boardListEl.innerHTML = '';
+  boardTitleEl.textContent = missed ? 'just missed' : 'leaderboard';
+  if (!topScores.length) {
+    const e = document.createElement('div');
+    e.id = 'board-empty';
+    e.textContent = lbReady ? 'no scores yet — be the first' : 'board offline';
+    boardListEl.appendChild(e);
+  } else {
+    topScores.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = 'brow';
+      // highlight the player's row: same rank+name, or first matching name with equal error
+      if (myRank && (i + 1) === myRank && s.name === myName) row.classList.add('me');
+      const rk = document.createElement('span'); rk.className = 'rk'; rk.textContent = (i + 1) + '.';
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = s.name;
+      const er = document.createElement('span'); er.className = 'er'; er.textContent = fmtErr(s.error) + '°';
+      row.appendChild(rk); row.appendChild(nm); row.appendChild(er);
+      boardListEl.appendChild(row);
+    });
+  }
+  showOverlay(boardEl);
+}
+
+let submitting = false; // guards against a double submit (rapid Enter + click)
+
+async function submitAndShow() {
+  if (submitting) return; // a submit is already in flight — ignore the second press
+  submitting = true;
+  const name = currentInitials();
+  initials = name;
+  localStorage.setItem('hairline-initials', name);
+  nameSubmitBtn.disabled = true;
+  let rank = null;
+  try {
+    rank = await submitScore(name, lastError);
+  } finally {
+    nameSubmitBtn.disabled = false;
+    submitting = false;
+  }
+  // Defense in depth: trust the authoritative POST. If the server says the
+  // player did NOT place (rank === null), show the board without a fake
+  // highlighted row and with an honest "just missed" message.
+  showBoard(name, rank, rank === null);
+}
+
+/* ---------- Input router ---------- */
 function onPress() {
   ensureAudio();
-  if (!hintShown) { hintShown = true; hintEl.classList.add('gone'); }
-  if (state === STATE.TITLE)    { startGame(); return; }
-  if (state === STATE.PLAYING)  { freeze();    return; }
-  // FROZEN: ignore taps; GAMEOVER: retry handled by button / generic press
-  if (state === STATE.GAMEOVER) { startGame(); return; }
+  if (state === STATE.TITLE)   { startGame(); return; }
+  if (state === STATE.PLAYING) { shoot();     return; }
+  // RESULT/NAME/BOARD: handled by explicit buttons
 }
 
-// ---------- Update ----------
+/* ---------- Update ---------- */
 function update(dt) {
   if (state === STATE.PLAYING) {
-    angle += dir * omega * dt;     // delta-time motion: refresh-rate independent
-    // keep angle bounded to avoid float drift over a long run
-    if (angle >  Math.PI) angle -= TAU;
-    if (angle < -Math.PI) angle += TAU;
-  } else if (state === STATE.FROZEN) {
-    if (performance.now() >= freezeUntil) {
-      if (frozenMiss) endRun();
-      else state = STATE.PLAYING;
+    angle += omega * dt;            // ONE direction, constant speed
+    if (angle > TAU) angle -= TAU;  // keep bounded to avoid float drift
+  } else if (state === STATE.RESULT) {
+    const t = clamp((performance.now() - revealStart) / REVEAL_MS, 0, 1);
+    if (t < 1) {
+      // ease-out count-up toward the true value
+      const eased = 1 - Math.pow(1 - t, 3);
+      resNumEl.textContent = fmtErr(lastError * eased);
+    } else if (!revealDone) {
+      // finishReveal is async (awaits the in-flight GET); guard against the
+      // per-frame loop re-invoking it before the await settles.
+      revealDone = true;
+      finishReveal();
     }
   }
 }
 
-// ---------- Draw ----------
+/* ---------- Draw ---------- */
 function drawLine(rad, alpha, width) {
   const c = Math.cos(rad), s = Math.sin(rad);
   ctx.beginPath();
-  ctx.moveTo(cx - c * half, cy - s * half);
-  ctx.lineTo(cx + c * half, cy + s * half);
+  ctx.moveTo(cx - c * reach, cy - s * reach);
+  ctx.lineTo(cx + c * reach, cy + s * reach);
   ctx.lineWidth = width;
-  ctx.strokeStyle = 'rgba(17,17,17,' + alpha + ')';
+  ctx.strokeStyle = 'rgba(20,19,15,' + alpha + ')';
   ctx.stroke();
 }
 
@@ -335,23 +585,17 @@ function draw() {
   ctx.clearRect(0, 0, W, H);
   ctx.lineCap = 'butt';
 
-  if (state === STATE.TITLE) return; // clean paper behind the title overlay
+  if (state === STATE.TITLE || state === STATE.NAME || state === STATE.BOARD) return; // clean paper behind these overlays
 
-  // faint horizon (the target). Subtle light grey so the merge with the needle reads.
+  // full-width horizon (the target) — faint hairline edge to edge
   drawLine(0, 0.16, lineW);
 
-  // needle. Black ink. When it lies on the horizon the two lines visually merge.
-  const a = (state === STATE.GAMEOVER) ? landedAngle : angle;
+  // needle — black ink, full-bleed; at horizontal it merges with the horizon
+  const a = (state === STATE.RESULT) ? landedAngle : angle;
   drawLine(a, 0.92, lineW);
-
-  // pivot: a single crisp ink dot, very small, so the rotation centre is legible.
-  ctx.beginPath();
-  ctx.arc(cx, cy, Math.max(1, 1.5 * dpr) / dpr, 0, TAU);
-  ctx.fillStyle = 'rgba(17,17,17,0.92)';
-  ctx.fill();
 }
 
-// ---------- Loop ----------
+/* ---------- Loop ---------- */
 let lastT = performance.now();
 let running = true;
 function frame(now) {
@@ -371,15 +615,24 @@ document.addEventListener('visibilitychange', () => {
   else if (!running) { running = true; lastT = performance.now(); requestAnimationFrame(frame); }
 });
 
-// ---------- Input ----------
+/* ---------- Input wiring ---------- */
 document.addEventListener('pointerdown', (e) => {
-  // let the explicit UI buttons handle their own clicks
-  if (e.target && e.target.closest && e.target.closest('button')) return;
+  if (e.target && e.target.closest && e.target.closest('button')) return; // let UI buttons handle themselves
   e.preventDefault();
   onPress();
 }, { passive: false });
+
 document.addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  // wheel nudges while entering a name
+  if (state === STATE.NAME) {
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); activeWheel = (activeWheel + 2) % 3; renderWheels(); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); activeWheel = (activeWheel + 1) % 3; renderWheels(); return; }
+    if (e.key === 'ArrowUp')    { e.preventDefault(); cycle(activeWheel, -1); return; }
+    if (e.key === 'ArrowDown')  { e.preventDefault(); cycle(activeWheel, +1); return; }
+    if (e.code === 'Enter')     { e.preventDefault(); submitAndShow(); return; }
+    return;
+  }
   if (e.code === 'Space' || e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onPress(); }
 });
 
@@ -391,29 +644,33 @@ muteEl.addEventListener('click', (e) => {
   if (!muted) ensureAudio();
 });
 
-retryBtn.addEventListener('click', (e) => { e.stopPropagation(); ensureAudio(); startGame(); });
-
-shareBtn.addEventListener('click', (e) => {
+// result actions — primary button funnels a qualifying shot into name entry,
+// otherwise it simply plays again. "Board" always just views the leaderboard.
+resAgainBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  const prec = bestPrec === Infinity ? '—' : bestPrec.toFixed(2) + '°';
-  const text = 'Hairline ╴ série ' + streak + ' · best ' + prec +
-    '\nadrrr.github.io/night-projects/hairline/';
-  const done = () => { copiedEl.classList.add('show'); setTimeout(() => copiedEl.classList.remove('show'), 1600); };
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
-  } else { fallbackCopy(text, done); }
+  ensureAudio();
+  if (qualifiedThisShot) { openNameEntry(provisionalRank(lastError)); }
+  else { startGame(); }
 });
-function fallbackCopy(text, cb) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    document.execCommand('copy'); document.body.removeChild(ta); cb();
-  } catch (err) { /* clipboard unavailable — silently no-op */ }
+resBoardBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  ensureAudio();
+  await fetchScores();
+  showBoard(null, null);
+});
+
+// provisional rank for a fresh result (1-based) given the current cache
+function provisionalRank(err) {
+  let r = 1;
+  for (const s of topScores) { if (err < s.error) break; r++; }
+  return Math.min(r, 10);
 }
 
-// ---------- Init ----------
-syncBest();
+nameSubmitBtn.addEventListener('click', (e) => { e.stopPropagation(); submitAndShow(); });
+boardAgainBtn.addEventListener('click', (e) => { e.stopPropagation(); startGame(); });
+
+/* ---------- Init ---------- */
+buildWheels();
 </script>
 </body>
 </html>
