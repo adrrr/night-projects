@@ -95,6 +95,9 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
   border-bottom:2px solid var(--ink);caret-color:var(--ink);padding:6px 0;outline:none;
   margin-bottom:26px;pointer-events:auto}
 #name-input::placeholder{color:var(--ink-4)}
+#name-msg{font-size:12.5px;letter-spacing:.04em;color:var(--ink-3);
+  margin-top:18px;min-height:16px;opacity:0;transition:opacity .2s}
+#name-msg.show{opacity:1;color:var(--ink-2)}
 
 /* ---- leaderboard ---- */
 #board{gap:0}
@@ -160,6 +163,7 @@ body{animation:enter .6s ease both}
   <div class="row-actions">
     <button class="btn primary" id="name-submit">Submit</button>
   </div>
+  <div id="name-msg" aria-live="polite"></div>
 </div>
 
 <!-- leaderboard -->
@@ -193,6 +197,7 @@ const resSubEl = $('res-sub');
 const nameEl   = $('name');
 const nameRankEl = $('name-rank');
 const nameInput = $('name-input');
+const nameMsgEl = $('name-msg');
 const boardEl  = $('board');
 const boardTitleEl = $('board-title');
 const boardListEl = $('board-list');
@@ -362,23 +367,37 @@ async function fetchScores() {
     }
   } catch (e) { /* offline — degrade gracefully */ }
 }
+// Three outcomes, never conflated:
+//  • {status:'placed', rank, scores} — HTTP 200, server gave a numeric rank.
+//  • {status:'missed'}               — HTTP 200, rank null (genuinely outside top 10).
+//  • {status:'failed', code}         — network error (code 0) or !ok (e.g. 429/5xx);
+//                                       the score was NOT recorded and must be retryable.
+//  • {status:'offline'}              — board not deployed (LB_URL placeholder).
+// A FAILED/offline result must never be shown as "just missed" or lose the score.
 async function submitScore(name, err) {
-  if (!LB_URL || LB_URL.indexOf('__LB_URL__') !== -1) return null;
+  if (!LB_URL || LB_URL.indexOf('__LB_URL__') !== -1) return { status: 'offline' };
+  let r;
   try {
-    const r = await fetch(LB_URL.replace(/\/$/, '') + '/scores', {
+    r = await fetch(LB_URL.replace(/\/$/, '') + '/scores', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name, error: err })
     });
-    if (!r.ok) return null;
-    const data = await r.json();
-    if (data && Array.isArray(data.scores)) {
-      topScores = data.scores.slice(0, 10);
-      lbReady = true;
-      recomputeCutoff();
-    }
-    return data && (typeof data.rank === 'number') ? data.rank : null;
-  } catch (e) { return null; }
+  } catch (e) {
+    return { status: 'failed', code: 0 }; // network error
+  }
+  if (!r.ok) return { status: 'failed', code: r.status }; // 429, 5xx, etc.
+  let data = null;
+  try { data = await r.json(); } catch (e) { /* tolerate empty/invalid body */ }
+  if (data && Array.isArray(data.scores)) {
+    topScores = data.scores.slice(0, 10);
+    lbReady = true;
+    recomputeCutoff();
+  }
+  if (data && typeof data.rank === 'number') {
+    return { status: 'placed', rank: data.rank, scores: topScores };
+  }
+  return { status: 'missed' };
 }
 fetchScores(); // learn the current cutoff at boot
 
@@ -472,6 +491,7 @@ function currentInitials() {
 }
 function openNameEntry(rank) {
   nameRankEl.innerHTML = 'rank <b>#' + rank + '</b>';
+  setNameMsg(''); // fresh entry — no stale failure notice
   state = STATE.NAME;
   // Un-hide the overlay, then focus + select SYNCHRONOUSLY inside the trusted
   // tap gesture — no await/setTimeout/rAF, or iOS Safari suppresses the keyboard.
@@ -522,26 +542,53 @@ function showBoard(myName, myRank, missed) {
 
 let submitting = false; // guards against a double submit (rapid Enter + click)
 
+// Inline failure notice in the name overlay. Shown only on a retryable failure,
+// cleared on every fresh attempt so a stale error never lingers.
+function setNameMsg(text) {
+  if (text) { nameMsgEl.textContent = text; nameMsgEl.classList.add('show'); }
+  else { nameMsgEl.textContent = ''; nameMsgEl.classList.remove('show'); }
+}
+
 async function submitAndShow() {
   if (submitting) return; // a submit is already in flight — ignore the second press
   submitting = true;
+  setNameMsg(''); // clear any prior failure before this attempt
   const name = currentInitials();
   initials = name;
   localStorage.setItem('hairline-initials', name);
   nameSubmitBtn.disabled = true;
-  let rank = null;
+  let res;
   try {
-    rank = await submitScore(name, lastError);
+    res = await submitScore(name, lastError);
   } finally {
+    // Always reset the guard + re-enable Submit so a retry actually works.
     nameSubmitBtn.disabled = false;
     submitting = false;
   }
-  // Defense in depth: trust the authoritative POST. If the server says the
-  // player did NOT place (rank === null), show the board without a fake
-  // highlighted row and with an honest "just missed" message. The server
-  // sanitizes the name, so match against the sanitized echo for the highlight.
-  const echoed = (rank && topScores[rank - 1]) ? topScores[rank - 1].name : name;
-  showBoard(echoed, rank, rank === null);
+
+  if (res.status === 'failed' || res.status === 'offline') {
+    // The POST did NOT record the score. Never navigate to the board as
+    // "missed" (that would lie AND lose the score). Stay on name entry,
+    // keep the entered name + lastError, surface a retryable message.
+    const msg = res.status === 'offline' ? 'board offline — try later'
+      : res.code === 429 ? 'too fast — wait a few seconds, then retry'
+      : "couldn't save — try again";
+    setNameMsg(msg);
+    nameInput.focus();
+    return;
+  }
+
+  if (res.status === 'placed') {
+    // Trust the authoritative POST. The server sanitizes the name, so match
+    // against the sanitized echo for the highlight.
+    const echoed = topScores[res.rank - 1] ? topScores[res.rank - 1].name : name;
+    showBoard(echoed, res.rank, false);
+    return;
+  }
+
+  // status === 'missed': genuine non-placement (HTTP 200, rank null). Show the
+  // board honestly, no fake highlighted row, with the "just missed" title.
+  showBoard(name, null, true);
 }
 
 /* ---------- Input router ---------- */

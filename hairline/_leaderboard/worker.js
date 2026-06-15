@@ -29,7 +29,7 @@ const MAX_ENTRIES = 10;
 // deterrent, not bulletproof (KV is eventually consistent; IPs can be rotated)
 // — it just raises the bar from a trivial wipe. GET/reads are never limited.
 const RL_WINDOW_SEC = 60; // KV minimum TTL is 60s
-const RL_MAX = 5;         // max POSTs per IP per active 60s streak
+const RL_MAX = 30;        // max POSTs per IP per active 60s streak (generous for real play; only stops floods)
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
