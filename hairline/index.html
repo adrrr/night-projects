@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#f7f6f3">
+<title>Hairline</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;background:#f7f6f3;color:#111;user-select:none;-webkit-user-select:none;font-family:ui-monospace,'SF Mono','SFMono-Regular',Menlo,Consolas,monospace}
+canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
+
+/* top-left persistent best */
+#best{position:fixed;z-index:10;pointer-events:none;
+  top:calc(16px + env(safe-area-inset-top));left:calc(18px + env(safe-area-inset-left));
+  font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:rgba(17,17,17,.42)}
+
+/* live streak (large, centered above the line during play) */
+#streak{position:fixed;z-index:10;pointer-events:none;top:0;left:0;width:100%;
+  text-align:center;padding-top:calc(38px + env(safe-area-inset-top));
+  font-size:clamp(40px,12vw,84px);font-weight:600;letter-spacing:-.02em;
+  color:#111;line-height:1;opacity:0;transition:opacity .25s}
+#streak.show{opacity:1}
+
+/* fading hint */
+#hint{position:fixed;z-index:10;pointer-events:none;left:0;width:100%;
+  bottom:calc(34px + env(safe-area-inset-bottom));text-align:center;
+  font-size:13px;letter-spacing:.06em;color:rgba(17,17,17,.5);transition:opacity .6s}
+#hint.gone{opacity:0}
+
+/* mute toggle */
+#mute{position:fixed;z-index:11;
+  top:calc(12px + env(safe-area-inset-top));right:calc(14px + env(safe-area-inset-right));
+  width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+  border:none;background:transparent;color:rgba(17,17,17,.42);cursor:pointer;
+  font-size:15px;line-height:1;border-radius:8px}
+#mute:hover{color:rgba(17,17,17,.7)}
+
+/* overlays (title + game over) */
+.overlay{position:fixed;z-index:20;top:0;left:0;width:100%;height:100%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:24px;pointer-events:none}
+.overlay.hidden{display:none}
+
+#title-name{font-size:clamp(38px,11vw,76px);font-weight:600;letter-spacing:-.03em;margin-bottom:18px}
+#title-rule{width:min(58vw,260px);height:1px;background:rgba(17,17,17,.85);margin-bottom:18px}
+.tap-cue{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:rgba(17,17,17,.5);
+  animation:fade 2.2s ease-in-out infinite}
+@keyframes fade{0%,100%{opacity:.55}50%{opacity:.18}}
+
+#go-streak{font-size:clamp(52px,15vw,104px);font-weight:600;letter-spacing:-.03em;line-height:1}
+#go-streak-label{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:rgba(17,17,17,.42);margin-bottom:4px}
+.go-row{font-size:14px;color:rgba(17,17,17,.6);margin-top:14px;letter-spacing:.02em}
+.go-row b{font-weight:600;color:#111}
+#go-best.new b{color:#111}
+#go-best.new::after{content:' · record';color:rgba(17,17,17,.42)}
+#go-actions{display:flex;gap:10px;margin-top:30px;pointer-events:auto}
+.btn{font-family:inherit;font-size:13px;letter-spacing:.08em;text-transform:uppercase;
+  padding:11px 20px;border:1px solid rgba(17,17,17,.85);background:transparent;color:#111;
+  border-radius:999px;cursor:pointer;transition:background .15s,color .15s}
+.btn:hover{background:#111;color:#f7f6f3}
+.btn.primary{background:#111;color:#f7f6f3}
+.btn.primary:hover{background:transparent;color:#111}
+#copied{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:rgba(17,17,17,.45);
+  margin-top:14px;height:14px;opacity:0;transition:opacity .2s}
+#copied.show{opacity:1}
+
+/* subtle entrance fade for the whole stage */
+body{animation:enter .6s ease both}
+@keyframes enter{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="best">best —</div>
+<div id="streak">0</div>
+<button id="mute" aria-label="Couper le son">♪</button>
+<div id="hint">touche pour figer la ligne</div>
+
+<div id="title" class="overlay">
+  <div id="title-name">Hairline</div>
+  <div id="title-rule"></div>
+  <div class="tap-cue">touche pour commencer</div>
+</div>
+
+<div id="gameover" class="overlay hidden">
+  <div id="go-streak-label">série</div>
+  <div id="go-streak">0</div>
+  <div class="go-row" id="go-prec">précision <b>—</b></div>
+  <div class="go-row" id="go-best">best <b>—</b></div>
+  <div id="go-actions">
+    <button class="btn" id="share-btn">Partager</button>
+    <button class="btn primary" id="retry-btn">Rejouer</button>
+  </div>
+  <div id="copied">copié</div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const canvas = $('c');
+const ctx = canvas.getContext('2d');
+
+const bestEl = $('best');
+const streakEl = $('streak');
+const muteEl = $('mute');
+const hintEl = $('hint');
+const titleEl = $('title');
+const goEl = $('gameover');
+const goStreakEl = $('go-streak');
+const goPrecEl = $('go-prec');
+const goBestEl = $('go-best');
+const shareBtn = $('share-btn');
+const retryBtn = $('retry-btn');
+const copiedEl = $('copied');
+
+// ---------- Tunables (the whole difficulty curve lives here) ----------
+const START_SWEEP_SEC = 2.6;   // time for the first full 360° revolution
+const SPEED_RAMP      = 1.07;  // angular speed *= this on every hit
+const START_TOL_DEG   = 6;     // starting half-window (±deg) for a hit
+const TOL_SHRINK      = 0.96;  // tolerance *= this on every hit
+const TOL_FLOOR_DEG   = 0.8;   // tolerance never goes below this
+const FREEZE_MS       = 100;   // freeze-frame after a successful hit
+const DT_CLAMP        = 0.05;  // clamp delta-time (tab refocus / long frames)
+// single life — a single miss ends the run.
+
+// ---------- Helpers ----------
+const TAU = Math.PI * 2;
+const D2R = Math.PI / 180;
+const R2D = 180 / Math.PI;
+const clamp = (v, lo, hi) => v < lo ? lo : (v > hi ? hi : v);
+// Smallest angular distance (deg) of `angle` to the horizontal axis (0° or 180°).
+function errToHorizontal(rad) {
+  // fold into [0,180), then distance to nearest of {0,180}
+  let d = ((rad % Math.PI) + Math.PI) % Math.PI; // [0,π)
+  d = Math.min(d, Math.PI - d);                  // [0,π/2]
+  return d * R2D;
+}
+
+// ---------- Canvas / geometry ----------
+let W = 0, H = 0, dpr = 1;
+let cx = 0, cy = 0;     // pivot, snapped to a crisp half-pixel for 1px lines
+let half = 0;           // half-length of the needle / horizon
+let lineW = 1;          // CSS px line width (true 1px hairline)
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  const vv = window.visualViewport;
+  W = (vv && vv.width)  || document.documentElement.clientWidth  || window.innerWidth;
+  H = (vv && vv.height) || document.documentElement.clientHeight || window.innerHeight;
+  canvas.width  = Math.max(1, Math.round(W * dpr));
+  canvas.height = Math.max(1, Math.round(H * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Pivot at the visual center. Snap to the half-pixel grid (in device space)
+  // so a 1px stroke straddles a single device-pixel row/column => crisp, never
+  // smeared across two pixels. We round to the nearest device pixel then add 0.5
+  // device px, expressed back in CSS units for the (dpr-scaled) context.
+  const pxX = Math.round(W / 2 * dpr) + 0.5;
+  const pxY = Math.round(H / 2 * dpr) + 0.5;
+  cx = pxX / dpr;
+  cy = pxY / dpr;
+
+  half = Math.min(W, H) * 0.42;
+  // True hairline: 1 device pixel. In the dpr-scaled context that is 1/dpr CSS px.
+  lineW = 1 / dpr;
+}
+
+let resizeScheduled = false;
+function scheduleResize() {
+  if (resizeScheduled) return;
+  resizeScheduled = true;
+  requestAnimationFrame(() => { resizeScheduled = false; resize(); });
+}
+window.addEventListener('resize', scheduleResize);
+window.addEventListener('orientationchange', scheduleResize);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', scheduleResize);
+  window.visualViewport.addEventListener('scroll', scheduleResize);
+}
+resize();
+
+// ---------- State ----------
+const STATE = { TITLE: 0, PLAYING: 1, FROZEN: 2, GAMEOVER: 3 };
+let state = STATE.TITLE;
+
+let angle = 0;          // current needle angle (rad)
+let omega = 0;          // angular speed (rad/sec)
+let dir = 1;            // rotation direction
+let tolerance = START_TOL_DEG;
+let streak = 0;
+let bestPrec = Infinity;     // smallest error this run (deg)
+let landedAngle = 0;         // needle angle frozen at game over
+let freezeUntil = 0;
+let frozenMiss = false;      // does the current freeze-frame end the run?
+
+let best = parseInt(localStorage.getItem('hairline-best'), 10);
+if (!Number.isFinite(best)) best = 0;
+let hintShown = false;
+let muted = localStorage.getItem('hairline-muted') === '1';
+
+function startOmega() { return TAU / START_SWEEP_SEC; }
+
+function syncBest() {
+  bestEl.textContent = best > 0 ? ('best ' + best) : 'best —';
+}
+
+// ---------- Audio (quiet, synthesised) ----------
+let audioCtx = null;
+function ensureAudio() {
+  if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  } catch (e) { audioCtx = null; }
+}
+function tone(freq, dur, vol, type) {
+  if (muted || !audioCtx || audioCtx.state !== 'running') return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(Math.max(20, freq), now);
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0001, vol), now + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  osc.connect(g).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + dur + 0.02);
+}
+const sfxTick    = () => tone(220, 0.04, 0.05, 'square');           // soft click on freeze
+const sfxSuccess = () => { tone(660, 0.14, 0.09, 'sine'); tone(990, 0.10, 0.04, 'sine'); };
+const sfxFail    = () => tone(110, 0.45, 0.10, 'sine');             // muted low tone
+
+function syncMute() {
+  muteEl.textContent = muted ? '♪̸' : '♪';
+  muteEl.setAttribute('aria-label', muted ? 'Activer le son' : 'Couper le son');
+}
+syncMute();
+
+// ---------- Flow ----------
+function startGame() {
+  angle = (Math.random() < 0.5 ? 1 : -1) * (35 + Math.random() * 50) * D2R; // start clearly off-line
+  dir = Math.random() < 0.5 ? 1 : -1;
+  omega = startOmega();
+  tolerance = START_TOL_DEG;
+  streak = 0;
+  bestPrec = Infinity;
+  state = STATE.PLAYING;
+  freezeUntil = 0;
+  titleEl.classList.add('hidden');
+  goEl.classList.add('hidden');
+  streakEl.textContent = '0';
+  streakEl.classList.add('show');
+}
+
+function endRun() {
+  state = STATE.GAMEOVER;
+  streakEl.classList.remove('show');
+  landedAngle = angle;
+  const newRecord = streak > best;
+  if (newRecord) { best = streak; localStorage.setItem('hairline-best', String(best)); syncBest(); }
+  goStreakEl.textContent = streak;
+  const prec = bestPrec === Infinity ? '—' : bestPrec.toFixed(2) + '°';
+  goPrecEl.innerHTML = 'précision <b>' + prec + '</b>';
+  goBestEl.innerHTML = 'best <b>' + best + '</b>';
+  goBestEl.classList.toggle('new', newRecord);
+  copiedEl.classList.remove('show');
+  goEl.classList.remove('hidden');
+  sfxFail();
+}
+
+// On a successful freeze: bank the hit, ramp, and resume from the same angle.
+function freeze() {
+  ensureAudio();
+  sfxTick();
+  const err = errToHorizontal(angle);
+
+  if (err > tolerance) {           // miss — single life, run ends
+    frozenMiss = true;
+    state = STATE.FROZEN;          // hold the landed frame visible for an instant
+    freezeUntil = performance.now() + 220;
+    return;
+  }
+
+  // hit
+  streak += 1;
+  if (err < bestPrec) bestPrec = err;
+  streakEl.textContent = streak;
+  omega *= SPEED_RAMP;
+  tolerance = Math.max(TOL_FLOOR_DEG, tolerance * TOL_SHRINK);
+  sfxSuccess();
+  frozenMiss = false;
+  state = STATE.FROZEN;
+  freezeUntil = performance.now() + FREEZE_MS;
+}
+
+function onPress() {
+  ensureAudio();
+  if (!hintShown) { hintShown = true; hintEl.classList.add('gone'); }
+  if (state === STATE.TITLE)    { startGame(); return; }
+  if (state === STATE.PLAYING)  { freeze();    return; }
+  // FROZEN: ignore taps; GAMEOVER: retry handled by button / generic press
+  if (state === STATE.GAMEOVER) { startGame(); return; }
+}
+
+// ---------- Update ----------
+function update(dt) {
+  if (state === STATE.PLAYING) {
+    angle += dir * omega * dt;     // delta-time motion: refresh-rate independent
+    // keep angle bounded to avoid float drift over a long run
+    if (angle >  Math.PI) angle -= TAU;
+    if (angle < -Math.PI) angle += TAU;
+  } else if (state === STATE.FROZEN) {
+    if (performance.now() >= freezeUntil) {
+      if (frozenMiss) endRun();
+      else state = STATE.PLAYING;
+    }
+  }
+}
+
+// ---------- Draw ----------
+function drawLine(rad, alpha, width) {
+  const c = Math.cos(rad), s = Math.sin(rad);
+  ctx.beginPath();
+  ctx.moveTo(cx - c * half, cy - s * half);
+  ctx.lineTo(cx + c * half, cy + s * half);
+  ctx.lineWidth = width;
+  ctx.strokeStyle = 'rgba(17,17,17,' + alpha + ')';
+  ctx.stroke();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.lineCap = 'butt';
+
+  if (state === STATE.TITLE) return; // clean paper behind the title overlay
+
+  // faint horizon (the target). Subtle light grey so the merge with the needle reads.
+  drawLine(0, 0.16, lineW);
+
+  // needle. Black ink. When it lies on the horizon the two lines visually merge.
+  const a = (state === STATE.GAMEOVER) ? landedAngle : angle;
+  drawLine(a, 0.92, lineW);
+
+  // pivot: a single crisp ink dot, very small, so the rotation centre is legible.
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(1, 1.5 * dpr) / dpr, 0, TAU);
+  ctx.fillStyle = 'rgba(17,17,17,0.92)';
+  ctx.fill();
+}
+
+// ---------- Loop ----------
+let lastT = performance.now();
+let running = true;
+function frame(now) {
+  if (!running) return;
+  let dt = (now - lastT) / 1000;
+  lastT = now;
+  if (dt > DT_CLAMP) dt = DT_CLAMP;
+  if (dt < 0) dt = 0;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { running = false; }
+  else if (!running) { running = true; lastT = performance.now(); requestAnimationFrame(frame); }
+});
+
+// ---------- Input ----------
+document.addEventListener('pointerdown', (e) => {
+  // let the explicit UI buttons handle their own clicks
+  if (e.target && e.target.closest && e.target.closest('button')) return;
+  e.preventDefault();
+  onPress();
+}, { passive: false });
+document.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  if (e.code === 'Space' || e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onPress(); }
+});
+
+muteEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  muted = !muted;
+  localStorage.setItem('hairline-muted', muted ? '1' : '0');
+  syncMute();
+  if (!muted) ensureAudio();
+});
+
+retryBtn.addEventListener('click', (e) => { e.stopPropagation(); ensureAudio(); startGame(); });
+
+shareBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const prec = bestPrec === Infinity ? '—' : bestPrec.toFixed(2) + '°';
+  const text = 'Hairline ╴ série ' + streak + ' · best ' + prec +
+    '\nadrrr.github.io/night-projects/hairline/';
+  const done = () => { copiedEl.classList.add('show'); setTimeout(() => copiedEl.classList.remove('show'), 1600); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else { fallbackCopy(text, done); }
+});
+function fallbackCopy(text, cb) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta); cb();
+  } catch (err) { /* clipboard unavailable — silently no-op */ }
+}
+
+// ---------- Init ----------
+syncBest();
+</script>
+</body>
+</html>

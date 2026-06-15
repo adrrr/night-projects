@@ -7,6 +7,11 @@ Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](htt
 
 ## Projets
 
+### 📏 **[Hairline](https://adrrr.github.io/night-projects/hairline/)**
+Jeu de timing ultra-minimaliste — l'exact opposé visuel de Dead Stop : encre noire sur papier près-blanc, zéro neon, zéro particule, un seul chiffre. Une fine aiguille (un trait de 1px traversant le pivot) tourne en continu autour du centre. Une ligne d'horizon discrète traverse l'écran à l'horizontale. Touche pour figer l'aiguille PILE sur cette ligne : quand elle est parfaitement à plat, les deux traits fusionnent visuellement en un seul — c'est ça, le feedback du hit parfait. Chaque réussite accélère la rotation et rétrécit la tolérance (jusqu'à ±0.8°) ; la difficulté ne vient que de là. Une seule vie : un raté termine la partie, avec freeze-frame de l'atterrissage, série finale, meilleure précision du run (au centième de degré) et record all-time (localStorage). Hairlines crispes gérées au devicePixelRatio, mouvement en delta-time (identique à 60 et 120 Hz). Web Audio discret (tick/réussite/échec) + mute, bouton Partager (résultat Wordle-style copié dans le presse-papier). Mobile-first (tap) + desktop (clic/espace). Trivial à apprendre, dur à maîtriser.
+
+▶️ [Essayer](https://adrrr.github.io/night-projects/hairline/)
+
 ### ⏱️ **[Dead Stop](https://adrrr.github.io/night-projects/dead-stop/)**
 Jeu de précision et de timing — une aiguille néon balaie un cadran en continu et tu dois la figer PILE sur le repère cible (toujours visible) d'une seule tape. Réussite = la cible saute à un nouvel angle (toujours devant l'aiguille), le balayage accélère et la fenêtre de tir rétrécit. Hit parfait au cœur de cible pour le bonus, combos avec multiplicateur, et inversions de sens surprises à haut combo. 3 vies, ramp progressif façon Flappy Bird : facile à comprendre, dur à maîtriser. Freeze-frame sur chaque tape pour voir où l'aiguille a atterri, particules, shockwave, screen shake, Web Audio synthétique, record localStorage. Mobile-first (tap) + desktop (clic/espace). Dark/neon.
 
