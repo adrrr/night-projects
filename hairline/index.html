@@ -75,7 +75,10 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 .btn.ghost{border-color:var(--ink-4);color:var(--ink-2)}
 .btn.ghost:hover{background:transparent;border-color:var(--ink);color:var(--ink)}
 .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-@media (max-width:360px){
+.btn.hidden{display:none}
+/* 3 actions need more room than 2 — wrap, then stack on narrow phones. */
+#result .row-actions{flex-wrap:wrap;justify-content:center}
+@media (max-width:480px){
   #result .row-actions{flex-direction:column;gap:12px;width:min(78vw,260px)}
   #result .row-actions .btn{width:100%}
 }
@@ -142,6 +145,7 @@ body{animation:enter .6s ease both}
   <div class="row-actions">
     <button class="btn ghost" id="res-board-btn">Board</button>
     <button class="btn primary" id="res-again-btn">Again</button>
+    <button class="btn primary hidden" id="res-name-btn">Add name</button>
   </div>
 </div>
 
@@ -195,6 +199,7 @@ const boardListEl = $('board-list');
 
 const resBoardBtn = $('res-board-btn');
 const resAgainBtn = $('res-again-btn');
+const resNameBtn  = $('res-name-btn');
 const nameSubmitBtn = $('name-submit');
 const boardAgainBtn = $('board-again-btn');
 
@@ -391,7 +396,6 @@ function startGame() {
 }
 
 let qualifiedThisShot = false; // did this result make the top 10?
-let qualifyDecided = false;    // has finishReveal resolved the (async) qualification?
 let scoresInFlight = null;     // GET promise fired concurrently with the reveal
 let revealDone = false;        // count-up finished + finishReveal fired (once)
 
@@ -406,7 +410,6 @@ function shoot() {
   // concurrently with the count-up so it adds no perceptible latency. Default
   // to "not qualified" until that resolves.
   qualifiedThisShot = false;
-  qualifyDecided = false;
   revealDone = false;
   scoresInFlight = fetchScores();
 
@@ -416,11 +419,11 @@ function shoot() {
   // reveal
   resNumEl.textContent = fmtErr(0); // start the count-up from a tiny value
   resSubEl.innerHTML = '&nbsp;';
-  // Primary is "Again" by default and held non-actionable until the async
-  // qualification resolves in finishReveal — kills the Again/Add-name flip-flop.
-  resAgainBtn.textContent = 'Again';
-  resAgainBtn.style.opacity = '.5';
-  resAgainBtn.style.pointerEvents = 'none';
+  // "Again" is ALWAYS present and immediately actionable — never held on the
+  // async GET. It starts as the primary CTA; if the shot qualifies, finishReveal
+  // demotes it to a secondary and reveals "Add name" as the primary.
+  resAgainBtn.classList.add('primary');
+  resNameBtn.classList.add('hidden'); // shown only when the shot qualifies
   showOverlay(resultEl);
   revealStart = performance.now();
   sfxReveal(lastError);
@@ -435,11 +438,16 @@ async function finishReveal() {
   if (state !== STATE.RESULT) return;
 
   qualifiedThisShot = qualifies(lastError);
-  qualifyDecided = true;
-  // Resolve and enable the primary now that qualification is known.
-  resAgainBtn.textContent = qualifiedThisShot ? 'Add name' : 'Again';
-  resAgainBtn.style.opacity = '';
-  resAgainBtn.style.pointerEvents = '';
+  // "Again" stayed live throughout. Now that qualification is known, surface
+  // "Add name" as the primary CTA when the shot placed, and demote "Again" to
+  // a secondary so the hierarchy reads cleanly. Otherwise "Again" stays primary.
+  if (qualifiedThisShot) {
+    resAgainBtn.classList.remove('primary');
+    resNameBtn.classList.remove('hidden');
+  } else {
+    resAgainBtn.classList.add('primary');
+    resNameBtn.classList.add('hidden');
+  }
 
   const isPb = Math.abs(lastError - pb) < 1e-12;
   let sub;
@@ -452,9 +460,9 @@ async function finishReveal() {
   }
   resSubEl.innerHTML = sub;
 
-  // Move focus to the now-actionable primary so desktop Space/Enter triggers it
-  // (the gated keydown maps Space/Enter to the focused control, never to shoot).
-  resAgainBtn.focus();
+  // Move focus to the primary CTA so desktop Space/Enter triggers it (the gated
+  // keydown maps Space/Enter to the focused control, never to shoot).
+  (qualifiedThisShot ? resNameBtn : resAgainBtn).focus();
 }
 
 /* ---------- Name entry (single native input) ---------- */
@@ -645,13 +653,20 @@ muteEl.addEventListener('click', (e) => {
   if (!muted) ensureAudio();
 });
 
-// result actions — primary button funnels a qualifying shot into name entry,
-// otherwise it simply plays again. "Board" always just views the leaderboard.
+// result actions — three always-present buttons:
+//  • "Again" ALWAYS restarts, the instant the result shows, regardless of the
+//    async qualification/GET (the root anti-stuck fix).
+//  • "Add name" (only shown when the shot qualifies) routes into name entry.
+//  • "Board" always just views the leaderboard.
 resAgainBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   ensureAudio();
+  startGame();
+});
+resNameBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  ensureAudio();
   if (qualifiedThisShot) { openNameEntry(provisionalRank(lastError)); }
-  else { startGame(); }
 });
 resBoardBtn.addEventListener('click', async (e) => {
   e.stopPropagation();
