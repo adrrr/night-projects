@@ -98,10 +98,10 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 #board-title{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);
   margin-bottom:20px}
 #board-list{width:min(86vw,330px);font-size:14px;line-height:1;pointer-events:auto;
-  max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  max-height:60vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
   padding-bottom:env(safe-area-inset-bottom)}
 .brow{display:flex;align-items:baseline;justify-content:space-between;
-  padding:9px 4px;border-bottom:1px solid var(--ink-4);color:var(--ink-2)}
+  padding:9px 10px;border-bottom:1px solid var(--ink-4);color:var(--ink-2)}
 .brow:last-child{border-bottom:none}
 .brow .rk{width:2.4em;text-align:left;color:var(--ink-3);font-variant-numeric:tabular-nums}
 .brow .nm{flex:1;text-align:left;letter-spacing:.14em;color:var(--ink)}
@@ -109,7 +109,7 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 .brow.me{color:var(--ink)}
 .brow.me .nm,.brow.me .er,.brow.me .rk{color:var(--ink);font-weight:600}
 .brow.me{background:var(--ink-5);border-radius:8px;border-bottom-color:transparent;
-  margin:0 -6px;padding-left:10px;padding-right:10px}
+  margin:0;padding-left:10px;padding-right:10px}
 .brow.me.pulse{animation:mePulse .6s ease both}
 @keyframes mePulse{0%{background:rgba(20,19,15,.16)}100%{background:var(--ink-5)}}
 #board-empty{font-size:12.5px;color:var(--ink-3);letter-spacing:.04em;padding:8px 0 4px}
