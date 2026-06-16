@@ -805,12 +805,22 @@ function draw() {
 
   if (state === STATE.TITLE || state === STATE.NAME || state === STATE.BOARD) return; // clean paper behind these overlays
 
+  // On RESULT, the frozen needle + horizon DISSOLVE as the score counts up — so the
+  // result actions never sit on a loud full-bleed line (the screenshot adrrr flagged).
+  // You still see your frozen shot for the reveal beat; it fades to clean paper at rest.
+  let mul = 1;
+  if (state === STATE.RESULT) {
+    const rt = clamp((performance.now() - revealStart) / REVEAL_MS, 0, 1);
+    mul = Math.pow(1 - rt, 3); // 1 at freeze -> 0 once the count-up settles
+  }
+  if (mul <= 0.001) return; // fully faded -> clean paper behind the result overlay
+
   // full-width horizon (the target) — faint hairline edge to edge
-  drawLine(0, 0.16, lineW);
+  drawLine(0, 0.16 * mul, lineW);
 
   // needle — black ink, full-bleed; at horizontal it merges with the horizon
   const a = (state === STATE.RESULT) ? landedAngle : angle;
-  drawLine(a, 0.92, lineW);
+  drawLine(a, 0.92 * mul, lineW);
 }
 
 /* ---------- Loop ---------- */
