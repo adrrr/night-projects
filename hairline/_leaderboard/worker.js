@@ -7,21 +7,33 @@
 // Storage: one KV namespace (binding SCORES).
 //   - Global all-time board: single key "top10" holding a JSON array of
 //     { name, error, ts } objects, sorted ascending by error.
-//   - Daily boards: one key per UTC date, "daily:<YYYY-MM-DD>", same shape,
-//     written with a short expirationTtl so old days auto-expire. Selected via
-//     the "?board=daily" query param. The server ALWAYS computes the date as its
-//     own UTC-today; a client cannot target another day's board (no stuffing).
+//   - Time-window boards: one key per window, same shape, written with a short
+//     expirationTtl so old windows auto-expire. The server ALWAYS computes the
+//     window from its own UTC clock; a client cannot target another window's
+//     board (no stuffing). Three windows:
+//       daily  -> "daily:<YYYY-MM-DD>"  (TTL ~4 days)
+//       week   -> "week:<YYYY-MM-DD>"   bucket = UTC date of that week's MONDAY
+//                                       (TTL ~14 days)
+//       month  -> "month:<YYYY-MM>"     (TTL ~45 days)
+//     Selected via the "?board=" query param.
 //
 // API surface:
 //   GET  /scores                 -> { scores }                 (global all-time)
 //   GET  /scores?board=daily     -> { scores }                 (today's UTC board)
+//   GET  /scores?board=week      -> { scores }                 (this UTC week)
+//   GET  /scores?board=month     -> { scores }                 (this UTC month)
 //   POST /scores                 -> { scores, rank }           (global all-time)
 //   POST /scores?board=daily     -> { scores, rank }           (today's UTC board)
-//   POST /scores?board=both      -> { daily:{scores,rank},      (one play counts
-//                                     global:{scores,rank} }     for BOTH boards)
-// The "both" POST writes the SAME entry to today's daily key AND the global key
-// in a single call with a SINGLE rate-limit check, so one completed shot is
-// recorded on both rankings at once. GETs stay single-board for the view toggle.
+//   POST /scores?board=week      -> { scores, rank }           (this UTC week)
+//   POST /scores?board=month     -> { scores, rank }           (this UTC month)
+//   POST /scores?board=all       -> { daily:{scores,rank},     (one play counts
+//                                     week:{scores,rank},        for ALL FOUR
+//                                     month:{scores,rank},       boards at once)
+//                                     global:{scores,rank} }
+// The "all" POST writes the SAME entry to today's daily, this week's, this
+// month's AND the global key in a single call with a SINGLE rate-limit check, so
+// one completed shot is recorded on all four rankings at once. GETs stay
+// single-board for the view toggle.
 //
 // --- Concurrency note (KV read-modify-write race) ---------------------------
 // POST does read("top10") -> mutate -> write("top10"). Under KV's eventual
@@ -39,11 +51,16 @@
 const KV_KEY = "top10";
 const MAX_ENTRIES = 10;
 
-// Daily boards live under "daily:<YYYY-MM-DD>" (UTC) and auto-expire a few days
-// after their date so old keys don't accumulate. 4 days = today + a small grace
-// margin (a board written near UTC-midnight stays readable through its full day).
+// Time-window boards live under "<prefix><bucket>" (UTC) and auto-expire after
+// their window so old keys don't accumulate. Each TTL = the window length + a
+// grace margin (a board written near a UTC boundary stays readable through its
+// full window).
 const DAILY_PREFIX = "daily:";
-const DAILY_TTL_SEC = 4 * 24 * 60 * 60; // ~4 days
+const DAILY_TTL_SEC = 4 * 24 * 60 * 60;  // ~4 days  (day + grace)
+const WEEK_PREFIX = "week:";
+const WEEK_TTL_SEC = 14 * 24 * 60 * 60;  // ~14 days (week + grace)
+const MONTH_PREFIX = "month:";
+const MONTH_TTL_SEC = 45 * 24 * 60 * 60; // ~45 days (month + grace)
 
 // Today's date in UTC as "YYYY-MM-DD". Computed server-side ONLY — never trust a
 // client-supplied date, or anyone could stuff past/future boards.
@@ -51,16 +68,42 @@ function utcDateKey(now = Date.now()) {
   return new Date(now).toISOString().slice(0, 10); // ISO is always UTC
 }
 
-// The KV key for a given board mode. mode === "daily" -> today's daily key,
-// anything else -> the all-time global key. Date is server-computed.
-function boardKey(mode) {
-  return mode === "daily" ? DAILY_PREFIX + utcDateKey() : KV_KEY;
+// This week's bucket: the UTC date ("YYYY-MM-DD") of the MONDAY of the week that
+// contains `now`. Deliberately simple Monday-anchoring (no ISO-week year/53-week
+// edge cases) — every UTC day Mon..Sun maps to the same Monday string.
+function utcWeekKey(now = Date.now()) {
+  const d = new Date(now);
+  const dow = d.getUTCDay();          // 0=Sun..6=Sat
+  const back = (dow + 6) % 7;         // days since Monday (Mon=0 .. Sun=6)
+  d.setUTCDate(d.getUTCDate() - back);
+  return d.toISOString().slice(0, 10);
 }
 
-// Per-board write options: daily keys auto-expire after a few days; the global
-// key is permanent.
+// This month's bucket: "YYYY-MM" in UTC.
+function utcMonthKey(now = Date.now()) {
+  return new Date(now).toISOString().slice(0, 7); // "YYYY-MM"
+}
+
+// The KV key for a given board mode. Time-window modes resolve to their
+// server-computed bucket key; anything else -> the all-time global key.
+function boardKey(mode) {
+  switch (mode) {
+    case "daily": return DAILY_PREFIX + utcDateKey();
+    case "week":  return WEEK_PREFIX + utcWeekKey();
+    case "month": return MONTH_PREFIX + utcMonthKey();
+    default:      return KV_KEY;
+  }
+}
+
+// Per-board write options: time-window keys auto-expire after their window; the
+// global key is permanent.
 function putOptsFor(mode) {
-  return mode === "daily" ? { expirationTtl: DAILY_TTL_SEC } : undefined;
+  switch (mode) {
+    case "daily": return { expirationTtl: DAILY_TTL_SEC };
+    case "week":  return { expirationTtl: WEEK_TTL_SEC };
+    case "month": return { expirationTtl: MONTH_TTL_SEC };
+    default:      return undefined;
+  }
 }
 
 // Per-IP write rate-limit (anti-griefing). The board has only 10 slots and the
@@ -174,7 +217,7 @@ async function insertIntoBoard(env, mode, entry) {
 
 async function handlePost(request, env, mode) {
   // Per-IP write rate-limit (anti-griefing) — checked before parsing the body.
-  // For mode "both" this is the SINGLE check covering both board writes.
+  // For mode "all" this is the SINGLE check covering all four board writes.
   if (await rateLimited(request, env)) {
     return json({ error: "Rate limit exceeded. Try again shortly." }, 429);
   }
@@ -200,17 +243,20 @@ async function handlePost(request, env, mode) {
     return json({ error: "Invalid error: finite number, >0 and <=90 required" }, 400);
   }
 
-  // One shared entry object (same ts) so the score reads identically on both
-  // boards when mode === "both".
+  // One shared entry object (same ts) so the score reads identically on every
+  // board when mode === "all".
   const entry = { name, error: body.error, ts: Date.now() };
 
-  // Dual write: one completed shot counts for BOTH today's daily board AND the
-  // all-time global board, under the single rate-limit check above. Each board's
-  // own rank is returned so the client can highlight the player on either view.
-  if (mode === "both") {
+  // Quad write: one completed shot counts for today's daily, this week's, this
+  // month's AND the all-time global board, under the single rate-limit check
+  // above. Each board's own rank is returned so the client can highlight the
+  // player on whichever view it shows.
+  if (mode === "all") {
     const daily = await insertIntoBoard(env, "daily", entry);
+    const week = await insertIntoBoard(env, "week", entry);
+    const month = await insertIntoBoard(env, "month", entry);
     const global = await insertIntoBoard(env, "global", entry);
-    return json({ daily, global });
+    return json({ daily, week, month, global });
   }
 
   const result = await insertIntoBoard(env, mode, entry);
@@ -230,25 +276,32 @@ export default {
       }
 
       if (pathname === "/scores") {
-        // Board selector from "?board=": "daily" -> today's UTC daily board,
-        // "both" (POST only) -> daily AND global in one call, anything else
-        // (incl. absent) -> the all-time global board. The daily DATE is always
-        // server-computed; only this mode flag is read from the client.
+        // Board selector from "?board=": "daily"/"week"/"month" -> the matching
+        // server-computed UTC time-window board, "all" (POST only) -> all three
+        // windows AND global in one call, anything else (incl. absent) -> the
+        // all-time global board. Every window's BUCKET is server-computed; only
+        // this mode flag is read from the client.
         const boardParam = url.searchParams.get("board");
         // NOTE: await is load-bearing. Without it, an async error inside
         // handleGet/handlePost (e.g. a KV get/put failure) escapes this
         // try/catch — fetch returns a rejected promise and Cloudflare emits a
         // generic 500 WITHOUT CORS headers (unreadable from the browser).
         if (request.method === "GET") {
-          // GET is single-board only: "daily" or global. "both" has no read
+          // GET is single-board only: a time window or global. "all" has no read
           // shape — the client GETs each board separately for the view toggle.
-          const mode = boardParam === "daily" ? "daily" : "global";
+          const mode =
+            boardParam === "daily" ? "daily"
+            : boardParam === "week" ? "week"
+            : boardParam === "month" ? "month"
+            : "global";
           return await handleGet(env, mode);
         }
         if (request.method === "POST") {
           const mode =
-            boardParam === "both" ? "both"
+            boardParam === "all" ? "all"
             : boardParam === "daily" ? "daily"
+            : boardParam === "week" ? "week"
+            : boardParam === "month" ? "month"
             : "global";
           return await handlePost(request, env, mode);
         }

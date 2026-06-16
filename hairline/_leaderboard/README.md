@@ -1,8 +1,9 @@
 # Hairline — Global Leaderboard Worker
 
-A tiny Cloudflare Worker + KV namespace that backs the global leaderboard for
-the Hairline game. It stores the **10 smallest angular errors** (lower is
-better) under a single KV key and exposes a two-route JSON API with CORS.
+A tiny Cloudflare Worker + KV namespace that backs the leaderboards for the
+Hairline game. It stores the **10 smallest angular errors** (lower is better) per
+board and exposes a JSON API with CORS. Four boards: **daily** (today's UTC day),
+**week** (this UTC week), **month** (this UTC month), and **global** (all-time).
 
 ## Deploy
 
@@ -52,14 +53,18 @@ Board selector via `?board=`:
 
 - absent / anything else → **global** all-time board (key `top10`, permanent)
 - `daily` → **today's UTC** board (key `daily:<YYYY-MM-DD>`, auto-expires ~4 days)
-- `both` (POST only) → writes to **both** boards in one call (see below)
+- `week` → **this UTC week** (key `week:<YYYY-MM-DD>`, bucket = the UTC date of
+  that week's **Monday**, auto-expires ~14 days)
+- `month` → **this UTC month** (key `month:<YYYY-MM>`, auto-expires ~45 days)
+- `all` (POST only) → writes to **all four** boards in one call (see below)
 
-The daily date is always computed server-side (UTC); the client only flags the mode.
+Every window's bucket (day / week's Monday / month) is computed server-side from
+UTC; the client only flags the mode, so no client can stuff a past/future board.
 
-### `GET {LB_URL}/scores`  ·  `GET {LB_URL}/scores?board=daily`
+### `GET {LB_URL}/scores`  ·  `?board=daily`  ·  `?board=week`  ·  `?board=month`
 
 Returns the current top 10 of the selected board, sorted ascending by `error`
-(lowest first). GET is single-board only (`daily` or global); `both` has no GET.
+(lowest first). GET is single-board only (a window or global); `all` has no GET.
 
 ```json
 {
@@ -96,24 +101,27 @@ Response (`200`):
 
 - `rank` — 1-based position if the score made the top 10, otherwise `null`.
 
-### `POST {LB_URL}/scores?board=both`
+### `POST {LB_URL}/scores?board=all`
 
-Records ONE score on BOTH today's daily board and the all-time global board in a
-single call, under a **single** rate-limit check. Same request body as above.
+Records ONE score on ALL FOUR boards — today's daily, this week, this month, and
+the all-time global — in a single call, under a **single** rate-limit check. Same
+request body as above.
 
 Response (`200`):
 
 ```json
 {
-  "daily":  { "scores": [ /* today's top 10 */ ],   "rank": 2 },
-  "global": { "scores": [ /* all-time top 10 */ ],   "rank": 5 }
+  "daily":  { "scores": [ /* today's top 10 */ ],     "rank": 2 },
+  "week":   { "scores": [ /* this week's top 10 */ ],  "rank": 3 },
+  "month":  { "scores": [ /* this month's top 10 */ ], "rank": 4 },
+  "global": { "scores": [ /* all-time top 10 */ ],     "rank": 5 }
 }
 ```
 
 - Each board reports its own `scores` + `rank` (`null` if the score missed that
-  board's top 10). The score is saved on both boards regardless of either rank.
+  board's top 10). The score is saved on every board regardless of any rank.
 - Validation, sanitization, and rate-limiting are identical to the single-board
-  POST; the rate-limit counter increments **once** for the dual write.
+  POST; the rate-limit counter increments **once** for the quad write.
 
 #### Validation & sanitization
 
@@ -131,10 +139,17 @@ Response (`200`):
 
 ## Storage model
 
-Single KV namespace (binding `SCORES`), single key `top10` holding the JSON
-array. POST does a read-modify-write: read `top10`, insert the new entry, sort
-ascending by `error` (ties broken by earliest `ts`), keep the 10 smallest,
-write back.
+Single KV namespace (binding `SCORES`), one JSON-array key per board:
+
+- `top10` — global all-time (permanent)
+- `daily:<YYYY-MM-DD>` — today's UTC day (TTL ~4 days)
+- `week:<YYYY-MM-DD>` — this UTC week, bucket = the Monday's date (TTL ~14 days)
+- `month:<YYYY-MM>` — this UTC month (TTL ~45 days)
+
+POST does a read-modify-write per board: read the key, insert the new entry, sort
+ascending by `error` (ties broken by earliest `ts`), keep the 10 smallest, write
+back (with the board's `expirationTtl` for the time-window keys). A `?board=all`
+POST does this for all four under a single rate-limit check.
 
 ### Caveats (toy-grade by design)
 

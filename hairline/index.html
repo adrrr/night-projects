@@ -61,13 +61,18 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
   opacity:0;transition:opacity .3s}
 #title-date.show{opacity:1}
 
-/* ---- leaderboard view toggle (Daily / Global) — a quiet pill pair ---- */
-/* A VIEW switch on the board screen: which ranking is shown, not a game mode. */
-#board-toggle{display:inline-flex;margin-bottom:20px;pointer-events:auto;
+/* ---- leaderboard view toggle (Day / Week / Month / All) — a quiet pill row ---- */
+/* A VIEW switch on the board screen: which ranking is shown, not a game mode.
+   Four options now, so the padding/tracking are tightened to fit a narrow phone
+   while keeping a 36px touch target. */
+#board-toggle{display:inline-flex;margin-bottom:20px;pointer-events:auto;max-width:94vw;
   border:1px solid var(--ink-4);border-radius:999px;padding:3px;gap:2px}
-.mode-opt{font-family:inherit;font-size:11px;letter-spacing:.16em;text-transform:uppercase;
-  padding:9px 18px;min-height:36px;border:none;background:transparent;color:var(--ink-3);
+.mode-opt{font-family:inherit;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  padding:9px 13px;min-height:36px;white-space:nowrap;border:none;background:transparent;color:var(--ink-3);
   border-radius:999px;cursor:pointer;transition:background .15s,color .15s}
+@media (max-width:360px){
+  .mode-opt{padding:9px 10px;letter-spacing:.06em}
+}
 .mode-opt:hover{color:var(--ink)}
 .mode-opt[aria-selected="true"]{background:var(--ink);color:var(--paper)}
 .mode-opt:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
@@ -168,7 +173,7 @@ body{animation:enter .6s ease both}
   <div class="row-actions">
     <button class="btn ghost" id="res-board-btn">Board</button>
     <button class="btn primary" id="res-again-btn">Again</button>
-    <button class="btn primary hidden" id="res-name-btn">Add name</button>
+    <button class="btn ghost hidden" id="res-name-btn">Add name</button>
   </div>
 </div>
 
@@ -190,11 +195,14 @@ body{animation:enter .6s ease both}
 <div id="board" class="overlay hidden">
   <div id="board-title">leaderboard</div>
   <!-- View toggle: switch which RANKING is shown for the score just achieved —
-       DAILY (today) vs GLOBAL (all-time). A view switch, not a gameplay mode.
-       Default view = daily. -->
+       Today (daily) / Week / Month / All-time (global). A view switch, not a
+       gameplay mode. Default view = daily (today). Labels kept SHORT so the
+       4-pill row fits a narrow phone. -->
   <div id="board-toggle" role="tablist" aria-label="Leaderboard view">
-    <button id="view-daily" class="mode-opt" role="tab" type="button" aria-selected="true">Daily</button>
-    <button id="view-global" class="mode-opt" role="tab" type="button" aria-selected="false">Global</button>
+    <button id="view-daily"  class="mode-opt" role="tab" type="button" aria-selected="true">Day</button>
+    <button id="view-week"   class="mode-opt" role="tab" type="button" aria-selected="false">Week</button>
+    <button id="view-month"  class="mode-opt" role="tab" type="button" aria-selected="false">Month</button>
+    <button id="view-global" class="mode-opt" role="tab" type="button" aria-selected="false">All</button>
   </div>
   <div id="board-list"></div>
   <div class="row-actions">
@@ -230,6 +238,8 @@ const boardEl  = $('board');
 const boardTitleEl = $('board-title');
 const boardListEl = $('board-list');
 const viewDailyBtn  = $('view-daily');
+const viewWeekBtn   = $('view-week');
+const viewMonthBtn  = $('view-month');
 const viewGlobalBtn = $('view-global');
 
 const resBoardBtn = $('res-board-btn');
@@ -355,11 +365,12 @@ resize();
 const STATE = { TITLE: 0, PLAYING: 1, RESULT: 2, NAME: 3, BOARD: 4 };
 let state = STATE.TITLE;
 
-// There is ONE game (always the daily-seeded needle). DAILY/GLOBAL is no longer
-// a gameplay mode — it's only a VIEW switch on the leaderboard screen, picking
-// which ranking (today's daily vs all-time global) is displayed for the score
-// just achieved. Default view = daily.
-const VIEW = { DAILY: 'daily', GLOBAL: 'global' };
+// There is ONE game (always the daily-seeded needle). The board view is no
+// longer a gameplay mode — it's only a VIEW switch on the leaderboard screen,
+// picking which ranking is displayed for the score just achieved: today's daily,
+// this week, this month, or the all-time global. Default view = daily (today).
+const VIEW = { DAILY: 'daily', WEEK: 'week', MONTH: 'month', GLOBAL: 'global' };
+const VIEW_ORDER = [VIEW.DAILY, VIEW.WEEK, VIEW.MONTH, VIEW.GLOBAL];
 let boardView = VIEW.DAILY;
 
 let angle = 0;           // current needle angle (rad)
@@ -374,12 +385,14 @@ let muted = localStorage.getItem('hairline-muted') === '1';
 let initials = (localStorage.getItem('hairline-initials') || 'AAA')
   .toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || 'A';
 
-// Two cached boards, fetched together. A completed shot is judged against BOTH
-// cutoffs (qualifies if it beats EITHER), and submitted to both in one call.
+// Four cached boards, fetched together. A completed shot is judged against ALL
+// FOUR cutoffs (qualifies if it beats ANY), and submitted to all in one call.
 // `ready` flags whether that board's GET ever succeeded — never claim a
 // placement we can't back with the server.
 const boards = {
   daily:  { scores: [], cutoff: Infinity, ready: false },
+  week:   { scores: [], cutoff: Infinity, ready: false },
+  month:  { scores: [], cutoff: Infinity, ready: false },
   global: { scores: [], cutoff: Infinity, ready: false },
 };
 // The board currently shown on the leaderboard view (mirrors boardView).
@@ -446,18 +459,19 @@ function qualifiesOn(b, err) {
   if (b.scores.length < 10) return true;
   return err < b.cutoff;
 }
-// Qualify for name entry if the shot beats EITHER board's cutoff. One play
-// counts for both, so a top-10 on daily OR global is worth naming.
+// Qualify for name entry if the shot beats ANY board's cutoff. One play counts
+// for all four, so a top-10 on day, week, month OR global is worth naming.
 function qualifies(err) {
-  return qualifiesOn(boards.daily, err) || qualifiesOn(boards.global, err);
+  return VIEW_ORDER.some(v => qualifiesOn(boards[v], err));
 }
 function scoresBase() { return LB_URL.replace(/\/$/, '') + '/scores'; }
 
-// Fetch ONE board (daily or global) and fold it into its cache. Used by the
-// view toggle and as a building block for fetchBoth.
+// Fetch ONE board (daily/week/month/global) and fold it into its cache. Used by
+// the view toggle and as a building block for fetchAll. The global board takes
+// no ?board param; the three time windows pass their mode.
 async function fetchBoard(view) {
   if (!lbDeployed()) return; // not deployed yet
-  const url = view === VIEW.DAILY ? scoresBase() + '?board=daily' : scoresBase();
+  const url = view === VIEW.GLOBAL ? scoresBase() : scoresBase() + '?board=' + view;
   try {
     const r = await fetch(url, { method: 'GET' });
     if (!r.ok) return;
@@ -465,17 +479,18 @@ async function fetchBoard(view) {
     if (data && Array.isArray(data.scores)) applyBoard(boards[view], data.scores);
   } catch (e) { /* offline — degrade gracefully */ }
 }
-// Fetch BOTH boards together (boot + before each result's qualify check), so we
-// know both cutoffs and can populate the default view. Concurrent, independent:
-// one board failing never blocks the other.
-async function fetchBoth() {
-  await Promise.all([fetchBoard(VIEW.DAILY), fetchBoard(VIEW.GLOBAL)]);
+// Fetch ALL boards together (boot + before each result's qualify check), so we
+// know every cutoff and can populate the default view. Concurrent, independent:
+// one board failing never blocks the others.
+async function fetchAll() {
+  await Promise.all(VIEW_ORDER.map(fetchBoard));
 }
-// Dual submit: POST ?board=both — one call, one rate-limit check, writes the
-// score to today's daily AND the all-time global board. Outcomes, never conflated:
-//  • {status:'placed', dailyRank, globalRank} — HTTP 200, recorded on both.
-//        Either rank may be a number (placed on that board) or null (missed it),
-//        but the SCORE WAS SAVED on both boards regardless.
+// Quad submit: POST ?board=all — one call, one rate-limit check, writes the
+// score to today's daily, this week, this month AND the all-time global board.
+// Outcomes, never conflated:
+//  • {status:'placed', ranks:{daily,week,month,global}} — HTTP 200, recorded on
+//        all four. Each rank may be a number (placed on that board) or null
+//        (missed it), but the SCORE WAS SAVED on every board regardless.
 //  • {status:'failed', code} — network error (code 0) or !ok (429/5xx); the
 //        score was NOT recorded and must be retryable.
 //  • {status:'offline'}      — board not deployed (LB_URL placeholder).
@@ -484,7 +499,7 @@ async function submitScore(name, err) {
   if (!lbDeployed()) return { status: 'offline' };
   let r;
   try {
-    r = await fetch(scoresBase() + '?board=both', {
+    r = await fetch(scoresBase() + '?board=all', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name, error: err })
@@ -495,31 +510,39 @@ async function submitScore(name, err) {
   if (!r.ok) return { status: 'failed', code: r.status }; // 429, 5xx, etc.
   let data = null;
   try { data = await r.json(); } catch (e) { /* tolerate empty/invalid body */ }
-  // Tolerate a Worker that hasn't been redeployed yet and still answers the
-  // old single-board shape {scores, rank}: fold it into the daily board (the
-  // POST hit ?board=both, which the old Worker treats as global... but we can't
-  // know which) — so degrade to 'failed' rather than mis-attribute. The dual
-  // shape {daily, global} is the contract.
-  if (data && data.daily && data.global) {
-    if (Array.isArray(data.daily.scores))  applyBoard(boards.daily,  data.daily.scores);
-    if (Array.isArray(data.global.scores)) applyBoard(boards.global, data.global.scores);
-    const dr = typeof data.daily.rank  === 'number' ? data.daily.rank  : null;
-    const gr = typeof data.global.rank === 'number' ? data.global.rank : null;
-    return { status: 'placed', dailyRank: dr, globalRank: gr };
+  // The quad shape {daily, week, month, global} is the contract. A Worker that
+  // hasn't been redeployed yet answers the old single-board shape {scores,rank}
+  // (it ignores ?board=all and writes global) — we can't safely attribute that,
+  // so any other shape degrades to a retryable 'failed' rather than mis-show or
+  // lose the score.
+  if (data && data.daily && data.week && data.month && data.global) {
+    const ranks = {};
+    for (const v of VIEW_ORDER) {
+      if (Array.isArray(data[v].scores)) applyBoard(boards[v], data[v].scores);
+      ranks[v] = typeof data[v].rank === 'number' ? data[v].rank : null;
+    }
+    return { status: 'placed', ranks: ranks };
   }
   // Unexpected shape (e.g. an un-updated Worker returning the old single-board
-  // body for ?board=both). The dual write did NOT happen as contracted — treat
-  // it as a retryable failure so the score is never lost or mis-shown.
+  // body for ?board=all). The quad write did NOT happen as contracted — treat it
+  // as a retryable failure so the score is never lost or mis-shown.
   return { status: 'failed', code: r.status };
 }
 
-/* ---------- Leaderboard view (Daily / Global) ---------- */
+/* ---------- Leaderboard view (Day / Week / Month / All) ---------- */
+// Map each VIEW to its toggle pill, so syncView/setView stay data-driven.
+const viewBtns = {
+  [VIEW.DAILY]:  viewDailyBtn,
+  [VIEW.WEEK]:   viewWeekBtn,
+  [VIEW.MONTH]:  viewMonthBtn,
+  [VIEW.GLOBAL]: viewGlobalBtn,
+};
 // Reflect the active VIEW in the board toggle pills. This only changes which
 // ranking is displayed — it never touches gameplay (the needle is always daily).
 function syncView() {
-  const daily = boardView === VIEW.DAILY;
-  viewDailyBtn.setAttribute('aria-selected', daily ? 'true' : 'false');
-  viewGlobalBtn.setAttribute('aria-selected', daily ? 'false' : 'true');
+  for (const v of VIEW_ORDER) {
+    viewBtns[v].setAttribute('aria-selected', boardView === v ? 'true' : 'false');
+  }
 }
 // Switch which board the leaderboard view shows. Re-render from the (already
 // cached) board; re-fetch it in the background to stay fresh. No-op if unchanged.
@@ -536,7 +559,7 @@ titleDateEl.textContent = utcDateStr() + ' · today’s challenge';
 titleDateEl.classList.add('show');
 
 syncView();
-fetchBoth(); // learn both cutoffs at boot + populate the default (daily) view
+fetchAll(); // learn every cutoff at boot + populate the default (daily) view
 
 /* ---------- Flow ---------- */
 function showOverlay(el) {
@@ -565,12 +588,12 @@ function shoot() {
   lastError = errToHorizontal(angle);
   state = STATE.RESULT;
 
-  // Qualification is decided in finishReveal against FRESH data for BOTH boards:
-  // fire both GETs concurrently with the count-up so they add no perceptible
+  // Qualification is decided in finishReveal against FRESH data for ALL boards:
+  // fire every GET concurrently with the count-up so they add no perceptible
   // latency. Default to "not qualified" until they resolve.
   qualifiedThisShot = false;
   revealDone = false;
-  scoresInFlight = fetchBoth();
+  scoresInFlight = fetchAll();
 
   // personal best
   if (lastError < pb) { pb = lastError; localStorage.setItem('hairline-pb', String(pb)); syncPb(); }
@@ -578,11 +601,14 @@ function shoot() {
   // reveal
   resNumEl.textContent = fmtErr(0); // start the count-up from a tiny value
   resSubEl.innerHTML = '&nbsp;';
-  // "Again" is ALWAYS present and immediately actionable — never held on the
-  // async GET. It starts as the primary CTA; if the shot qualifies, finishReveal
-  // demotes it to a secondary and reveals "Add name" as the primary.
+  // "Again" is ALWAYS present, immediately actionable, and STAYS the primary CTA
+  // — never held on the async GET, never demoted. If the shot qualifies,
+  // finishReveal merely reveals "Add name" as a clear SECONDARY (.ghost) opt-in,
+  // so replay is always the easy 1-click default and naming is a deliberate
+  // secondary choice (Nicolas's "I just want to play again" friction fix).
   resAgainBtn.classList.add('primary');
-  resNameBtn.classList.add('hidden'); // shown only when the shot qualifies
+  resNameBtn.classList.add('hidden');  // shown only when the shot qualifies
+  resNameBtn.classList.add('ghost');   // and presented as a secondary opt-in
   showOverlay(resultEl);
   revealStart = performance.now();
   sfxReveal(lastError);
@@ -597,14 +623,14 @@ async function finishReveal() {
   if (state !== STATE.RESULT) return;
 
   qualifiedThisShot = qualifies(lastError);
-  // "Again" stayed live throughout. Now that qualification is known, surface
-  // "Add name" as the primary CTA when the shot placed, and demote "Again" to
-  // a secondary so the hierarchy reads cleanly. Otherwise "Again" stays primary.
+  // "Again" stayed live throughout AND stays the PRIMARY CTA whether or not the
+  // shot qualified — replay is always the 1-click default (Nicolas's friction
+  // fix). When the shot qualifies, reveal "Add name" as a clear SECONDARY
+  // (.ghost) opt-in; otherwise keep it hidden. "Again" is never demoted.
+  resAgainBtn.classList.add('primary');
   if (qualifiedThisShot) {
-    resAgainBtn.classList.remove('primary');
     resNameBtn.classList.remove('hidden');
   } else {
-    resAgainBtn.classList.add('primary');
     resNameBtn.classList.add('hidden');
   }
 
@@ -620,9 +646,10 @@ async function finishReveal() {
   }
   resSubEl.innerHTML = sub;
 
-  // Move focus to the primary CTA so desktop Space/Enter triggers it (the gated
-  // keydown maps Space/Enter to the focused control, never to shoot).
-  (qualifiedThisShot ? resNameBtn : resAgainBtn).focus();
+  // Move focus to "Again" (the primary CTA) so desktop Space/Enter replays in
+  // one action — the gated keydown maps Space/Enter to the focused control,
+  // never to shoot. "Add name" is a deliberate tab/click away.
+  resAgainBtn.focus();
 }
 
 /* ---------- Name entry (single native input) ---------- */
@@ -645,9 +672,11 @@ function openNameEntry(rank) {
 /* ---------- Leaderboard render ---------- */
 // Highlight info for the score just submitted, shared across view switches:
 //   name      — sanitized initials the player submitted (null if just viewing)
-//   ranks     — { daily, global } 1-based rank per board (null = didn't place there)
-//   missed    — submitted but placed on NEITHER board (both ranks null)
-let me = { name: null, ranks: { daily: null, global: null }, missed: false };
+//   ranks     — { daily, week, month, global } 1-based rank per board
+//               (null = didn't place there)
+//   missed    — submitted but placed on NONE of the four boards (all ranks null)
+const NO_RANKS = { daily: null, week: null, month: null, global: null };
+let me = { name: null, ranks: { ...NO_RANKS }, missed: false };
 
 // Render the rows for the CURRENTLY SELECTED view (boardView), highlighting the
 // player's row on that board if they placed there. Pure redraw — safe to call
@@ -655,9 +684,13 @@ let me = { name: null, ranks: { daily: null, global: null }, missed: false };
 function renderBoardRows() {
   const b = shownBoard();
   const myRank = me.ranks[boardView];
-  // Title: daily names today's UTC date; global stays "leaderboard". A submit
-  // that placed nowhere shows "just missed".
-  const baseTitle = boardView === VIEW.DAILY ? 'daily · ' + utcDateStr() : 'leaderboard';
+  // Title per view: today names its UTC date; week/month/all-time are labelled
+  // plainly. A submit that placed on no board shows "just missed".
+  const baseTitle =
+    boardView === VIEW.DAILY ? 'daily · ' + utcDateStr()
+    : boardView === VIEW.WEEK ? 'this week'
+    : boardView === VIEW.MONTH ? 'this month'
+    : 'all-time';
   boardTitleEl.textContent = me.missed ? 'just missed' : baseTitle;
   boardListEl.innerHTML = '';
   let meRow = null;
@@ -692,13 +725,17 @@ function renderBoardRows() {
 
 // Open the leaderboard view. `myName`/`ranks` describe the score just submitted
 // (null/empty when merely viewing). Default the view to DAILY (today). missed:
-// the submit placed on NEITHER board — show honestly, no fake highlighted row.
+// the submit placed on NONE of the boards — show honestly, no fake highlighted
+// row.
 function showBoard(myName, ranks, missed) {
   state = STATE.BOARD;
-  me = { name: myName || null, ranks: ranks || { daily: null, global: null }, missed: !!missed };
-  // Always land on the daily view first; prefer the board the player actually
-  // placed on if they only placed on global, so the highlight is visible.
-  boardView = (me.ranks.daily == null && me.ranks.global != null) ? VIEW.GLOBAL : VIEW.DAILY;
+  me = { name: myName || null, ranks: { ...NO_RANKS, ...(ranks || {}) }, missed: !!missed };
+  // Land on the daily view if the player placed there (or is just viewing);
+  // otherwise prefer the FIRST board (in Day→Week→Month→All order) they actually
+  // placed on, so their highlighted row is visible without hunting.
+  boardView = me.ranks.daily != null
+    ? VIEW.DAILY
+    : (VIEW_ORDER.find(v => me.ranks[v] != null) || VIEW.DAILY);
   syncView();
   renderBoardRows();
   showOverlay(boardEl);
@@ -745,16 +782,17 @@ async function submitAndShow() {
 
   if (res.status === 'placed') {
     // Trust the authoritative POST. The server sanitizes the name, so match
-    // against the sanitized echo (read from whichever board the player placed
-    // on) for the highlight.
-    const ranks = { daily: res.dailyRank, global: res.globalRank };
-    const dEcho = ranks.daily  != null && boards.daily.scores[ranks.daily - 1]
-      ? boards.daily.scores[ranks.daily - 1].name : null;
-    const gEcho = ranks.global != null && boards.global.scores[ranks.global - 1]
-      ? boards.global.scores[ranks.global - 1].name : null;
-    const echoed = dEcho || gEcho || name;
-    // Placed on neither board (both ranks null) => genuine "just missed".
-    const missed = ranks.daily == null && ranks.global == null;
+    // against the sanitized echo (read from whichever board the player placed on,
+    // Day→Week→Month→All order) for the highlight.
+    const ranks = res.ranks;
+    let echoed = null;
+    for (const v of VIEW_ORDER) {
+      const rk = ranks[v];
+      if (rk != null && boards[v].scores[rk - 1]) { echoed = boards[v].scores[rk - 1].name; break; }
+    }
+    echoed = echoed || name;
+    // Placed on none of the four boards (all ranks null) => genuine "just missed".
+    const missed = VIEW_ORDER.every(v => ranks[v] == null);
     showBoard(echoed, ranks, missed);
     return;
   }
@@ -903,7 +941,7 @@ resNameBtn.addEventListener('click', (e) => {
 resBoardBtn.addEventListener('click', async (e) => {
   e.stopPropagation();
   ensureAudio();
-  await fetchBoth();
+  await fetchAll();
   showBoard(null, null, false); // just viewing — no highlight
 });
 
@@ -916,8 +954,9 @@ function provisionalRankOn(b, err) {
 // The player's best (lowest) provisional rank across the boards they qualify on.
 function bestProvisionalRank(err) {
   let best = 10;
-  if (qualifiesOn(boards.daily, err))  best = Math.min(best, provisionalRankOn(boards.daily, err));
-  if (qualifiesOn(boards.global, err)) best = Math.min(best, provisionalRankOn(boards.global, err));
+  for (const v of VIEW_ORDER) {
+    if (qualifiesOn(boards[v], err)) best = Math.min(best, provisionalRankOn(boards[v], err));
+  }
   return best;
 }
 
@@ -928,10 +967,12 @@ nameInput.addEventListener('input', () => {
 nameSubmitBtn.addEventListener('click', (e) => { e.stopPropagation(); submitAndShow(); });
 boardAgainBtn.addEventListener('click', (e) => { e.stopPropagation(); startGame(); });
 
-// Board view toggle — switch which RANKING is displayed (daily today / global
+// Board view toggle — switch which RANKING is displayed (today / week / month /
 // all-time). A view switch only; gameplay is unaffected. stopPropagation so the
 // tap activates the pill rather than bubbling to any global handler.
-viewDailyBtn.addEventListener('click', (e) => { e.stopPropagation(); setView(VIEW.DAILY); });
+viewDailyBtn.addEventListener('click',  (e) => { e.stopPropagation(); setView(VIEW.DAILY); });
+viewWeekBtn.addEventListener('click',   (e) => { e.stopPropagation(); setView(VIEW.WEEK); });
+viewMonthBtn.addEventListener('click',  (e) => { e.stopPropagation(); setView(VIEW.MONTH); });
 viewGlobalBtn.addEventListener('click', (e) => { e.stopPropagation(); setView(VIEW.GLOBAL); });
 </script>
 </body>
