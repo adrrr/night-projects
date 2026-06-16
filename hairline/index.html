@@ -55,8 +55,15 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
   animation:pulse 2.4s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:.55}50%{opacity:.16}}
 
-/* ---- mode toggle (Daily / Global) — a quiet pill pair, ink on paper ---- */
-#mode-toggle{display:inline-flex;margin-top:40px;pointer-events:auto;
+/* ---- today's challenge date (title screen) — a quiet muted line ---- */
+#title-date{margin-top:34px;height:14px;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-3);font-variant-numeric:tabular-nums;
+  opacity:0;transition:opacity .3s}
+#title-date.show{opacity:1}
+
+/* ---- leaderboard view toggle (Daily / Global) — a quiet pill pair ---- */
+/* A VIEW switch on the board screen: which ranking is shown, not a game mode. */
+#board-toggle{display:inline-flex;margin-bottom:20px;pointer-events:auto;
   border:1px solid var(--ink-4);border-radius:999px;padding:3px;gap:2px}
 .mode-opt{font-family:inherit;font-size:11px;letter-spacing:.16em;text-transform:uppercase;
   padding:9px 18px;min-height:36px;border:none;background:transparent;color:var(--ink-3);
@@ -64,11 +71,6 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 .mode-opt:hover{color:var(--ink)}
 .mode-opt[aria-selected="true"]{background:var(--ink);color:var(--paper)}
 .mode-opt:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-/* the active UTC date, shown only in daily mode */
-#mode-date{margin-top:14px;height:14px;font-size:11px;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--ink-3);font-variant-numeric:tabular-nums;
-  opacity:0;transition:opacity .3s}
-#mode-date.show{opacity:1}
 
 /* ---- result reveal ---- */
 #result{gap:0}
@@ -153,12 +155,9 @@ body{animation:enter .6s ease both}
 <div id="title" class="overlay">
   <div id="title-name">Hairline</div>
   <div class="tap-cue">tap to begin</div>
-  <!-- Daily / Global mode toggle. Daily (default) is the seeded, winnable hook. -->
-  <div id="mode-toggle" role="tablist" aria-label="Challenge mode">
-    <button id="mode-daily" class="mode-opt" role="tab" type="button" aria-selected="true">Daily</button>
-    <button id="mode-global" class="mode-opt" role="tab" type="button" aria-selected="false">Global</button>
-  </div>
-  <div id="mode-date" aria-live="polite">&nbsp;</div>
+  <!-- Today's seeded challenge: everyone gets the same needle for this UTC day.
+       Pure info — tapping anywhere on the title begins (no toggle to dodge). -->
+  <div id="title-date" aria-live="polite">&nbsp;</div>
 </div>
 
 <!-- result reveal -->
@@ -190,6 +189,13 @@ body{animation:enter .6s ease both}
 <!-- leaderboard -->
 <div id="board" class="overlay hidden">
   <div id="board-title">leaderboard</div>
+  <!-- View toggle: switch which RANKING is shown for the score just achieved —
+       DAILY (today) vs GLOBAL (all-time). A view switch, not a gameplay mode.
+       Default view = daily. -->
+  <div id="board-toggle" role="tablist" aria-label="Leaderboard view">
+    <button id="view-daily" class="mode-opt" role="tab" type="button" aria-selected="true">Daily</button>
+    <button id="view-global" class="mode-opt" role="tab" type="button" aria-selected="false">Global</button>
+  </div>
   <div id="board-list"></div>
   <div class="row-actions">
     <button class="btn primary" id="board-again-btn">Play</button>
@@ -212,9 +218,7 @@ const ctx = canvas.getContext('2d');
 const muteEl   = $('mute');
 const pbEl     = $('pb');
 const titleEl  = $('title');
-const modeDailyBtn  = $('mode-daily');
-const modeGlobalBtn = $('mode-global');
-const modeDateEl    = $('mode-date');
+const titleDateEl   = $('title-date');
 const resultEl = $('result');
 const resNumEl = $('res-num');
 const resSubEl = $('res-sub');
@@ -225,6 +229,8 @@ const nameMsgEl = $('name-msg');
 const boardEl  = $('board');
 const boardTitleEl = $('board-title');
 const boardListEl = $('board-list');
+const viewDailyBtn  = $('view-daily');
+const viewGlobalBtn = $('view-global');
 
 const resBoardBtn = $('res-board-btn');
 const resAgainBtn = $('res-again-btn');
@@ -260,10 +266,11 @@ function fmtErr(deg) {
 }
 
 /* ---------- Daily challenge seed ----------
-   DAILY mode is a SEEDED challenge: every player worldwide gets the identical
-   needle for a given UTC day. We derive the needle's only randomized param (the
-   starting angle) from a deterministic PRNG seeded by today's UTC date string.
-   GLOBAL mode is untouched — it keeps Math.random for a fresh needle per shot. */
+   The game is ALWAYS a SEEDED challenge: every player worldwide gets the
+   identical needle for a given UTC day. We derive the needle's only randomized
+   param (the starting angle) from a deterministic PRNG seeded by today's UTC
+   date string. One play is comparable across everyone, so one completed shot
+   counts for BOTH boards — today's daily AND the all-time global. */
 
 // Today's UTC date as "YYYY-MM-DD". ISO string is always UTC, so the daily board
 // flips at UTC midnight for everyone simultaneously (matches the Worker).
@@ -348,13 +355,12 @@ resize();
 const STATE = { TITLE: 0, PLAYING: 1, RESULT: 2, NAME: 3, BOARD: 4 };
 let state = STATE.TITLE;
 
-// Game mode. DAILY (default) = seeded challenge + today's daily board; GLOBAL =
-// random needle per shot + the all-time board. The mode picks both the needle
-// source (startGame) and the board the client reads/writes (fetch/submitScore).
-// Default DAILY: the fresh, winnable hook. Not persisted — every load lands on
-// today's challenge first.
-const MODE = { DAILY: 'daily', GLOBAL: 'global' };
-let mode = MODE.DAILY;
+// There is ONE game (always the daily-seeded needle). DAILY/GLOBAL is no longer
+// a gameplay mode — it's only a VIEW switch on the leaderboard screen, picking
+// which ranking (today's daily vs all-time global) is displayed for the score
+// just achieved. Default view = daily.
+const VIEW = { DAILY: 'daily', GLOBAL: 'global' };
+let boardView = VIEW.DAILY;
 
 let angle = 0;           // current needle angle (rad)
 const omega = TAU / SWEEP_SEC; // constant angular speed — same for all players
@@ -368,9 +374,16 @@ let muted = localStorage.getItem('hairline-muted') === '1';
 let initials = (localStorage.getItem('hairline-initials') || 'AAA')
   .toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || 'A';
 
-let topScores = [];      // cached leaderboard (ascending by error)
-let cutoff = Infinity;   // #10 error; below it (or <10 entries) qualifies
-let lbReady = false;     // did the initial GET succeed?
+// Two cached boards, fetched together. A completed shot is judged against BOTH
+// cutoffs (qualifies if it beats EITHER), and submitted to both in one call.
+// `ready` flags whether that board's GET ever succeeded — never claim a
+// placement we can't back with the server.
+const boards = {
+  daily:  { scores: [], cutoff: Infinity, ready: false },
+  global: { scores: [], cutoff: Infinity, ready: false },
+};
+// The board currently shown on the leaderboard view (mirrors boardView).
+function shownBoard() { return boards[boardView]; }
 
 /* ---------- Audio (quiet, synthesised) ---------- */
 let audioCtx = null;
@@ -416,49 +429,62 @@ function syncPb() {
 syncPb();
 
 /* ---------- Leaderboard client ---------- */
-function recomputeCutoff() {
-  cutoff = topScores.length < 10 ? Infinity
-         : topScores[topScores.length - 1].error;
+const lbDeployed = () => LB_URL && LB_URL.indexOf('__LB_URL__') === -1;
+function recomputeCutoff(b) {
+  b.cutoff = b.scores.length < 10 ? Infinity : b.scores[b.scores.length - 1].error;
 }
+// Fold a server-returned {scores} payload into a cached board (sets ready).
+function applyBoard(b, scores) {
+  b.scores = scores.slice(0, 10);
+  b.ready = true;
+  recomputeCutoff(b);
+}
+// Does `err` make the top 10 on a SPECIFIC board? An offline/undeployed board
+// (ready false) can never qualify — we won't claim a placement we can't back.
+function qualifiesOn(b, err) {
+  if (!b.ready) return false;
+  if (b.scores.length < 10) return true;
+  return err < b.cutoff;
+}
+// Qualify for name entry if the shot beats EITHER board's cutoff. One play
+// counts for both, so a top-10 on daily OR global is worth naming.
 function qualifies(err) {
-  // An offline/undeployed board (LB_URL placeholder or a failed GET) leaves
-  // lbReady false. Never claim a placement we can't back with the server —
-  // an offline shot just shows precision + "Again", never "top ten".
-  if (!lbReady) return false;
-  if (topScores.length < 10) return true;
-  return err < cutoff;
+  return qualifiesOn(boards.daily, err) || qualifiesOn(boards.global, err);
 }
-// Build the /scores endpoint for the CURRENT mode. Daily appends ?board=daily;
-// the server computes the actual UTC date, the client only flags the mode.
-function scoresUrl() {
-  const base = LB_URL.replace(/\/$/, '') + '/scores';
-  return mode === MODE.DAILY ? base + '?board=daily' : base;
-}
-async function fetchScores() {
-  if (!LB_URL || LB_URL.indexOf('__LB_URL__') !== -1) return; // not deployed yet
+function scoresBase() { return LB_URL.replace(/\/$/, '') + '/scores'; }
+
+// Fetch ONE board (daily or global) and fold it into its cache. Used by the
+// view toggle and as a building block for fetchBoth.
+async function fetchBoard(view) {
+  if (!lbDeployed()) return; // not deployed yet
+  const url = view === VIEW.DAILY ? scoresBase() + '?board=daily' : scoresBase();
   try {
-    const r = await fetch(scoresUrl(), { method: 'GET' });
+    const r = await fetch(url, { method: 'GET' });
     if (!r.ok) return;
     const data = await r.json();
-    if (data && Array.isArray(data.scores)) {
-      topScores = data.scores.slice(0, 10);
-      lbReady = true;
-      recomputeCutoff();
-    }
+    if (data && Array.isArray(data.scores)) applyBoard(boards[view], data.scores);
   } catch (e) { /* offline — degrade gracefully */ }
 }
-// Three outcomes, never conflated:
-//  • {status:'placed', rank, scores} — HTTP 200, server gave a numeric rank.
-//  • {status:'missed'}               — HTTP 200, rank null (genuinely outside top 10).
-//  • {status:'failed', code}         — network error (code 0) or !ok (e.g. 429/5xx);
-//                                       the score was NOT recorded and must be retryable.
-//  • {status:'offline'}              — board not deployed (LB_URL placeholder).
+// Fetch BOTH boards together (boot + before each result's qualify check), so we
+// know both cutoffs and can populate the default view. Concurrent, independent:
+// one board failing never blocks the other.
+async function fetchBoth() {
+  await Promise.all([fetchBoard(VIEW.DAILY), fetchBoard(VIEW.GLOBAL)]);
+}
+// Dual submit: POST ?board=both — one call, one rate-limit check, writes the
+// score to today's daily AND the all-time global board. Outcomes, never conflated:
+//  • {status:'placed', dailyRank, globalRank} — HTTP 200, recorded on both.
+//        Either rank may be a number (placed on that board) or null (missed it),
+//        but the SCORE WAS SAVED on both boards regardless.
+//  • {status:'failed', code} — network error (code 0) or !ok (429/5xx); the
+//        score was NOT recorded and must be retryable.
+//  • {status:'offline'}      — board not deployed (LB_URL placeholder).
 // A FAILED/offline result must never be shown as "just missed" or lose the score.
 async function submitScore(name, err) {
-  if (!LB_URL || LB_URL.indexOf('__LB_URL__') !== -1) return { status: 'offline' };
+  if (!lbDeployed()) return { status: 'offline' };
   let r;
   try {
-    r = await fetch(scoresUrl(), {
+    r = await fetch(scoresBase() + '?board=both', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name, error: err })
@@ -469,40 +495,48 @@ async function submitScore(name, err) {
   if (!r.ok) return { status: 'failed', code: r.status }; // 429, 5xx, etc.
   let data = null;
   try { data = await r.json(); } catch (e) { /* tolerate empty/invalid body */ }
-  if (data && Array.isArray(data.scores)) {
-    topScores = data.scores.slice(0, 10);
-    lbReady = true;
-    recomputeCutoff();
+  // Tolerate a Worker that hasn't been redeployed yet and still answers the
+  // old single-board shape {scores, rank}: fold it into the daily board (the
+  // POST hit ?board=both, which the old Worker treats as global... but we can't
+  // know which) — so degrade to 'failed' rather than mis-attribute. The dual
+  // shape {daily, global} is the contract.
+  if (data && data.daily && data.global) {
+    if (Array.isArray(data.daily.scores))  applyBoard(boards.daily,  data.daily.scores);
+    if (Array.isArray(data.global.scores)) applyBoard(boards.global, data.global.scores);
+    const dr = typeof data.daily.rank  === 'number' ? data.daily.rank  : null;
+    const gr = typeof data.global.rank === 'number' ? data.global.rank : null;
+    return { status: 'placed', dailyRank: dr, globalRank: gr };
   }
-  if (data && typeof data.rank === 'number') {
-    return { status: 'placed', rank: data.rank, scores: topScores };
-  }
-  return { status: 'missed' };
+  // Unexpected shape (e.g. an un-updated Worker returning the old single-board
+  // body for ?board=both). The dual write did NOT happen as contracted — treat
+  // it as a retryable failure so the score is never lost or mis-shown.
+  return { status: 'failed', code: r.status };
 }
 
-/* ---------- Mode (Daily / Global) ---------- */
-// Reflect the active mode in the toggle + show today's UTC date in daily mode.
-function syncMode() {
-  const daily = mode === MODE.DAILY;
-  modeDailyBtn.setAttribute('aria-selected', daily ? 'true' : 'false');
-  modeGlobalBtn.setAttribute('aria-selected', daily ? 'false' : 'true');
-  if (daily) { modeDateEl.textContent = utcDateStr(); modeDateEl.classList.add('show'); }
-  else { modeDateEl.innerHTML = '&nbsp;'; modeDateEl.classList.remove('show'); }
+/* ---------- Leaderboard view (Daily / Global) ---------- */
+// Reflect the active VIEW in the board toggle pills. This only changes which
+// ranking is displayed — it never touches gameplay (the needle is always daily).
+function syncView() {
+  const daily = boardView === VIEW.DAILY;
+  viewDailyBtn.setAttribute('aria-selected', daily ? 'true' : 'false');
+  viewGlobalBtn.setAttribute('aria-selected', daily ? 'false' : 'true');
 }
-// Switch mode. The cached board belongs to the OTHER mode, so drop it (and the
-// qualification cutoff) and re-fetch — otherwise a fresh shot could be judged
-// against the wrong board. No-op if already in that mode.
-function setMode(next) {
-  if (mode === next) return;
-  mode = next;
-  topScores = [];
-  cutoff = Infinity;
-  lbReady = false;
-  syncMode();
-  fetchScores(); // load the board for the newly selected mode
+// Switch which board the leaderboard view shows. Re-render from the (already
+// cached) board; re-fetch it in the background to stay fresh. No-op if unchanged.
+function setView(next) {
+  if (boardView === next) return;
+  boardView = next;
+  syncView();
+  renderBoardRows();      // instant: redraw from cache
+  fetchBoard(next).then(() => { if (state === STATE.BOARD) renderBoardRows(); });
 }
-syncMode();
-fetchScores(); // learn the current cutoff at boot (daily by default)
+
+// Show today's challenge date on the title screen (info only).
+titleDateEl.textContent = utcDateStr() + ' · today’s challenge';
+titleDateEl.classList.add('show');
+
+syncView();
+fetchBoth(); // learn both cutoffs at boot + populate the default (daily) view
 
 /* ---------- Flow ---------- */
 function showOverlay(el) {
@@ -512,9 +546,10 @@ function showOverlay(el) {
 
 function startGame() {
   ensureAudio();
-  // DAILY: deterministic start from the UTC-date seed — identical needle for
-  // everyone, every load/replay today. GLOBAL: random start per attempt.
-  angle = (mode === MODE.DAILY) ? dailyStartAngle() : Math.random() * TAU;
+  // Always the deterministic start from today's UTC-date seed — identical needle
+  // for everyone, every load/replay today. One game; the score counts for both
+  // boards.
+  angle = dailyStartAngle();
   state = STATE.PLAYING;
   showOverlay(null);
 }
@@ -530,12 +565,12 @@ function shoot() {
   lastError = errToHorizontal(angle);
   state = STATE.RESULT;
 
-  // Qualification is decided in finishReveal against FRESH data: fire the GET
-  // concurrently with the count-up so it adds no perceptible latency. Default
-  // to "not qualified" until that resolves.
+  // Qualification is decided in finishReveal against FRESH data for BOTH boards:
+  // fire both GETs concurrently with the count-up so they add no perceptible
+  // latency. Default to "not qualified" until they resolve.
   qualifiedThisShot = false;
   revealDone = false;
-  scoresInFlight = fetchScores();
+  scoresInFlight = fetchBoth();
 
   // personal best
   if (lastError < pb) { pb = lastError; localStorage.setItem('hairline-pb', String(pb)); syncPb(); }
@@ -576,7 +611,8 @@ async function finishReveal() {
   const isPb = Math.abs(lastError - pb) < 1e-12;
   let sub;
   if (qualifiedThisShot) {
-    sub = 'top ten &middot; rank <b>#' + provisionalRank(lastError) + '</b>';
+    // Show the player's best provisional standing across the boards they made.
+    sub = 'top ten &middot; rank <b>#' + bestProvisionalRank(lastError) + '</b>';
   } else if (isPb) {
     sub = 'new personal best';
   } else {
@@ -607,27 +643,35 @@ function openNameEntry(rank) {
 }
 
 /* ---------- Leaderboard render ---------- */
-// missed: the player submitted but the server said they did NOT place
-// (rank === null). Show the board honestly, no fake highlighted row.
-function showBoard(myName, myRank, missed) {
-  state = STATE.BOARD;
+// Highlight info for the score just submitted, shared across view switches:
+//   name      — sanitized initials the player submitted (null if just viewing)
+//   ranks     — { daily, global } 1-based rank per board (null = didn't place there)
+//   missed    — submitted but placed on NEITHER board (both ranks null)
+let me = { name: null, ranks: { daily: null, global: null }, missed: false };
+
+// Render the rows for the CURRENTLY SELECTED view (boardView), highlighting the
+// player's row on that board if they placed there. Pure redraw — safe to call
+// on a view switch or a background refresh.
+function renderBoardRows() {
+  const b = shownBoard();
+  const myRank = me.ranks[boardView];
+  // Title: daily names today's UTC date; global stays "leaderboard". A submit
+  // that placed nowhere shows "just missed".
+  const baseTitle = boardView === VIEW.DAILY ? 'daily · ' + utcDateStr() : 'leaderboard';
+  boardTitleEl.textContent = me.missed ? 'just missed' : baseTitle;
   boardListEl.innerHTML = '';
-  // Daily mode names the board with today's UTC date (e.g. "daily · 2026-06-16");
-  // global stays "leaderboard". A missed submit overrides both with "just missed".
-  const baseTitle = mode === MODE.DAILY ? 'daily · ' + utcDateStr() : 'leaderboard';
-  boardTitleEl.textContent = missed ? 'just missed' : baseTitle;
   let meRow = null;
-  if (!topScores.length) {
+  if (!b.scores.length) {
     const e = document.createElement('div');
     e.id = 'board-empty';
-    e.textContent = lbReady ? 'no scores yet — be the first' : 'board offline';
+    e.textContent = b.ready ? 'no scores yet — be the first' : 'board offline';
     boardListEl.appendChild(e);
   } else {
-    topScores.forEach((s, i) => {
+    b.scores.forEach((s, i) => {
       const row = document.createElement('div');
       row.className = 'brow';
-      // highlight the player's row: same rank+name, or first matching name with equal error
-      if (myRank && (i + 1) === myRank && s.name === myName) { row.classList.add('me'); meRow = row; }
+      // highlight the player's row on THIS board: matching rank + name
+      if (myRank && (i + 1) === myRank && s.name === me.name) { row.classList.add('me'); meRow = row; }
       const rk = document.createElement('span'); rk.className = 'rk'; rk.textContent = (i + 1) + '.';
       const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = s.name;
       const er = document.createElement('span'); er.className = 'er'; er.textContent = fmtErr(s.error) + '°';
@@ -635,7 +679,6 @@ function showBoard(myName, myRank, missed) {
       boardListEl.appendChild(row);
     });
   }
-  showOverlay(boardEl);
   // The "where am I" payoff: bring the player's row into view + a one-shot pulse.
   if (meRow) {
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches;
@@ -645,6 +688,20 @@ function showBoard(myName, myRank, missed) {
       meRow.classList.add('pulse');
     }
   }
+}
+
+// Open the leaderboard view. `myName`/`ranks` describe the score just submitted
+// (null/empty when merely viewing). Default the view to DAILY (today). missed:
+// the submit placed on NEITHER board — show honestly, no fake highlighted row.
+function showBoard(myName, ranks, missed) {
+  state = STATE.BOARD;
+  me = { name: myName || null, ranks: ranks || { daily: null, global: null }, missed: !!missed };
+  // Always land on the daily view first; prefer the board the player actually
+  // placed on if they only placed on global, so the highlight is visible.
+  boardView = (me.ranks.daily == null && me.ranks.global != null) ? VIEW.GLOBAL : VIEW.DAILY;
+  syncView();
+  renderBoardRows();
+  showOverlay(boardEl);
   boardAgainBtn.focus();
 }
 
@@ -688,15 +745,19 @@ async function submitAndShow() {
 
   if (res.status === 'placed') {
     // Trust the authoritative POST. The server sanitizes the name, so match
-    // against the sanitized echo for the highlight.
-    const echoed = topScores[res.rank - 1] ? topScores[res.rank - 1].name : name;
-    showBoard(echoed, res.rank, false);
+    // against the sanitized echo (read from whichever board the player placed
+    // on) for the highlight.
+    const ranks = { daily: res.dailyRank, global: res.globalRank };
+    const dEcho = ranks.daily  != null && boards.daily.scores[ranks.daily - 1]
+      ? boards.daily.scores[ranks.daily - 1].name : null;
+    const gEcho = ranks.global != null && boards.global.scores[ranks.global - 1]
+      ? boards.global.scores[ranks.global - 1].name : null;
+    const echoed = dEcho || gEcho || name;
+    // Placed on neither board (both ranks null) => genuine "just missed".
+    const missed = ranks.daily == null && ranks.global == null;
+    showBoard(echoed, ranks, missed);
     return;
   }
-
-  // status === 'missed': genuine non-placement (HTTP 200, rank null). Show the
-  // board honestly, no fake highlighted row, with the "just missed" title.
-  showBoard(name, null, true);
 }
 
 /* ---------- Input router ---------- */
@@ -778,9 +839,9 @@ document.addEventListener('visibilitychange', () => {
 // taps reach buttons/inputs natively and dead-space taps do nothing.
 document.addEventListener('pointerdown', (e) => {
   if (state !== STATE.TITLE && state !== STATE.PLAYING) return;
-  // The mode toggle lives ON the title screen; a tap there must switch mode, not
-  // start the game. Let it through to the buttons' own handlers.
-  if (e.target.closest && e.target.closest('#mode-toggle')) return;
+  // The title screen has no toggle anymore — tapping ANYWHERE begins (simple
+  // tap-to-begin). The board view toggle lives on the BOARD screen (state BOARD),
+  // which this handler already early-returns from above.
   e.preventDefault();
   onPress();
 }, { passive: false });
@@ -793,8 +854,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   // Never let Space/Enter shoot while typing in an input, or while a button is
-  // focused (e.g. the mode toggle on the title screen) — let its native click
-  // fire instead of starting the game.
+  // focused (e.g. the board view toggle, or any result/board action) — let its
+  // native click fire instead of starting the game.
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'BUTTON')) return;
   // Global shoot/begin only in TITLE/PLAYING. On RESULT/BOARD, Space/Enter
@@ -827,20 +888,27 @@ resAgainBtn.addEventListener('click', (e) => {
 resNameBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   ensureAudio();
-  if (qualifiedThisShot) { openNameEntry(provisionalRank(lastError)); }
+  if (qualifiedThisShot) { openNameEntry(bestProvisionalRank(lastError)); }
 });
 resBoardBtn.addEventListener('click', async (e) => {
   e.stopPropagation();
   ensureAudio();
-  await fetchScores();
-  showBoard(null, null);
+  await fetchBoth();
+  showBoard(null, null, false); // just viewing — no highlight
 });
 
-// provisional rank for a fresh result (1-based) given the current cache
-function provisionalRank(err) {
+// provisional rank for a fresh result (1-based) on a SPECIFIC board's cache
+function provisionalRankOn(b, err) {
   let r = 1;
-  for (const s of topScores) { if (err < s.error) break; r++; }
+  for (const s of b.scores) { if (err < s.error) break; r++; }
   return Math.min(r, 10);
+}
+// The player's best (lowest) provisional rank across the boards they qualify on.
+function bestProvisionalRank(err) {
+  let best = 10;
+  if (qualifiesOn(boards.daily, err))  best = Math.min(best, provisionalRankOn(boards.daily, err));
+  if (qualifiesOn(boards.global, err)) best = Math.min(best, provisionalRankOn(boards.global, err));
+  return best;
 }
 
 // Live-sanitize so what they see == what gets submitted (server: 1-3 A-Z0-9).
@@ -850,10 +918,11 @@ nameInput.addEventListener('input', () => {
 nameSubmitBtn.addEventListener('click', (e) => { e.stopPropagation(); submitAndShow(); });
 boardAgainBtn.addEventListener('click', (e) => { e.stopPropagation(); startGame(); });
 
-// Mode toggle — switch board + needle source. stopPropagation so the tap never
-// also starts the game (defense-in-depth on top of the pointerdown guard).
-modeDailyBtn.addEventListener('click', (e) => { e.stopPropagation(); setMode(MODE.DAILY); });
-modeGlobalBtn.addEventListener('click', (e) => { e.stopPropagation(); setMode(MODE.GLOBAL); });
+// Board view toggle — switch which RANKING is displayed (daily today / global
+// all-time). A view switch only; gameplay is unaffected. stopPropagation so the
+// tap activates the pill rather than bubbling to any global handler.
+viewDailyBtn.addEventListener('click', (e) => { e.stopPropagation(); setView(VIEW.DAILY); });
+viewGlobalBtn.addEventListener('click', (e) => { e.stopPropagation(); setView(VIEW.GLOBAL); });
 </script>
 </body>
 </html>

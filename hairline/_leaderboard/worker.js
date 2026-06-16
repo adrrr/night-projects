@@ -12,6 +12,17 @@
 //     the "?board=daily" query param. The server ALWAYS computes the date as its
 //     own UTC-today; a client cannot target another day's board (no stuffing).
 //
+// API surface:
+//   GET  /scores                 -> { scores }                 (global all-time)
+//   GET  /scores?board=daily     -> { scores }                 (today's UTC board)
+//   POST /scores                 -> { scores, rank }           (global all-time)
+//   POST /scores?board=daily     -> { scores, rank }           (today's UTC board)
+//   POST /scores?board=both      -> { daily:{scores,rank},      (one play counts
+//                                     global:{scores,rank} }     for BOTH boards)
+// The "both" POST writes the SAME entry to today's daily key AND the global key
+// in a single call with a SINGLE rate-limit check, so one completed shot is
+// recorded on both rankings at once. GETs stay single-board for the view toggle.
+//
 // --- Concurrency note (KV read-modify-write race) ---------------------------
 // POST does read("top10") -> mutate -> write("top10"). Under KV's eventual
 // consistency two concurrent POSTs can each read the same snapshot and the
@@ -44,6 +55,12 @@ function utcDateKey(now = Date.now()) {
 // anything else -> the all-time global key. Date is server-computed.
 function boardKey(mode) {
   return mode === "daily" ? DAILY_PREFIX + utcDateKey() : KV_KEY;
+}
+
+// Per-board write options: daily keys auto-expire after a few days; the global
+// key is permanent.
+function putOptsFor(mode) {
+  return mode === "daily" ? { expirationTtl: DAILY_TTL_SEC } : undefined;
 }
 
 // Per-IP write rate-limit (anti-griefing). The board has only 10 slots and the
@@ -140,8 +157,24 @@ async function handleGet(env, mode) {
   return json({ scores: board });
 }
 
+// Insert `entry` into one board (read-modify-write, see concurrency note at top).
+// The board key is server-computed (boardKey): a daily insert always lands on
+// TODAY's UTC board, never a client-chosen date. Returns the updated top 10 and
+// the entry's 1-based rank (null if it did not survive into the top 10).
+async function insertIntoBoard(env, mode, entry) {
+  const key = boardKey(mode);
+  const board = await readBoard(env, key);
+  board.push(entry);
+  const sorted = sortBoard(board).slice(0, MAX_ENTRIES);
+  await env.SCORES.put(key, JSON.stringify(sorted), putOptsFor(mode));
+  const idx = sorted.indexOf(entry);
+  const rank = idx === -1 ? null : idx + 1;
+  return { scores: sorted, rank };
+}
+
 async function handlePost(request, env, mode) {
   // Per-IP write rate-limit (anti-griefing) — checked before parsing the body.
+  // For mode "both" this is the SINGLE check covering both board writes.
   if (await rateLimited(request, env)) {
     return json({ error: "Rate limit exceeded. Try again shortly." }, 429);
   }
@@ -167,25 +200,21 @@ async function handlePost(request, env, mode) {
     return json({ error: "Invalid error: finite number, >0 and <=90 required" }, 400);
   }
 
+  // One shared entry object (same ts) so the score reads identically on both
+  // boards when mode === "both".
   const entry = { name, error: body.error, ts: Date.now() };
 
-  // Read-modify-write (see concurrency note at top of file). The board key is
-  // server-computed (boardKey): a daily POST always lands on TODAY's UTC board,
-  // never a client-chosen date.
-  const key = boardKey(mode);
-  const board = await readBoard(env, key);
-  board.push(entry);
-  const sorted = sortBoard(board).slice(0, MAX_ENTRIES);
+  // Dual write: one completed shot counts for BOTH today's daily board AND the
+  // all-time global board, under the single rate-limit check above. Each board's
+  // own rank is returned so the client can highlight the player on either view.
+  if (mode === "both") {
+    const daily = await insertIntoBoard(env, "daily", entry);
+    const global = await insertIntoBoard(env, "global", entry);
+    return json({ daily, global });
+  }
 
-  // Daily keys auto-expire after a few days; the global key is permanent.
-  const putOpts = mode === "daily" ? { expirationTtl: DAILY_TTL_SEC } : undefined;
-  await env.SCORES.put(key, JSON.stringify(sorted), putOpts);
-
-  // 1-based rank if this exact entry survived into the top 10, else null.
-  const idx = sorted.indexOf(entry);
-  const rank = idx === -1 ? null : idx + 1;
-
-  return json({ scores: sorted, rank });
+  const result = await insertIntoBoard(env, mode, entry);
+  return json(result);
 }
 
 export default {
@@ -201,16 +230,28 @@ export default {
       }
 
       if (pathname === "/scores") {
-        // Board selector: "?board=daily" -> today's UTC daily board, anything
-        // else (incl. absent) -> the all-time global board. The daily DATE is
-        // always server-computed; only this mode flag is read from the client.
-        const mode = url.searchParams.get("board") === "daily" ? "daily" : "global";
+        // Board selector from "?board=": "daily" -> today's UTC daily board,
+        // "both" (POST only) -> daily AND global in one call, anything else
+        // (incl. absent) -> the all-time global board. The daily DATE is always
+        // server-computed; only this mode flag is read from the client.
+        const boardParam = url.searchParams.get("board");
         // NOTE: await is load-bearing. Without it, an async error inside
         // handleGet/handlePost (e.g. a KV get/put failure) escapes this
         // try/catch — fetch returns a rejected promise and Cloudflare emits a
         // generic 500 WITHOUT CORS headers (unreadable from the browser).
-        if (request.method === "GET") return await handleGet(env, mode);
-        if (request.method === "POST") return await handlePost(request, env, mode);
+        if (request.method === "GET") {
+          // GET is single-board only: "daily" or global. "both" has no read
+          // shape — the client GETs each board separately for the view toggle.
+          const mode = boardParam === "daily" ? "daily" : "global";
+          return await handleGet(env, mode);
+        }
+        if (request.method === "POST") {
+          const mode =
+            boardParam === "both" ? "both"
+            : boardParam === "daily" ? "daily"
+            : "global";
+          return await handlePost(request, env, mode);
+        }
         return json({ error: "Method not allowed" }, 405);
       }
 

@@ -48,9 +48,18 @@ Cloudflare account (`wrangler login` once).
 
 Base URL = the deployed `workers.dev` URL above.
 
-### `GET {LB_URL}/scores`
+Board selector via `?board=`:
 
-Returns the current top 10, sorted ascending by `error` (lowest first).
+- absent / anything else → **global** all-time board (key `top10`, permanent)
+- `daily` → **today's UTC** board (key `daily:<YYYY-MM-DD>`, auto-expires ~4 days)
+- `both` (POST only) → writes to **both** boards in one call (see below)
+
+The daily date is always computed server-side (UTC); the client only flags the mode.
+
+### `GET {LB_URL}/scores`  ·  `GET {LB_URL}/scores?board=daily`
+
+Returns the current top 10 of the selected board, sorted ascending by `error`
+(lowest first). GET is single-board only (`daily` or global); `both` has no GET.
 
 ```json
 {
@@ -86,6 +95,25 @@ Response (`200`):
 ```
 
 - `rank` — 1-based position if the score made the top 10, otherwise `null`.
+
+### `POST {LB_URL}/scores?board=both`
+
+Records ONE score on BOTH today's daily board and the all-time global board in a
+single call, under a **single** rate-limit check. Same request body as above.
+
+Response (`200`):
+
+```json
+{
+  "daily":  { "scores": [ /* today's top 10 */ ],   "rank": 2 },
+  "global": { "scores": [ /* all-time top 10 */ ],   "rank": 5 }
+}
+```
+
+- Each board reports its own `scores` + `rank` (`null` if the score missed that
+  board's top 10). The score is saved on both boards regardless of either rank.
+- Validation, sanitization, and rate-limiting are identical to the single-board
+  POST; the rate-limit counter increments **once** for the dual write.
 
 #### Validation & sanitization
 
