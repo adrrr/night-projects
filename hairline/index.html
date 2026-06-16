@@ -55,6 +55,21 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
   animation:pulse 2.4s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:.55}50%{opacity:.16}}
 
+/* ---- mode toggle (Daily / Global) — a quiet pill pair, ink on paper ---- */
+#mode-toggle{display:inline-flex;margin-top:40px;pointer-events:auto;
+  border:1px solid var(--ink-4);border-radius:999px;padding:3px;gap:2px}
+.mode-opt{font-family:inherit;font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  padding:9px 18px;min-height:36px;border:none;background:transparent;color:var(--ink-3);
+  border-radius:999px;cursor:pointer;transition:background .15s,color .15s}
+.mode-opt:hover{color:var(--ink)}
+.mode-opt[aria-selected="true"]{background:var(--ink);color:var(--paper)}
+.mode-opt:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+/* the active UTC date, shown only in daily mode */
+#mode-date{margin-top:14px;height:14px;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-3);font-variant-numeric:tabular-nums;
+  opacity:0;transition:opacity .3s}
+#mode-date.show{opacity:1}
+
 /* ---- result reveal ---- */
 #result{gap:0}
 #res-label{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);
@@ -138,6 +153,12 @@ body{animation:enter .6s ease both}
 <div id="title" class="overlay">
   <div id="title-name">Hairline</div>
   <div class="tap-cue">tap to begin</div>
+  <!-- Daily / Global mode toggle. Daily (default) is the seeded, winnable hook. -->
+  <div id="mode-toggle" role="tablist" aria-label="Challenge mode">
+    <button id="mode-daily" class="mode-opt" role="tab" type="button" aria-selected="true">Daily</button>
+    <button id="mode-global" class="mode-opt" role="tab" type="button" aria-selected="false">Global</button>
+  </div>
+  <div id="mode-date" aria-live="polite">&nbsp;</div>
 </div>
 
 <!-- result reveal -->
@@ -191,6 +212,9 @@ const ctx = canvas.getContext('2d');
 const muteEl   = $('mute');
 const pbEl     = $('pb');
 const titleEl  = $('title');
+const modeDailyBtn  = $('mode-daily');
+const modeGlobalBtn = $('mode-global');
+const modeDateEl    = $('mode-date');
 const resultEl = $('result');
 const resNumEl = $('res-num');
 const resSubEl = $('res-sub');
@@ -233,6 +257,48 @@ function fmtErr(deg) {
   if (!(v > 0)) v = PREC_MIN;
   if (v < PREC_MIN) v = PREC_MIN;
   return v.toFixed(PREC_DEC);
+}
+
+/* ---------- Daily challenge seed ----------
+   DAILY mode is a SEEDED challenge: every player worldwide gets the identical
+   needle for a given UTC day. We derive the needle's only randomized param (the
+   starting angle) from a deterministic PRNG seeded by today's UTC date string.
+   GLOBAL mode is untouched — it keeps Math.random for a fresh needle per shot. */
+
+// Today's UTC date as "YYYY-MM-DD". ISO string is always UTC, so the daily board
+// flips at UTC midnight for everyone simultaneously (matches the Worker).
+function utcDateStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// xfnv1a: a tiny string -> 32-bit seed hash (deterministic, well-distributed).
+function hashSeed(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// mulberry32: compact deterministic PRNG. Same seed -> same float sequence, so
+// the daily needle is byte-identical on every load/replay of the same UTC day.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Deterministic starting angle (rad) for today's daily challenge. Only the
+// starting angle is randomized in this game (omega is constant for fairness),
+// so a single seeded draw fully defines today's needle.
+function dailyStartAngle() {
+  const rng = mulberry32(hashSeed(utcDateStr()));
+  return rng() * TAU;
 }
 
 /* ---------- Canvas / geometry ----------
@@ -281,6 +347,14 @@ resize();
 /* ---------- State ---------- */
 const STATE = { TITLE: 0, PLAYING: 1, RESULT: 2, NAME: 3, BOARD: 4 };
 let state = STATE.TITLE;
+
+// Game mode. DAILY (default) = seeded challenge + today's daily board; GLOBAL =
+// random needle per shot + the all-time board. The mode picks both the needle
+// source (startGame) and the board the client reads/writes (fetch/submitScore).
+// Default DAILY: the fresh, winnable hook. Not persisted — every load lands on
+// today's challenge first.
+const MODE = { DAILY: 'daily', GLOBAL: 'global' };
+let mode = MODE.DAILY;
 
 let angle = 0;           // current needle angle (rad)
 const omega = TAU / SWEEP_SEC; // constant angular speed — same for all players
@@ -354,10 +428,16 @@ function qualifies(err) {
   if (topScores.length < 10) return true;
   return err < cutoff;
 }
+// Build the /scores endpoint for the CURRENT mode. Daily appends ?board=daily;
+// the server computes the actual UTC date, the client only flags the mode.
+function scoresUrl() {
+  const base = LB_URL.replace(/\/$/, '') + '/scores';
+  return mode === MODE.DAILY ? base + '?board=daily' : base;
+}
 async function fetchScores() {
   if (!LB_URL || LB_URL.indexOf('__LB_URL__') !== -1) return; // not deployed yet
   try {
-    const r = await fetch(LB_URL.replace(/\/$/, '') + '/scores', { method: 'GET' });
+    const r = await fetch(scoresUrl(), { method: 'GET' });
     if (!r.ok) return;
     const data = await r.json();
     if (data && Array.isArray(data.scores)) {
@@ -378,7 +458,7 @@ async function submitScore(name, err) {
   if (!LB_URL || LB_URL.indexOf('__LB_URL__') !== -1) return { status: 'offline' };
   let r;
   try {
-    r = await fetch(LB_URL.replace(/\/$/, '') + '/scores', {
+    r = await fetch(scoresUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name, error: err })
@@ -399,7 +479,30 @@ async function submitScore(name, err) {
   }
   return { status: 'missed' };
 }
-fetchScores(); // learn the current cutoff at boot
+
+/* ---------- Mode (Daily / Global) ---------- */
+// Reflect the active mode in the toggle + show today's UTC date in daily mode.
+function syncMode() {
+  const daily = mode === MODE.DAILY;
+  modeDailyBtn.setAttribute('aria-selected', daily ? 'true' : 'false');
+  modeGlobalBtn.setAttribute('aria-selected', daily ? 'false' : 'true');
+  if (daily) { modeDateEl.textContent = utcDateStr(); modeDateEl.classList.add('show'); }
+  else { modeDateEl.innerHTML = '&nbsp;'; modeDateEl.classList.remove('show'); }
+}
+// Switch mode. The cached board belongs to the OTHER mode, so drop it (and the
+// qualification cutoff) and re-fetch — otherwise a fresh shot could be judged
+// against the wrong board. No-op if already in that mode.
+function setMode(next) {
+  if (mode === next) return;
+  mode = next;
+  topScores = [];
+  cutoff = Infinity;
+  lbReady = false;
+  syncMode();
+  fetchScores(); // load the board for the newly selected mode
+}
+syncMode();
+fetchScores(); // learn the current cutoff at boot (daily by default)
 
 /* ---------- Flow ---------- */
 function showOverlay(el) {
@@ -409,7 +512,9 @@ function showOverlay(el) {
 
 function startGame() {
   ensureAudio();
-  angle = Math.random() * TAU;   // random start — timing can't be memorised
+  // DAILY: deterministic start from the UTC-date seed — identical needle for
+  // everyone, every load/replay today. GLOBAL: random start per attempt.
+  angle = (mode === MODE.DAILY) ? dailyStartAngle() : Math.random() * TAU;
   state = STATE.PLAYING;
   showOverlay(null);
 }
@@ -507,7 +612,10 @@ function openNameEntry(rank) {
 function showBoard(myName, myRank, missed) {
   state = STATE.BOARD;
   boardListEl.innerHTML = '';
-  boardTitleEl.textContent = missed ? 'just missed' : 'leaderboard';
+  // Daily mode names the board with today's UTC date (e.g. "daily · 2026-06-16");
+  // global stays "leaderboard". A missed submit overrides both with "just missed".
+  const baseTitle = mode === MODE.DAILY ? 'daily · ' + utcDateStr() : 'leaderboard';
+  boardTitleEl.textContent = missed ? 'just missed' : baseTitle;
   let meRow = null;
   if (!topScores.length) {
     const e = document.createElement('div');
@@ -670,6 +778,9 @@ document.addEventListener('visibilitychange', () => {
 // taps reach buttons/inputs natively and dead-space taps do nothing.
 document.addEventListener('pointerdown', (e) => {
   if (state !== STATE.TITLE && state !== STATE.PLAYING) return;
+  // The mode toggle lives ON the title screen; a tap there must switch mode, not
+  // start the game. Let it through to the buttons' own handlers.
+  if (e.target.closest && e.target.closest('#mode-toggle')) return;
   e.preventDefault();
   onPress();
 }, { passive: false });
@@ -681,8 +792,11 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); submitAndShow(); }
     return;
   }
-  // Never let Space/Enter shoot while typing in an input.
-  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  // Never let Space/Enter shoot while typing in an input, or while a button is
+  // focused (e.g. the mode toggle on the title screen) — let its native click
+  // fire instead of starting the game.
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'BUTTON')) return;
   // Global shoot/begin only in TITLE/PLAYING. On RESULT/BOARD, Space/Enter
   // naturally activate the focused button (native) — no handling here.
   if ((state === STATE.TITLE || state === STATE.PLAYING) &&
@@ -735,6 +849,11 @@ nameInput.addEventListener('input', () => {
 });
 nameSubmitBtn.addEventListener('click', (e) => { e.stopPropagation(); submitAndShow(); });
 boardAgainBtn.addEventListener('click', (e) => { e.stopPropagation(); startGame(); });
+
+// Mode toggle — switch board + needle source. stopPropagation so the tap never
+// also starts the game (defense-in-depth on top of the pointerdown guard).
+modeDailyBtn.addEventListener('click', (e) => { e.stopPropagation(); setMode(MODE.DAILY); });
+modeGlobalBtn.addEventListener('click', (e) => { e.stopPropagation(); setMode(MODE.GLOBAL); });
 </script>
 </body>
 </html>

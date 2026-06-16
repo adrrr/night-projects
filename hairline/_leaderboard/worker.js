@@ -4,8 +4,13 @@
 //   Positive float; 0 is theoretically perfect but unreachable; max ~90.
 //   LOWER IS BETTER. The board keeps the 10 SMALLEST errors.
 //
-// Storage: one KV namespace (binding SCORES), single key "top10" holding a
-//   JSON array of { name, error, ts } objects, sorted ascending by error.
+// Storage: one KV namespace (binding SCORES).
+//   - Global all-time board: single key "top10" holding a JSON array of
+//     { name, error, ts } objects, sorted ascending by error.
+//   - Daily boards: one key per UTC date, "daily:<YYYY-MM-DD>", same shape,
+//     written with a short expirationTtl so old days auto-expire. Selected via
+//     the "?board=daily" query param. The server ALWAYS computes the date as its
+//     own UTC-today; a client cannot target another day's board (no stuffing).
 //
 // --- Concurrency note (KV read-modify-write race) ---------------------------
 // POST does read("top10") -> mutate -> write("top10"). Under KV's eventual
@@ -22,6 +27,24 @@
 
 const KV_KEY = "top10";
 const MAX_ENTRIES = 10;
+
+// Daily boards live under "daily:<YYYY-MM-DD>" (UTC) and auto-expire a few days
+// after their date so old keys don't accumulate. 4 days = today + a small grace
+// margin (a board written near UTC-midnight stays readable through its full day).
+const DAILY_PREFIX = "daily:";
+const DAILY_TTL_SEC = 4 * 24 * 60 * 60; // ~4 days
+
+// Today's date in UTC as "YYYY-MM-DD". Computed server-side ONLY — never trust a
+// client-supplied date, or anyone could stuff past/future boards.
+function utcDateKey(now = Date.now()) {
+  return new Date(now).toISOString().slice(0, 10); // ISO is always UTC
+}
+
+// The KV key for a given board mode. mode === "daily" -> today's daily key,
+// anything else -> the all-time global key. Date is server-computed.
+function boardKey(mode) {
+  return mode === "daily" ? DAILY_PREFIX + utcDateKey() : KV_KEY;
+}
 
 // Per-IP write rate-limit (anti-griefing). The board has only 10 slots and the
 // score is client-supplied, so without this a single curl-loop could flood
@@ -81,10 +104,10 @@ async function rateLimited(request, env) {
   return false;
 }
 
-// Read the current board from KV. Tolerates missing/corrupt data by treating
-// it as an empty board (never throws on bad stored JSON).
-async function readBoard(env) {
-  const raw = await env.SCORES.get(KV_KEY);
+// Read the current board from KV under `key`. Tolerates missing/corrupt data by
+// treating it as an empty board (never throws on bad stored JSON).
+async function readBoard(env, key) {
+  const raw = await env.SCORES.get(key);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -111,12 +134,13 @@ function sortBoard(board) {
   });
 }
 
-async function handleGet(env) {
-  const board = sortBoard(await readBoard(env)).slice(0, MAX_ENTRIES);
+async function handleGet(env, mode) {
+  const key = boardKey(mode);
+  const board = sortBoard(await readBoard(env, key)).slice(0, MAX_ENTRIES);
   return json({ scores: board });
 }
 
-async function handlePost(request, env) {
+async function handlePost(request, env, mode) {
   // Per-IP write rate-limit (anti-griefing) — checked before parsing the body.
   if (await rateLimited(request, env)) {
     return json({ error: "Rate limit exceeded. Try again shortly." }, 429);
@@ -145,12 +169,17 @@ async function handlePost(request, env) {
 
   const entry = { name, error: body.error, ts: Date.now() };
 
-  // Read-modify-write (see concurrency note at top of file).
-  const board = await readBoard(env);
+  // Read-modify-write (see concurrency note at top of file). The board key is
+  // server-computed (boardKey): a daily POST always lands on TODAY's UTC board,
+  // never a client-chosen date.
+  const key = boardKey(mode);
+  const board = await readBoard(env, key);
   board.push(entry);
   const sorted = sortBoard(board).slice(0, MAX_ENTRIES);
 
-  await env.SCORES.put(KV_KEY, JSON.stringify(sorted));
+  // Daily keys auto-expire after a few days; the global key is permanent.
+  const putOpts = mode === "daily" ? { expirationTtl: DAILY_TTL_SEC } : undefined;
+  await env.SCORES.put(key, JSON.stringify(sorted), putOpts);
 
   // 1-based rank if this exact entry survived into the top 10, else null.
   const idx = sorted.indexOf(entry);
@@ -163,7 +192,8 @@ export default {
   async fetch(request, env) {
     // Top-level try/catch: never throw an unhandled error; always answer with CORS.
     try {
-      const { pathname } = new URL(request.url);
+      const url = new URL(request.url);
+      const { pathname } = url;
 
       // CORS preflight for any path.
       if (request.method === "OPTIONS") {
@@ -171,12 +201,16 @@ export default {
       }
 
       if (pathname === "/scores") {
+        // Board selector: "?board=daily" -> today's UTC daily board, anything
+        // else (incl. absent) -> the all-time global board. The daily DATE is
+        // always server-computed; only this mode flag is read from the client.
+        const mode = url.searchParams.get("board") === "daily" ? "daily" : "global";
         // NOTE: await is load-bearing. Without it, an async error inside
         // handleGet/handlePost (e.g. a KV get/put failure) escapes this
         // try/catch — fetch returns a rejected promise and Cloudflare emits a
         // generic 500 WITHOUT CORS headers (unreadable from the browser).
-        if (request.method === "GET") return await handleGet(env);
-        if (request.method === "POST") return await handlePost(request, env);
+        if (request.method === "GET") return await handleGet(env, mode);
+        if (request.method === "POST") return await handlePost(request, env, mode);
         return json({ error: "Method not allowed" }, 405);
       }
 
