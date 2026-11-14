@@ -605,7 +605,7 @@ function shoot() {
   // — never held on the async GET, never demoted. If the shot qualifies,
   // finishReveal merely reveals "Add name" as a clear SECONDARY (.ghost) opt-in,
   // so replay is always the easy 1-click default and naming is a deliberate
-  // secondary choice (Nicolas's "I just want to play again" friction fix).
+  // secondary choice (a player's "I just want to play again" friction fix).
   resAgainBtn.classList.add('primary');
   resNameBtn.classList.add('hidden');  // shown only when the shot qualifies
   resNameBtn.classList.add('ghost');   // and presented as a secondary opt-in
@@ -624,7 +624,7 @@ async function finishReveal() {
 
   qualifiedThisShot = qualifies(lastError);
   // "Again" stayed live throughout AND stays the PRIMARY CTA whether or not the
-  // shot qualified — replay is always the 1-click default (Nicolas's friction
+  // shot qualified — replay is always the 1-click default (a player's friction
   // fix). When the shot qualifies, reveal "Add name" as a clear SECONDARY
   // (.ghost) opt-in; otherwise keep it hidden. "Again" is never demoted.
   resAgainBtn.classList.add('primary');
