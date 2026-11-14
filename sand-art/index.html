@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1">
+<title>Sand Art</title>
+<meta name="theme-color" content="#0a0a14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a14;--card:#161625;--card2:#1e1e30;
+  --text:#e8e8f0;--text2:#8888aa;
+  --accent:#f0a050;--radius:14px;
+  --shadow:0 6px 24px rgba(0,0,0,.5);
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none}
+canvas{display:block}
+
+/* Layout */
+#app{display:flex;flex-direction:column;height:100%;height:100dvh;position:relative;overflow:hidden}
+#canvas-wrap{flex:1;position:relative;overflow:hidden;background:#0a0a14}
+#sand-canvas{position:absolute;inset:0;image-rendering:pixelated}
+
+/* Toolbar */
+#toolbar{
+  position:relative;z-index:10;
+  background:linear-gradient(to top,rgba(14,14,24,.98),rgba(14,14,24,.92));
+  backdrop-filter:blur(12px);
+  padding:10px 12px max(10px,env(safe-area-inset-bottom,10px));
+  display:flex;flex-direction:column;gap:10px;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+
+/* Color palette */
+.palette{display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:wrap}
+.color-btn{
+  width:36px;height:36px;border-radius:50%;border:3px solid transparent;
+  cursor:pointer;transition:all .15s;position:relative;
+  box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;
+}
+.color-btn:active{transform:scale(.88)}
+.color-btn.active{border-color:rgba(255,255,255,.85);transform:scale(1.12);box-shadow:0 0 16px rgba(255,255,255,.2)}
+.color-btn.rainbow{
+  background:conic-gradient(#e8c44a,#e07850,#d45070,#7b68c8,#40b0a0,#50c878,#e8c44a)!important;
+}
+
+/* Action buttons */
+.actions{display:flex;gap:8px;justify-content:center}
+.action-btn{
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);
+  color:var(--text);padding:10px 18px;border-radius:50px;
+  font-size:13px;font-weight:600;cursor:pointer;
+  transition:all .12s;display:flex;align-items:center;gap:6px;
+  white-space:nowrap;letter-spacing:.3px;
+}
+.action-btn:active{transform:scale(.93);background:rgba(255,255,255,.12)}
+.action-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* Brush size */
+.brush-row{display:flex;align-items:center;gap:10px;justify-content:center}
+.brush-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;min-width:42px}
+.brush-slider{
+  -webkit-appearance:none;appearance:none;
+  width:140px;height:6px;border-radius:3px;
+  background:rgba(255,255,255,.12);outline:none;
+}
+.brush-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+  background:var(--accent);cursor:pointer;box-shadow:0 2px 8px rgba(240,160,80,.4);
+}
+.brush-val{font-size:13px;font-weight:600;color:var(--accent);min-width:20px;text-align:center}
+
+/* Pour indicator */
+#pour-indicator{
+  position:absolute;pointer-events:none;z-index:5;
+  border:2px solid rgba(255,255,255,.3);border-radius:50%;
+  transform:translate(-50%,-50%);display:none;
+  box-shadow:0 0 12px rgba(255,255,255,.1);
+}
+
+/* Shake animation */
+@keyframes shake{
+  0%,100%{transform:translateX(0)}
+  10%,30%,50%,70%,90%{transform:translateX(-4px)}
+  20%,40%,60%,80%{transform:translateX(4px)}
+}
+.shaking{animation:shake .5s ease}
+
+/* Toast */
+#toast{
+  position:absolute;top:20px;left:50%;transform:translateX(-50%) translateY(-60px);
+  background:rgba(30,30,50,.95);color:#fff;padding:10px 22px;border-radius:50px;
+  font-size:13px;font-weight:600;z-index:50;pointer-events:none;
+  transition:transform .35s cubic-bezier(.34,1.56,.64,1),opacity .35s;
+  opacity:0;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 8px 32px rgba(0,0,0,.4);white-space:nowrap;
+}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+/* Title overlay */
+#title{
+  position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  background:rgba(10,10,20,.88);backdrop-filter:blur(16px);
+  transition:opacity .5s ease,transform .5s ease;
+}
+#title.hidden{opacity:0;pointer-events:none;transform:scale(1.05)}
+.title-text{
+  font-size:clamp(42px,12vw,72px);font-weight:900;line-height:1;
+  background:linear-gradient(135deg,#e8c44a 0%,#e07850 35%,#d45070 65%,#7b68c8 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  filter:drop-shadow(0 0 30px rgba(224,120,80,.3));margin-bottom:6px;
+}
+.title-sub{color:var(--text2);font-size:clamp(12px,2.5vw,15px);letter-spacing:6px;text-transform:uppercase;margin-bottom:30px}
+.start-btn{
+  background:linear-gradient(135deg,#e07850,#d45070);color:#fff;border:none;
+  padding:16px 48px;border-radius:50px;font-size:17px;font-weight:700;
+  cursor:pointer;box-shadow:0 4px 24px rgba(224,120,80,.35);
+  transition:all .15s;letter-spacing:.5px;
+}
+.start-btn:active{transform:scale(.94)}
+
+/* Responsive */
+@media(min-width:600px){
+  .color-btn{width:40px;height:40px}
+  .action-btn{padding:10px 22px;font-size:14px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Title screen -->
+  <div id="title">
+    <div class="title-text">Sand Art</div>
+    <div class="title-sub">Pour &bull; Layer &bull; Create</div>
+    <button class="start-btn" id="start-btn">Start Creating</button>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvas-wrap">
+    <canvas id="sand-canvas"></canvas>
+    <div id="pour-indicator"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <div class="palette" id="palette"></div>
+    <div class="brush-row">
+      <span class="brush-label">Brush</span>
+      <input type="range" class="brush-slider" id="brush-slider" min="1" max="12" value="4">
+      <span class="brush-val" id="brush-val">4</span>
+    </div>
+    <div class="actions">
+      <button class="action-btn" id="btn-shake">
+        <svg viewBox="0 0 24 24"><path d="M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10l1.4 1.4M5.6 18.4l1.4-1.4m10-10l1.4-1.4M12 3v2m0 14v2"/></svg>
+        Shake
+      </button>
+      <button class="action-btn" id="btn-clear">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6"/></svg>
+        Clear
+      </button>
+      <button class="action-btn" id="btn-save">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4m4-5 5 5 5-5m-5 5V3"/></svg>
+        Save
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Sand Colors ───
+const SAND_COLORS = [
+  { name: 'Gold',       hex: '#e8c44a', rgb: [232,196,74]  },
+  { name: 'Coral',      hex: '#e07850', rgb: [224,120,80]  },
+  { name: 'Rose',       hex: '#d45070', rgb: [212,80,112]  },
+  { name: 'Purple',     hex: '#7b68c8', rgb: [123,104,200] },
+  { name: 'Turquoise',  hex: '#40b0a0', rgb: [64,176,160]  },
+  { name: 'Emerald',    hex: '#50c878', rgb: [80,200,120]  },
+  { name: 'White',      hex: '#e8e0d0', rgb: [232,224,208] },
+  { name: 'Terracotta', hex: '#c06040', rgb: [192,96,64]   },
+  { name: 'Midnight',   hex: '#3848a0', rgb: [56,72,160]   },
+  { name: 'Rainbow',    hex: 'rainbow',  rgb: null          },
+];
+
+// ─── State ───
+let selectedColor = 0;
+let brushSize = 4;
+let isPouring = false;
+let pointerX = 0, pointerY = 0;
+let gridW, gridH;
+let grid;       // Uint8Array — 0 = empty, 1..9 = color index (1-based)
+let colorData;  // Uint8Array[gridW*gridH*3] — actual RGB per cell
+let updated;    // Uint8Array — marks cells updated this frame
+let canvas, ctx, imageData;
+let animId;
+let frameCount = 0;
+
+// ─── DOM refs ───
+const canvasEl = document.getElementById('sand-canvas');
+const canvasWrap = document.getElementById('canvas-wrap');
+const paletteEl = document.getElementById('palette');
+const brushSlider = document.getElementById('brush-slider');
+const brushVal = document.getElementById('brush-val');
+const pourIndicator = document.getElementById('pour-indicator');
+const toastEl = document.getElementById('toast');
+const titleEl = document.getElementById('title');
+
+// ─── Init palette buttons ───
+SAND_COLORS.forEach((c, i) => {
+  const btn = document.createElement('button');
+  btn.className = 'color-btn' + (i === 0 ? ' active' : '') + (c.hex === 'rainbow' ? ' rainbow' : '');
+  if (c.hex !== 'rainbow') btn.style.background = c.hex;
+  btn.setAttribute('aria-label', c.name);
+  btn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    selectColor(i);
+  });
+  paletteEl.appendChild(btn);
+});
+
+function selectColor(i) {
+  selectedColor = i;
+  document.querySelectorAll('.color-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+}
+
+// ─── Brush slider ───
+brushSlider.addEventListener('input', () => {
+  brushSize = parseInt(brushSlider.value);
+  brushVal.textContent = brushSize;
+});
+
+// ─── Canvas setup ───
+function initCanvas() {
+  const dpr = 1; // Use 1:1 pixel mapping for sand grid
+  const rect = canvasWrap.getBoundingClientRect();
+  // Use a reasonable resolution — cap at 400px wide for performance
+  const scale = Math.min(1, 400 / rect.width);
+  gridW = Math.floor(rect.width * scale);
+  gridH = Math.floor(rect.height * scale);
+  // Minimum size
+  if (gridW < 100) gridW = 100;
+  if (gridH < 100) gridH = 100;
+  // Cap for performance
+  if (gridW > 500) gridW = 500;
+  if (gridH > 700) gridH = 700;
+
+  canvasEl.width = gridW;
+  canvasEl.height = gridH;
+  canvasEl.style.width = '100%';
+  canvasEl.style.height = '100%';
+
+  ctx = canvasEl.getContext('2d', { willReadFrequently: false });
+  imageData = ctx.createImageData(gridW, gridH);
+  // Fill alpha channel
+  const d = imageData.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = 255;
+
+  grid = new Uint8Array(gridW * gridH);
+  colorData = new Uint8Array(gridW * gridH * 3);
+  updated = new Uint8Array(gridW * gridH);
+}
+
+// ─── Color Helpers ───
+function getGrainColor(colorIdx) {
+  if (colorIdx === 9) {
+    // Rainbow — cycle through hue
+    const hue = (frameCount * 3 + Math.random() * 60) % 360;
+    return hslToRgb(hue, 75 + Math.random() * 15, 55 + Math.random() * 15);
+  }
+  const base = SAND_COLORS[colorIdx].rgb;
+  // Add subtle variation for texture
+  const v = (Math.random() - 0.5) * 30;
+  return [
+    clamp(base[0] + v, 0, 255),
+    clamp(base[1] + v, 0, 255),
+    clamp(base[2] + v, 0, 255),
+  ];
+}
+
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if (h < 60) { r=c; g=x; b=0; }
+  else if (h < 120) { r=x; g=c; b=0; }
+  else if (h < 180) { r=0; g=c; b=x; }
+  else if (h < 240) { r=0; g=x; b=c; }
+  else if (h < 300) { r=x; g=0; b=c; }
+  else { r=c; g=0; b=x; }
+  return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
+}
+
+function clamp(v, min, max) { return v < min ? min : v > max ? max : v; }
+
+// ─── Grid Helpers ───
+function idx(x, y) { return y * gridW + x; }
+
+function isEmpty(x, y) {
+  if (x < 0 || x >= gridW || y < 0 || y >= gridH) return false;
+  return grid[idx(x, y)] === 0;
+}
+
+function setCell(x, y, colorIdx, rgb) {
+  const i = idx(x, y);
+  grid[i] = colorIdx + 1; // 1-based
+  const ci = i * 3;
+  colorData[ci] = rgb[0];
+  colorData[ci + 1] = rgb[1];
+  colorData[ci + 2] = rgb[2];
+}
+
+function clearCell(x, y) {
+  const i = idx(x, y);
+  grid[i] = 0;
+}
+
+function moveCell(fromX, fromY, toX, toY) {
+  const fi = idx(fromX, fromY);
+  const ti = idx(toX, toY);
+  grid[ti] = grid[fi];
+  grid[fi] = 0;
+  const fc = fi * 3, tc = ti * 3;
+  colorData[tc] = colorData[fc];
+  colorData[tc + 1] = colorData[fc + 1];
+  colorData[tc + 2] = colorData[fc + 2];
+  updated[ti] = 1;
+}
+
+// ─── Pouring ───
+function pourSand(px, py) {
+  // Convert canvas-relative pointer coords to grid coords
+  const rect = canvasWrap.getBoundingClientRect();
+  const gx = Math.floor((px / rect.width) * gridW);
+  const gy = Math.floor((py / rect.height) * gridH);
+
+  const r = brushSize;
+  const density = 0.35; // don't fill every pixel — more natural
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (dx * dx + dy * dy > r * r) continue;
+      if (Math.random() > density) continue;
+      const cx = gx + dx;
+      const cy = gy + dy;
+      if (cx < 0 || cx >= gridW || cy < 0 || cy >= gridH) continue;
+      if (grid[idx(cx, cy)] !== 0) continue;
+      const rgb = getGrainColor(selectedColor);
+      setCell(cx, cy, selectedColor, rgb);
+    }
+  }
+}
+
+// ─── Physics Step ───
+function simulate() {
+  updated.fill(0);
+  // Process bottom-to-top, random left/right scan direction per row for natural piling
+  const leftToRight = Math.random() < 0.5;
+
+  for (let y = gridH - 2; y >= 0; y--) {
+    const startX = leftToRight ? 0 : gridW - 1;
+    const endX = leftToRight ? gridW : -1;
+    const stepX = leftToRight ? 1 : -1;
+
+    for (let x = startX; x !== endX; x += stepX) {
+      const i = idx(x, y);
+      if (grid[i] === 0 || updated[i]) continue;
+
+      // Check below
+      if (isEmpty(x, y + 1)) {
+        moveCell(x, y, x, y + 1);
+        continue;
+      }
+
+      // Check below-left and below-right (randomize priority)
+      const goLeft = Math.random() < 0.5;
+      const dx1 = goLeft ? -1 : 1;
+      const dx2 = goLeft ? 1 : -1;
+
+      if (isEmpty(x + dx1, y + 1)) {
+        moveCell(x, y, x + dx1, y + 1);
+      } else if (isEmpty(x + dx2, y + 1)) {
+        moveCell(x, y, x + dx2, y + 1);
+      }
+    }
+  }
+}
+
+// ─── Render ───
+function render() {
+  const d = imageData.data;
+  // Background color: #0a0a14 = 10,10,20
+  const bgR = 10, bgG = 10, bgB = 20;
+
+  for (let i = 0, len = gridW * gridH; i < len; i++) {
+    const pi = i << 2; // pixel index in imageData
+    if (grid[i] === 0) {
+      d[pi] = bgR;
+      d[pi + 1] = bgG;
+      d[pi + 2] = bgB;
+    } else {
+      const ci = i * 3;
+      d[pi] = colorData[ci];
+      d[pi + 1] = colorData[ci + 1];
+      d[pi + 2] = colorData[ci + 2];
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+// ─── Main Loop ───
+function loop() {
+  frameCount++;
+  if (isPouring) pourSand(pointerX, pointerY);
+  simulate();
+  render();
+  animId = requestAnimationFrame(loop);
+}
+
+// ─── Pointer Events ───
+function getLocalPos(e) {
+  const rect = canvasWrap.getBoundingClientRect();
+  let x, y;
+  if (e.touches) {
+    x = e.touches[0].clientX - rect.left;
+    y = e.touches[0].clientY - rect.top;
+  } else {
+    x = e.clientX - rect.left;
+    y = e.clientY - rect.top;
+  }
+  return { x, y };
+}
+
+function showPourIndicator(x, y) {
+  const rect = canvasWrap.getBoundingClientRect();
+  // Scale brush circle to match visual size
+  const visualRadius = brushSize * (rect.width / gridW) * 2;
+  pourIndicator.style.width = pourIndicator.style.height = visualRadius + 'px';
+  pourIndicator.style.left = x + 'px';
+  pourIndicator.style.top = y + 'px';
+  pourIndicator.style.display = 'block';
+}
+
+canvasWrap.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  const pos = getLocalPos(e);
+  pointerX = pos.x;
+  pointerY = pos.y;
+  isPouring = true;
+  showPourIndicator(pos.x, pos.y);
+});
+
+canvasWrap.addEventListener('pointermove', (e) => {
+  if (!isPouring) return;
+  e.preventDefault();
+  const pos = getLocalPos(e);
+  pointerX = pos.x;
+  pointerY = pos.y;
+  showPourIndicator(pos.x, pos.y);
+});
+
+canvasWrap.addEventListener('pointerup', () => {
+  isPouring = false;
+  pourIndicator.style.display = 'none';
+});
+canvasWrap.addEventListener('pointercancel', () => {
+  isPouring = false;
+  pourIndicator.style.display = 'none';
+});
+canvasWrap.addEventListener('pointerleave', () => {
+  isPouring = false;
+  pourIndicator.style.display = 'none';
+});
+
+// Global up/cancel so dragging outside canvas stops pouring
+document.addEventListener('pointerup', () => {
+  isPouring = false;
+  pourIndicator.style.display = 'none';
+});
+document.addEventListener('pointercancel', () => {
+  isPouring = false;
+  pourIndicator.style.display = 'none';
+});
+
+// Touch events fallback for iOS
+canvasWrap.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const pos = getLocalPos(e);
+  pointerX = pos.x;
+  pointerY = pos.y;
+  isPouring = true;
+  showPourIndicator(pos.x, pos.y);
+}, { passive: false });
+
+canvasWrap.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!isPouring) return;
+  const pos = getLocalPos(e);
+  pointerX = pos.x;
+  pointerY = pos.y;
+  showPourIndicator(pos.x, pos.y);
+}, { passive: false });
+
+canvasWrap.addEventListener('touchend', () => {
+  isPouring = false;
+  pourIndicator.style.display = 'none';
+});
+
+// ─── Toast ───
+let toastTimer;
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2000);
+}
+
+// ─── Shake / Clear ───
+document.getElementById('btn-shake').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  shakeGrid();
+});
+
+function shakeGrid() {
+  canvasWrap.classList.add('shaking');
+  setTimeout(() => canvasWrap.classList.remove('shaking'), 500);
+
+  // Randomly displace grains horizontally and let gravity resettle
+  for (let y = gridH - 1; y >= 0; y--) {
+    for (let x = 0; x < gridW; x++) {
+      const i = idx(x, y);
+      if (grid[i] === 0) continue;
+      const dx = Math.floor(Math.random() * 7) - 3;
+      const nx = clamp(x + dx, 0, gridW - 1);
+      if (grid[idx(nx, y)] === 0) {
+        moveCell(x, y, nx, y);
+      }
+    }
+  }
+  showToast('Shake!');
+}
+
+document.getElementById('btn-clear').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  grid.fill(0);
+  showToast('Canvas cleared');
+});
+
+// ─── Save ───
+document.getElementById('btn-save').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  saveSandArt();
+});
+
+function saveSandArt() {
+  // Render at higher resolution for a nice save
+  const scale = 3;
+  const saveCanvas = document.createElement('canvas');
+  saveCanvas.width = gridW * scale;
+  saveCanvas.height = gridH * scale;
+  const sCtx = saveCanvas.getContext('2d');
+  sCtx.imageSmoothingEnabled = false;
+  sCtx.drawImage(canvasEl, 0, 0, gridW, gridH, 0, 0, gridW * scale, gridH * scale);
+
+  const link = document.createElement('a');
+  link.download = 'sand-art-' + Date.now() + '.png';
+  link.href = saveCanvas.toDataURL('image/png');
+  link.click();
+  showToast('Saved!');
+}
+
+// ─── Title Screen ───
+document.getElementById('start-btn').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  titleEl.classList.add('hidden');
+  // Clear the background drip sand so user starts fresh
+  grid.fill(0);
+});
+
+// ─── Resize handling ───
+let resizeTimer;
+function handleResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    // Preserve sand state if possible
+    const oldGrid = grid;
+    const oldColors = colorData;
+    const oldW = gridW;
+    const oldH = gridH;
+    initCanvas();
+    // Copy old data that fits
+    if (oldGrid) {
+      const copyW = Math.min(oldW, gridW);
+      const copyH = Math.min(oldH, gridH);
+      for (let y = 0; y < copyH; y++) {
+        for (let x = 0; x < copyW; x++) {
+          const oi = y * oldW + x;
+          const ni = y * gridW + x;
+          grid[ni] = oldGrid[oi];
+          colorData[ni * 3] = oldColors[oi * 3];
+          colorData[ni * 3 + 1] = oldColors[oi * 3 + 1];
+          colorData[ni * 3 + 2] = oldColors[oi * 3 + 2];
+        }
+      }
+    }
+  }, 200);
+}
+window.addEventListener('resize', handleResize);
+
+// ─── Background sand animation on title screen ───
+function spawnTitleSand() {
+  if (!titleEl.classList.contains('hidden')) {
+    const colorIdx = Math.floor(Math.random() * 9);
+    const x = Math.floor(Math.random() * gridW);
+    const y = 0;
+    if (grid[idx(x, y)] === 0) {
+      setCell(x, y, colorIdx, getGrainColor(colorIdx));
+    }
+  }
+}
+
+// ─── Boot ───
+initCanvas();
+
+// Sprinkle some initial sand on title screen
+function titleDrip() {
+  if (titleEl.classList.contains('hidden')) return;
+  for (let i = 0; i < 3; i++) spawnTitleSand();
+  requestAnimationFrame(titleDrip);
+}
+titleDrip();
+loop();
+</script>
+</body>
+</html>
