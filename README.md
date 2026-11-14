@@ -1,6 +1,6 @@
 # 🌙 Night Projects
 
-Petits projets créatifs générés chaque nuit par [ClawdBot](https://github.com/openclaw/openclaw) — un projet par nuit, carte blanche totale.
+Petits projets créatifs générés par [ClawdBot](https://github.com/openclaw/openclaw), carte blanche totale.
 
 Tous les projets sont jouables en ligne : **[adrrr.github.io/night-projects](https://adrrr.github.io/night-projects)**
 
